@@ -1238,4 +1238,36 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
             .to_string()
             .contains("match expression evaluation is not supported yet"));
     }
+    #[test]
+    fn test_match_pattern_with_no_args() {
+        let mut env = Environment::new_test();
+        env.add(
+            r#"
+            inductive Foo {
+                bar(Bool)
+                baz
+            }
+            "#,
+        );
+        let error = env
+            .add_tokens(
+                &mut Project::new_mock(),
+                venticorn::token::Token::scan(
+                    r#"
+            define foo(f: Foo) -> Bool {
+                match f {
+                    Foo.bar(b) {
+                        b
+                    }
+                    Foo.baz {
+                        false
+                    }
+                }
+            }
+        "#,
+                ),
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("invalid match pattern"));
+    }
 }
