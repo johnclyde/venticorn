@@ -12,7 +12,7 @@
   "engines": {
     "vscode": "^1.82.0"
   },
-  "main": "build/extension/extension.js",
+  "main": "build/extension/bundle.js",
   "contributes": {
     "languages": [
       {
@@ -75,14 +75,16 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "test": "npm run compile && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs"
+    "check": "tsc -p ./ --noEmit",
+    "build": "npm run check && node build.mjs",
+    "test": "tsc -p ./ && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs"
   },
   "author": "Kevin Lacker",
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^20.6.3",
     "@types/vscode": "^1.82.0",
+    "esbuild": "0.24.0",
     "prettier": "^3.0.3",
     "typescript": "^5.2.2"
   },

@@ -3,9 +3,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "extension: npm compile",
+      "label": "extension: npm build",
       "type": "npm",
-      "script": "compile",
+      "script": "build",
       "options": {
         "cwd": "${workspaceFolder}/vscode/extension"
       },
@@ -62,7 +62,7 @@
     {
       "label": "build all",
       "dependsOn": [
-        "extension: npm compile",
+        "extension: npm build",
         "search: npm build",
         "language server: cargo build"
       ],
