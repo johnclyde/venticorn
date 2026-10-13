@@ -375,10 +375,16 @@ export class SearchPanel implements Disposable {
     );
     let indexPath = Uri.file(path.join(this.distPath, "index.html"));
     let html = fs.readFileSync(indexPath.fsPath, "utf8");
-    // Inject a new base href tag
+    // Restrict the webview to packaged resources. The host supplies the correct
+    // resource origin for desktop, remote workspaces, and browser-based hosts.
+    const attribute = (value: string) => value.replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const source = attribute(this.panel.webview.cspSource);
+    const policy = `default-src 'none'; img-src ${source}; style-src ${source}; script-src ${source}; base-uri ${source};`;
+    // The policy precedes all resources, including the base URL.
     let injected = html.replace(
       "<head>",
-      `<head>\n<base href="${distPathInWebview}/">`
+      `<head>\n<meta http-equiv="Content-Security-Policy" content="${policy}">\n<base href="${attribute(distPathInWebview.toString())}/">`
     );
     this.panel.webview.html = injected;
 
