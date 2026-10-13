@@ -34,4 +34,11 @@ The extension includes a compatible library under `acornlib`. Set `VENTICORN_LIB
 
 For command-line use and supported language features, see the [development guide](https://github.com/johnclyde/venticorn#choose-a-library-and-use-the-cli). Build and inspect a local VSIX with the repository's `package.sh`; this rebuilds the extension and Assistant and validates their packaged assets without publishing.
 
+## Documentation
+
+- [Verify a first theorem](https://github.com/johnclyde/venticorn#verify-a-first-theorem)
+- [Choose a library and use the CLI](https://github.com/johnclyde/venticorn#choose-a-library-and-use-the-cli)
+- [Run the editor from source](https://github.com/johnclyde/venticorn#run-the-vs-code-extension-from-source)
+- [Release platforms and setup](https://github.com/johnclyde/venticorn/blob/main/RELEASE.md#release-platforms)
+
 The extension includes Apache-2.0 licensed Acorn source, artwork, and mathematical library files. See the included LICENSE and NOTICE files and the library's own license and attribution.
