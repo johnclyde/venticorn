@@ -47,8 +47,8 @@
         "title": "Info View: Display",
         "description": "Show the info view.",
         "icon": {
-          "light": "images/venticorn-assistant-black.png",
-          "dark": "images/venticorn-assistant-white.png"
+          "light": "images/venticorn-assistant-color.png",
+          "dark": "images/venticorn-assistant-color.png"
         }
       },
       {
