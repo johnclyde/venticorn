@@ -31,8 +31,28 @@ def check_vsix(filename):
             assert not any(name.startswith(prefix) for prefix in excluded), f"Unexpected development file: {name}"
             assert "venticornserver" not in Path(name).name and "acornserver" not in Path(name).name, f"Unexpected bundled server: {name}"
             assert not Path(name).is_absolute() and ".." not in Path(name).parts, f"Invalid archive path: {name}"
+        library_root = Path(__file__).resolve().parents[1] / "vscode/extension/acornlib"
+        library_files = [*library_root.glob("*.ac"), library_root / "LICENSE", library_root / "NOTICE"]
+        expected_library = {"extension/acornlib/" + path.name for path in library_files}
+        actual_library = {name for name in names if name.startswith("extension/acornlib/") and not name.endswith("/")}
+        assert actual_library == expected_library, "VSIX library contents differ from the tracked runtime snapshot"
+        for path in library_files:
+            assert archive.read("extension/acornlib/" + path.name) == path.read_bytes(), f"VSIX library file differs from tracked source: {path.name}"
         package = json.loads(archive.read("extension/package.json"))
         assert "extension/" + package["main"].removeprefix("./") in names, "VSIX entry point is missing"
+        icons = [package["icon"]]
+        for contribution in ("languages", "commands"):
+            for item in package["contributes"][contribution]:
+                icon = item.get("icon")
+                if isinstance(icon, dict):
+                    icons.extend(icon.values())
+                elif isinstance(icon, str) and not icon.startswith("$("):
+                    icons.append(icon)
+        for icon in icons:
+            member = "extension/" + icon
+            assert member in names, f"VSIX is missing a manifest icon: {icon}"
+            if icon.endswith(".svg"):
+                ElementTree.fromstring(archive.read(member))
         notices = archive.read("extension/build/extension/THIRD_PARTY_NOTICES.txt").decode()
         for dependency in ["vscode-languageclient", "vscode-languageserver-protocol", "vscode-jsonrpc"]:
             assert dependency in notices, f"Bundled dependency attribution is missing: {dependency}"
