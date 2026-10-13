@@ -125,3 +125,26 @@ test("a filesystem installation failure removes its temporary download", async (
   assert.deepEqual(fs.readdirSync(f.directory), ["server"]);
   assert.ok(fs.statSync(destination).isDirectory());
 });
+
+test("download progress handles known and unknown sizes without duplicate transfers", async (t) => {
+  for (const knownSize of [true, false]) {
+    const f = fixture(t, [{ body: "binary", headers: knownSize ? { "content-length": "6" } : {} }]);
+    const reports = [];
+    let windows = 0;
+    const progress = async (asset, download) => {
+      windows++;
+      assert.equal(asset, "venticornserver-v0.1.0-linux-x64");
+      await download((received, total) => reports.push({ received, total }));
+    };
+    const [first, second] = await Promise.all([
+      f.server.getServerPath(f.context, progress), f.server.getServerPath(f.context, progress),
+    ]);
+    assert.equal(first, second);
+    await f.server.getServerPath(f.context, progress);
+    assert.equal(windows, 1);
+    assert.equal(f.requests.length, 1);
+    assert.equal(reports[0].received, 0);
+    assert.equal(reports.at(-1).received, 6);
+    assert.ok(reports.every(({ received, total }) => Number.isFinite(received) && total === (knownSize ? 6 : undefined)));
+  }
+});

@@ -6,10 +6,10 @@ const path = require("node:path");
 const test = require("node:test");
 const { loadEditorModule } = require("./editor_modules.cjs");
 
-function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform } = {}) {
+function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports } = {}) {
   const state = {
     notifications: [], logs: [], commands: [], save: [], open: [],
-    starts: 0, stops: 0, requests: 0, client: undefined,
+    starts: 0, stops: 0, requests: 0, client: undefined, downloadWindows: [], reports: [],
   };
   const disposable = () => ({ dispose() {} });
   const listen = (handlers) => (handler) => {
@@ -17,6 +17,7 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
     return disposable();
   };
   const vscode = {
+    ProgressLocation: { Notification: 15 },
     commands: {
       registerTextEditorCommand: (name) => {
         state.commands.push(name);
@@ -24,6 +25,10 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
       },
     },
     window: {
+      withProgress: async (options, task) => {
+        state.downloadWindows.push(options);
+        return task({ report: (report) => state.reports.push(report) }, { onCancellationRequested() {} });
+      },
       createTextEditorDecorationType: disposable,
       createOutputChannel: disposable,
       onDidChangeTextEditorSelection: () => disposable(),
@@ -78,6 +83,14 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
     ErrorAction: { Shutdown: 2 },
   };
   const exported = loadEditorModule("extension", {
+    ...(downloadReports ? { "./server": {
+      getServerPath: async (_context, showProgress) => {
+        await showProgress("server", async (report) => {
+          for (const [received, total] of downloadReports) report(received, total);
+        });
+        return "/downloaded-server";
+      },
+    } } : {}),
     vscode,
     "vscode-languageclient/node": clientApi,
     os: { platform: () => platform, arch: () => platform === "darwin" ? "arm64" : "x64" },
@@ -179,4 +192,19 @@ test("the extracted search panel does not send requests after its client stops",
   await panel.handleWebviewMessage({ command: "infoRequest", params: { clauseId: 1 } });
   assert.equal(extension.state.requests, 0);
   panel.dispose();
+});
+
+
+test("download notifications report bounded monotonic progress and support unknown sizes", async () => {
+  const known = loadExtension({ downloadReports: [[0, 10], [5, 10], [4, 10], [10, 10], [12, 10]] });
+  await known.activate(known.context);
+  assert.equal(known.state.downloadWindows.length, 1);
+  assert.equal(known.state.starts, 1);
+  assert.deepEqual(known.state.reports.map((value) => value.increment), [0, 50, 0, 50, 0]);
+  for (const total of [undefined, 0]) {
+    const unknown = loadExtension({ downloadReports: [[0, total], [1024, total]] });
+    await unknown.activate(unknown.context);
+    assert.equal(unknown.state.downloadWindows.length, 1);
+    assert.ok(unknown.state.reports.every((value) => value.increment === undefined && /MiB received/.test(value.message)));
+  }
 });

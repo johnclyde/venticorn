@@ -42,7 +42,9 @@ function openResponse(url: URL): Promise<IncomingMessage> {
   });
 }
 
-export async function downloadServer(url: string, serverPath: string): Promise<void> {
+export type DownloadProgress = (received: number, total?: number) => void;
+
+export async function downloadServer(url: string, serverPath: string, progress?: DownloadProgress): Promise<void> {
   const temporary = `${serverPath}.${crypto.randomUUID()}.partial`;
   let response: IncomingMessage | undefined;
   try {
@@ -77,13 +79,19 @@ export async function downloadServer(url: string, serverPath: string): Promise<v
       throw new Error("The release asset uses an unsupported content encoding");
     }
     let received = 0;
+    progress?.(received, expected);
     const count = new Transform({
       transform(chunk, _encoding, callback) {
         received += chunk.length;
         if (received > maximumBytes || (expected !== undefined && received > expected)) {
           callback(new Error("The release asset exceeded its expected size"));
         } else {
-          callback(null, chunk);
+          try {
+            progress?.(received, expected);
+            callback(null, chunk);
+          } catch (error) {
+            callback(error as Error);
+          }
         }
       },
     });
