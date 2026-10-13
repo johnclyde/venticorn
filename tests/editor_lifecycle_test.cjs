@@ -338,3 +338,20 @@ test("a file opened before it becomes visible opens the Assistant when activated
   for (const handler of extension.state.activeEditorChanges) handler(editor);
   assert.equal(extension.state.panels.length, 1);
 });
+
+test("startup finds a visible saved proof even when the first Acorn document is hidden", async () => {
+  const hidden = acornEditor("file", "hidden.ac");
+  const visible = acornEditor("file", "visible.ac");
+  const extension = loadExtension({ textDocuments: [hidden.document, visible.document], visibleEditors: [visible] });
+  await extension.activate(extension.context);
+  assert.equal(extension.state.panels.length, 1);
+  assert.ok(extension.state.requestCalls.some((call) => call.method === "acorn/search" && call.params.uri === "file:///visible.ac"));
+});
+
+test("startup leaves untitled Acorn documents quiet", async () => {
+  const untitled = acornEditor("untitled");
+  const extension = loadExtension({ textDocuments: [untitled.document], visibleEditors: [untitled] });
+  await extension.activate(extension.context);
+  assert.equal(extension.state.panels.length, 0);
+  assert.equal(extension.state.requests, 0);
+});
