@@ -506,6 +506,7 @@ impl Expression {
         termination: Terminator,
     ) -> Result<(Expression, Token)> {
         let (partials, terminator) = parse_partial_expressions(tokens, expected_type, termination)?;
+        check_partial_expressions(&partials)?;
         let expression = combine_partial_expressions(partials, expected_type, tokens)?;
         Ok((expression, terminator))
     }
@@ -782,6 +783,26 @@ fn find_last_operator(
     }
 }
 
+// Report adjacent operators at their source location before precedence reduction.
+fn check_partial_expressions(partials: &VecDeque<PartialExpression>) -> Result<()> {
+    for (left, right) in partials.iter().zip(partials.iter().skip(1)) {
+        match (left, right) {
+            (PartialExpression::Binary(a), PartialExpression::Binary(b))
+            | (PartialExpression::Unary(a), PartialExpression::Binary(b)) => {
+                return Err(Error::new(
+                    left.token(),
+                    &format!(
+                        "the '{}' operator cannot be followed by the '{}' operator",
+                        a, b
+                    ),
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 // Combines partial expressions into a single expression.
 // Operators work in precedence order, and left-to-right within a single precedence.
 // This algorithm is quadratic, so perhaps we should improve it at some point.
@@ -1048,6 +1069,30 @@ mod tests {
         check_not_value("else");
         check_not_value("else { r }");
         check_not_value("if p { q } else { r } else { s }");
+    }
+
+    #[test]
+    fn test_adjacent_operator_diagnostics() {
+        for (input, operator, message) in [
+            (
+                "a + and b",
+                "+",
+                "the '+' operator cannot be followed by the 'and' operator",
+            ),
+            (
+                "not = b",
+                "not",
+                "the 'not' operator cannot be followed by the '=' operator",
+            ),
+        ] {
+            let mut tokens = TokenIter::new(Token::scan(input));
+            let error = Expression::parse_value(&mut tokens, Terminator::Is(TokenType::NewLine))
+                .unwrap_err();
+            assert_eq!(error.message, message);
+            assert_eq!(error.token.text(), operator);
+        }
+        check_value("a and not b");
+        check_value("not not a");
     }
 
     #[test]
