@@ -231,15 +231,15 @@ impl Project {
 
     // Returns whether it loaded okay.
     // Either way, it's still added as a target.
-    pub fn add_target(&mut self, module_name: &str) -> bool {
+    pub fn add_target_by_name(&mut self, module_name: &str) -> bool {
         let answer = self.load_module(module_name).is_ok();
         self.targets.insert(module_name.to_string());
         answer
     }
 
-    fn add_target_file(&mut self, path: &Path) -> Result<(), LoadError> {
+    fn add_target_by_path(&mut self, path: &Path) -> Result<(), LoadError> {
         let module_name = self.module_name_from_path(path)?;
-        self.add_target(&module_name);
+        self.add_target_by_name(&module_name);
         Ok(())
     }
 
@@ -258,7 +258,7 @@ impl Project {
             if entry.file_type().is_file() {
                 let path = entry.path();
                 if path.extension() == Some(std::ffi::OsStr::new("ac")) {
-                    self.add_target_file(path)?;
+                    self.add_target_by_path(path)?;
                 }
             }
         }
@@ -307,7 +307,7 @@ impl Project {
         }
         self.open_files.insert(path, (content.to_string(), version));
         for module_name in &reload_modules {
-            self.add_target(module_name);
+            self.add_target_by_name(module_name);
         }
         Ok(())
     }
@@ -323,7 +323,7 @@ impl Project {
         self.targets.remove(&module_name);
         let targets = self.targets.clone();
         for target in targets {
-            self.add_target(&target);
+            self.add_target_by_name(&target);
         }
         Ok(())
     }
@@ -1055,8 +1055,8 @@ mod tests {
         );
         p.load_module("foo").expect("loading foo failed");
         p.load_module("main").expect("loading main failed");
-        p.add_target("foo");
-        p.add_target("main");
+        p.add_target_by_name("foo");
+        p.add_target_by_name("main");
         p.expect_build_ok();
     }
 

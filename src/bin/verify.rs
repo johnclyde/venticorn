@@ -34,7 +34,7 @@ async fn main() -> ExitCode {
         }
     };
     if let Some(module_name) = args.module {
-        project.add_target(&module_name);
+        project.add_target_by_name(&module_name);
     } else {
         if let Err(error) = project.add_all_targets() {
             eprintln!("error loading project: {}", error);
