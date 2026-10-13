@@ -104,7 +104,7 @@ The update command changes local files only. Review its diff and run `bash scrip
 
 ## Local release builds
 
-The local build script supports `x86_64-unknown-linux-gnu` on a native Linux x64 Rust host, plus the Windows setup below. It builds only the server, uses locked dependencies, and puts the result in `target/x86_64-unknown-linux-gnu/release/venticornserver`. An explicit target build scopes the static C runtime flags to that target. The script checks its ELF headers with `readelf` and rejects a Linux executable with an interpreter or shared-library dependencies.
+The local build script supports the three release targets with the platform setup below. With no target arguments, it chooses the Rust host target; unsupported hosts fail clearly. Linux x64 builds require a native Linux x64 Rust host. It builds only the server, uses locked dependencies, and puts the result in `target/x86_64-unknown-linux-gnu/release/venticornserver`. An explicit target build scopes the static C runtime flags to that target. The script checks its ELF headers with `readelf` and rejects a Linux executable with an interpreter or shared-library dependencies.
 
 ```sh
 ./crossbuild.sh --plan x86_64-unknown-linux-gnu
@@ -140,6 +140,21 @@ export XWIN_ROOT=/absolute/path/to/your/windows-sdk
 ```
 
 The output is `target/x86_64-pc-windows-msvc/release/venticornserver.exe`. The build requests a static C runtime and verifies the output is x64 PE; it does not claim the file has no Windows system-library dependencies. Test the resulting server on Windows before release. Cross SDKs and ONNX runtime compatibility require platform validation and are not installed or repaired by this script.
+
+### macOS Apple silicon builds
+
+On macOS with Xcode Command Line Tools installed, build the ARM64 server with:
+
+```sh
+./crossbuild.sh --plan aarch64-apple-darwin
+./crossbuild.sh aarch64-apple-darwin
+# On an Apple silicon Rust host, this selects the same target:
+./crossbuild.sh
+```
+
+For a cross-build from another operating system, install `cargo-zigbuild` and Zig explicitly, supply a macOS SDK you are licensed to use, and set `SDKROOT` to its absolute path. The script requires SDK libraries and frameworks and the target Rust standard library before invoking `cargo zigbuild`. It never obtains or redistributes an SDK.
+
+The output is `target/aarch64-apple-darwin/release/venticornserver`. macOS uses its system runtime rather than Linux static-runtime flags. The script checks ARM64 Mach-O format and rejects dynamic dependencies outside `/usr/lib` and `/System/Library`. These checks also work on a foreign build host. Run the language-server protocol tests on macOS before release; format and linkage inspection alone cannot validate runtime compatibility.
 
 Before creating a release, merge and review the version change, run the local checks, then build and validate each platform artifact. A successful `--plan` is only a command preview. It is not evidence that a cross-toolchain can link or that a foreign executable runs.
 

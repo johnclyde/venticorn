@@ -88,6 +88,13 @@ class VersionTest(unittest.TestCase):
         self.assertEqual(before, self.contents())
         self.assertFalse(list(self.root.rglob(".*.*")))
 
+    def test_windows_line_endings_survive_failed_update(self):
+        for path in version.release_files(self.root):
+            path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        self.test_replacement_failure_rolls_back_completed_replacements()
+        self.assertEqual(version.update_version(self.root, "12.34.56"), "12.34.56")
+        self.assertEqual(version.update_version(self.root), "12.34.56")
+
     def test_version_file_mismatch_is_rejected(self):
         (self.root / "VERSION").write_text("98.76.54\n")
         before = self.contents()
