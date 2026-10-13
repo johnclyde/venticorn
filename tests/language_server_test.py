@@ -24,12 +24,13 @@ class LanguageServerTest(unittest.TestCase):
         self.library = Path(self.directory.name)
         (self.library / "example.ac").write_text("theorem identity { true }\n")
         self.environment = dict(os.environ, VENTICORN_LIBRARY=str(self.library))
+        self.server_args = []
 
     def initialize_and_shutdown(
         self, root_uri, *, expected_error=None, cwd=None, initialize_params=None,
     ):
         with subprocess.Popen(
-            [str(BINARY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            [str(BINARY), *self.server_args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=self.environment, cwd=cwd,
         ) as process:
             responses = queue.Queue()
@@ -177,6 +178,27 @@ class LanguageServerTest(unittest.TestCase):
             self.library.as_uri(),
             expected_error="VENTICORN_LIBRARY is not a directory",
         )
+        self.assertNotIn("panicked", stderr)
+
+    def test_workspace_argument_takes_precedence_over_protocol_workspace(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        workspace = self.library / "workspace with spaces" / "acornlib"
+        workspace.mkdir(parents=True)
+        self.server_args = ["--workspace-root", str(workspace)]
+        stderr = self.initialize_and_shutdown("https://example.invalid/ignored")
+        self.assertIn(f"using library at {workspace.resolve()}", stderr)
+
+    def test_library_override_takes_precedence_over_workspace_argument(self):
+        self.server_args = ["--workspace-root", str(self.library / "missing")]
+        stderr = self.initialize_and_shutdown(None)
+        self.assertIn(f"using library at {self.library.resolve()}", stderr)
+
+    def test_invalid_workspace_argument_returns_initialization_error(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        filename = self.library / "file"
+        filename.write_text("not a directory")
+        self.server_args = ["--workspace-root", str(filename)]
+        stderr = self.initialize_and_shutdown(None, expected_error="not a directory")
         self.assertNotIn("panicked", stderr)
 
     def test_startup_does_not_require_a_library_before_initialize(self):

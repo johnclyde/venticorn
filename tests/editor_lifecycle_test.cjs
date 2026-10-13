@@ -6,7 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { loadEditorModule } = require("./editor_modules.cjs");
 
-function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports } = {}) {
+function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports, workspaceFolders } = {}) {
   const state = {
     notifications: [], logs: [], output: [], channels: [], commands: [], save: [], open: [],
     starts: 0, stops: 0, requests: 0, client: undefined, downloadWindows: [], reports: [],
@@ -41,6 +41,7 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
       },
     },
     workspace: {
+      workspaceFolders,
       textDocuments: [],
       createFileSystemWatcher: disposable,
       onDidSaveTextDocument: listen(state.save),
@@ -223,4 +224,15 @@ test("extension setup and failures remain visible in its output channel", async 
   assert.ok(failed.state.output.some(line => line.includes("Language server setup failed")));
   assert.ok(failed.state.output.some(line => line.includes("offline test")));
   assert.equal(failed.state.notifications.length, 1);
+});
+
+
+test("local workspace roots are passed as one literal server argument", async () => {
+  const root = "/workspace with spaces/proofs";
+  const extension = loadExtension({ workspaceFolders: [{ uri: { scheme: "file", fsPath: root } }] });
+  await extension.activate(extension.context);
+  assert.deepEqual(Array.from(extension.state.serverOptions.run.args), ["--workspace-root", root]);
+  const remote = loadExtension({ workspaceFolders: [{ uri: { scheme: "vscode-remote", fsPath: "/remote" } }] });
+  await remote.activate(remote.context);
+  assert.deepEqual(Array.from(remote.state.serverOptions.run.args), []);
 });
