@@ -11,7 +11,7 @@ const showLocationDecoration = window.createTextEditorDecorationType({
   backgroundColor: "rgba(246, 185, 77, 0.3)",
 });
 
-export class InfoView implements Disposable {
+export class Assistant implements Disposable {
   panel: WebviewPanel;
   listener: Disposable;
   disposables: Disposable[];
@@ -24,14 +24,20 @@ export class InfoView implements Disposable {
     this.distPath = distPath;
     this.currentSearchId = 0;
     this.disposables = [
-      commands.registerTextEditorCommand("acorn.displayInfoView", (editor) =>
+      commands.registerTextEditorCommand("acorn.displayAssistant", (editor) =>
         this.display(editor)
       ),
 
-      commands.registerTextEditorCommand("acorn.toggleInfoView", (editor) =>
+      commands.registerTextEditorCommand("acorn.toggleAssistant", (editor) =>
         this.toggle(editor)
       ),
       // Preserve existing user keybindings and command invocations.
+      commands.registerTextEditorCommand("acorn.displayInfoView", (editor) =>
+        this.display(editor)
+      ),
+      commands.registerTextEditorCommand("acorn.toggleInfoView", (editor) =>
+        this.toggle(editor)
+      ),
       commands.registerTextEditorCommand("acorn.displaySearchPanel", (editor) =>
         this.display(editor)
       ),
@@ -342,7 +348,7 @@ export class InfoView implements Disposable {
     editor.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
   }
 
-  // Show the info view itself.
+  // Show the assistant itself.
   display(editor: TextEditor) {
     let column =
       editor && editor.viewColumn ? editor.viewColumn + 1 : ViewColumn.Two;
@@ -354,8 +360,8 @@ export class InfoView implements Disposable {
       return;
     }
     this.panel = window.createWebviewPanel(
-      "acornInfoView",
-      "Info View",
+      "acornAssistant",
+      "Venticorn Assistant",
       { viewColumn: column, preserveFocus: true },
       {
         enableFindWidget: true,

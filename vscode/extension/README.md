@@ -11,7 +11,7 @@ Once the language server is available, save a file named `hello.ac` containing:
 theorem identity(value: Bool) { value = value }
 ```
 
-Saving runs verification. Place the cursor on the proposition and run **Venticorn: Info View: Display** from the command palette, or press **Ctrl+Enter** (**Cmd+Enter** on macOS). The Info View shows the proof-search result and can insert generated proof code when available. Saved `.ac` files work even outside a workspace; imports use the selected library.
+Saving runs verification. Place the cursor on the proposition and run **Venticorn: Assistant: Display** from the command palette, or press **Ctrl+Enter** (**Cmd+Enter** on macOS). The Assistant shows the proof-search result and can insert generated proof code when available. Saved `.ac` files work even outside a workspace; imports use the selected library.
 
 ## Language server setup
 
@@ -23,6 +23,6 @@ If that release is unavailable, build the server locally and set `SERVER_PATH` t
 
 The extension includes a compatible library under `acornlib`. Set `VENTICORN_LIBRARY` before launching VS Code to select a different library explicitly. Otherwise the server discovers a library near the local workspace, then falls back to the bundled copy. No workspace is required to use that fallback. An empty or invalid explicit setting is an error rather than an instruction to use another library.
 
-For command-line use and supported language features, see the [development guide](https://github.com/johnclyde/venticorn#choose-a-library-and-use-the-cli). Build and inspect a local VSIX with the repository's `package.sh`; this rebuilds the extension and Info View and validates their packaged assets without publishing.
+For command-line use and supported language features, see the [development guide](https://github.com/johnclyde/venticorn#choose-a-library-and-use-the-cli). Build and inspect a local VSIX with the repository's `package.sh`; this rebuilds the extension and Assistant and validates their packaged assets without publishing.
 
 The extension includes Apache-2.0 licensed Acorn source, artwork, and mathematical library files. See the included LICENSE and NOTICE files and the library's own license and attribution.

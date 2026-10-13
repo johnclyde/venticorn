@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [svelte()],
   base: "./",
   build: {
-    outDir: "../extension/build/info",
+    outDir: "../extension/build/assistant",
     emptyOutDir: true,
   },
 });
