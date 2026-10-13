@@ -5,12 +5,20 @@
 //   cargo build --bin=profile_prover --profile=profiling
 //   samply record target/profiling/profile_prover
 
+use std::process::ExitCode;
+
 use venticorn::builder::Builder;
 use venticorn::project::Project;
 
-fn main() {
+fn main() -> ExitCode {
     for _ in 0..10 {
-        let mut project = Project::new("math");
+        let mut project = match Project::from_library() {
+            Ok(project) => project,
+            Err(error) => {
+                eprintln!("error loading library: {}", error);
+                return ExitCode::FAILURE;
+            }
+        };
         assert!(project.add_target("nat"));
         assert!(project.add_target("nat_gcd"));
         assert!(project.add_target("int"));
@@ -26,4 +34,5 @@ fn main() {
         });
         project.build(&mut logger);
     }
+    ExitCode::SUCCESS
 }

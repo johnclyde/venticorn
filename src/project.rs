@@ -96,6 +96,27 @@ fn check_valid_module_part(s: &str, error_name: &str) -> Result<(), LoadError> {
     Ok(())
 }
 
+// Search the working directory and its ancestors, preferring Venticorn's name
+// while accepting existing libraries that use the same source format.
+fn find_library(start: &Path) -> Option<PathBuf> {
+    const NAMES: [&str; 3] = ["venticorn-library", "acornlib", "acorn-library"];
+    for directory in start.ancestors() {
+        if NAMES
+            .iter()
+            .any(|name| directory.file_name() == Some(std::ffi::OsStr::new(name)))
+        {
+            return Some(directory.to_path_buf());
+        }
+        for name in NAMES {
+            let candidate = directory.join(name);
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 impl Project {
     // A Project where files are imported from the real filesystem.
     pub fn new(root: &str) -> Project {
@@ -106,6 +127,10 @@ impl Project {
             d.push(root);
             d
         };
+        Self::with_root(root)
+    }
+
+    fn with_root(root: PathBuf) -> Project {
         Project {
             root,
             use_filesystem: true,
@@ -115,6 +140,33 @@ impl Project {
             targets: HashSet::new(),
             build_stopped: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    // An explicit library path takes precedence over discovery. Relative paths
+    // are resolved from the process working directory, not the build checkout.
+    pub fn from_library() -> Result<Project, LoadError> {
+        let root = if let Some(path) = std::env::var_os("VENTICORN_LIBRARY") {
+            if path.is_empty() {
+                return Err(LoadError("VENTICORN_LIBRARY must not be empty".to_string()));
+            }
+            let path = PathBuf::from(path);
+            if !path.is_dir() {
+                return Err(LoadError(format!(
+                    "VENTICORN_LIBRARY is not a directory: {}",
+                    path.display()
+                )));
+            }
+            path
+        } else {
+            let working_dir = std::env::current_dir()?;
+            find_library(&working_dir).ok_or_else(|| {
+                LoadError(format!(
+                    "no library found from {}; set VENTICORN_LIBRARY to its directory",
+                    working_dir.display()
+                ))
+            })?
+        };
+        Ok(Self::with_root(root.canonicalize()?))
     }
 
     // A Project where nothing can be imported.
