@@ -14,7 +14,9 @@ fn prove(text: &str) -> Outcome {
         prover.add_fact(fact);
     }
     prover.set_goal(&context);
-    prover.quick_verification_search()
+    let outcome = prover.quick_verification_search();
+    assert_ne!(outcome, Outcome::Error, "{:?}\n{}", prover.error, text);
+    outcome
 }
 
 const NAT: &str = "inductive Nat {\n zero\n suc(Nat)\n}\n";
@@ -38,6 +40,36 @@ fn recursive_base_equations_prove_true_claims_only() {
     assert_eq!(
         prove(&format!(
             "{NAT}{definition}\ntheorem goal {{ add(Nat.zero, Nat.zero) = Nat.zero.suc }}"
+        )),
+        Outcome::Exhausted
+    );
+}
+
+#[test]
+fn generic_recursive_equations_specialize_at_distinct_types() {
+    let repeat = r#"
+        inductive Color {
+            red
+            blue
+        }
+        define stay(color: Color) -> Color { color }
+        define repeat<T>(n: Nat, f: T -> T, a: T) -> T {
+            match n {
+                Nat.zero { a }
+                Nat.suc(pred) { repeat(pred, f, f(a)) }
+            }
+        }
+    "#;
+    for goal in [
+        "theorem goal(n: Nat) { repeat(Nat.zero, Nat.suc, n) = n }",
+        "theorem goal { repeat(Nat.zero.suc, Nat.suc, Nat.zero) = Nat.zero.suc }",
+        "theorem goal(color: Color) { repeat(Nat.zero, stay, color) = color }",
+    ] {
+        assert_eq!(prove(&format!("{NAT}{repeat}\n{goal}")), Outcome::Success);
+    }
+    assert_eq!(
+        prove(&format!(
+            "{NAT}{repeat}\ntheorem goal {{ repeat(Nat.zero.suc, Nat.suc, Nat.zero) = Nat.zero }}"
         )),
         Outcome::Exhausted
     );
