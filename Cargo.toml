@@ -29,9 +29,6 @@ tokio = { version = "1.32.0", features = ["full"] }
 tower-lsp = "0.20.0"
 walkdir = "2.4.0"
 
-[profile.release]
-debug = true
-
 [[bin]]
 name = "verify"
 test = false
@@ -49,6 +46,6 @@ name = "profile_scorer"
 test = false
 required-features = ["onnx"]
 
-[profile.profiling]
+[profile.fastdev]
 inherits = "release"
 debug = true
