@@ -74,3 +74,15 @@ fn incomplete_match_normalization_and_codegen_return_errors() {
     }
     assert!(BindingMap::new(FIRST_NORMAL).value_to_code(&value).is_err());
 }
+
+#[test]
+fn malformed_matches_fail_normalization_before_type_access() {
+    let empty = AcornValue::Match(Box::new(AcornValue::Bool(true)), vec![]);
+    for value in [
+        empty.clone(),
+        AcornValue::new_equals(AcornValue::Bool(false), empty),
+    ] {
+        assert!(matches!(Normalizer::new().normalize(&value, false),
+            Normalization::Error(message) if message.contains("at least one case")));
+    }
+}
