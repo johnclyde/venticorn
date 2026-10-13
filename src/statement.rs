@@ -1,3 +1,5 @@
+// Modified for Venticorn.
+
 use tower_lsp::lsp_types::Range;
 
 use crate::expression::{Declaration, Expression, Terminator};
@@ -1566,6 +1568,22 @@ mod tests {
         fo(fum)
         "},
             "unexpected token",
+        );
+    }
+
+    #[test]
+    fn test_match_statement_requires_parser_support() {
+        fail_with(
+            indoc! {"
+            match x {
+                Foo.bar {
+                    baz
+                }
+                Foo.qux {
+                    zip
+                }
+            }"},
+            "unexpected token at the top level",
         );
     }
 }
