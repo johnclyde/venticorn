@@ -773,12 +773,7 @@ impl LanguageServer for LazyBackend {
                     })?;
                     Project::new_from_directory_search(&path)
                 }
-                .map_err(|error| {
-                    jsonrpc::Error::invalid_params(format!(
-                        "cannot initialize language server: {}",
-                        error
-                    ))
-                })?;
+                .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?;
                 Ok::<_, jsonrpc::Error>(Backend::new(self.client.clone(), project))
             })
             .await?;
