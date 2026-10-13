@@ -1,2 +1,5 @@
+# Modified for Venticorn.
 node_modules/
 out/
+build/*
+!build/README.md
