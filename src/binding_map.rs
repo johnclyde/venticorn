@@ -1374,6 +1374,7 @@ impl BindingMap {
                     self.evaluate_value_with_stack(stack, project, scrutinee_exp, None)?;
                 let scrutinee_type = scrutinee.get_type();
                 let mut cases = vec![];
+                let mut result_type = expected_type.cloned();
                 let mut indices = vec![];
                 let mut all_cases = false;
                 for (pattern_exp, result_exp) in case_exps {
@@ -1393,12 +1394,19 @@ impl BindingMap {
                     let evaluated = (|| {
                         let pattern =
                             self.evaluate_value_with_stack(stack, project, pattern_exp, None)?;
-                        let result =
-                            self.evaluate_value_with_stack(stack, project, result_exp, None)?;
+                        let result = self.evaluate_value_with_stack(
+                            stack,
+                            project,
+                            result_exp,
+                            result_type.as_ref(),
+                        )?;
                         Ok::<_, Error>((pattern, result))
                     })();
                     stack.remove_all(&arg_names);
                     let (pattern, result) = evaluated?;
+                    if result_type.is_none() {
+                        result_type = Some(result.get_type());
+                    }
                     cases.push((arg_types, pattern, result));
                 }
                 if !all_cases {
@@ -1407,10 +1415,7 @@ impl BindingMap {
                         "not all constructors are covered in this match",
                     ));
                 }
-                Err(Error::new(
-                    expression.token(),
-                    "match expression evaluation is not supported yet",
-                ))
+                Ok(AcornValue::Match(Box::new(scrutinee), cases))
             }
         }
     }

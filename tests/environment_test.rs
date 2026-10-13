@@ -1215,11 +1215,10 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
             }
             "#,
         );
-        let error = env
-            .add_tokens(
-                &mut Project::new_mock(),
-                venticorn::token::Token::scan(
-                    r#"
+        env.add_tokens(
+            &mut Project::new_mock(),
+            venticorn::token::Token::scan(
+                r#"
             define foo(f: Foo) -> Bool {
                 match f {
                     Foo.bar(b) {
@@ -1231,12 +1230,9 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
                 }
             }
         "#,
-                ),
-            )
-            .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("match expression evaluation is not supported yet"));
+            ),
+        )
+        .unwrap();
     }
     #[test]
     fn test_match_pattern_with_no_args() {
@@ -1249,11 +1245,10 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
             }
             "#,
         );
-        let error = env
-            .add_tokens(
-                &mut Project::new_mock(),
-                venticorn::token::Token::scan(
-                    r#"
+        env.add_tokens(
+            &mut Project::new_mock(),
+            venticorn::token::Token::scan(
+                r#"
             define foo(f: Foo) -> Bool {
                 match f {
                     Foo.bar(b) {
@@ -1265,12 +1260,9 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
                 }
             }
         "#,
-                ),
-            )
-            .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("match expression evaluation is not supported yet"));
+            ),
+        )
+        .unwrap();
     }
 
     #[test]

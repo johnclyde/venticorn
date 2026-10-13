@@ -1325,13 +1325,33 @@ impl AcornValue {
                 else_value.validate_against_stack(stack)
             }
             AcornValue::Match(scrutinee, cases) => {
+                if cases.is_empty() {
+                    return Err("match must contain at least one case".to_string());
+                }
                 scrutinee.validate_against_stack(stack)?;
+                let scrutinee_type = scrutinee.get_type();
+                let mut result_type = None;
                 for (new_vars, pattern, result) in cases {
                     let original_len = stack.len();
                     stack.extend(new_vars.iter().cloned());
-                    pattern.validate_against_stack(stack)?;
-                    result.validate_against_stack(stack)?;
+                    let checked = pattern
+                        .validate_against_stack(stack)
+                        .and_then(|_| result.validate_against_stack(stack));
                     stack.truncate(original_len);
+                    checked?;
+                    if pattern.get_type() != scrutinee_type {
+                        return Err(
+                            "match pattern has a different type from its scrutinee".to_string()
+                        );
+                    }
+                    let current_type = result.get_type();
+                    if let Some(expected) = &result_type {
+                        if expected != &current_type {
+                            return Err("match cases must have the same result type".to_string());
+                        }
+                    } else {
+                        result_type = Some(current_type);
+                    }
                 }
                 Ok(())
             }
