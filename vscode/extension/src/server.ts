@@ -35,6 +35,13 @@ async function isCachedServer(serverPath: string): Promise<boolean> {
   }
 }
 
+async function ensureExecutable(serverPath: string): Promise<void> {
+  // Windows does not use POSIX executable bits; chmod can fail on its filesystems.
+  if (os.platform() !== "win32") {
+    await fs.promises.chmod(serverPath, 0o755);
+  }
+}
+
 export async function getServerPath(context: ExtensionContext): Promise<string> {
   if (process.env.SERVER_PATH !== undefined) {
     if (!process.env.SERVER_PATH.trim()) {
@@ -45,6 +52,7 @@ export async function getServerPath(context: ExtensionContext): Promise<string> 
   const asset = serverAsset(context.extension.packageJSON.version);
   const serverPath = path.join(context.globalStorageUri.fsPath, "bin", asset);
   if (await isCachedServer(serverPath)) {
+    await ensureExecutable(serverPath);
     return serverPath;
   }
   let pending = downloads.get(serverPath);
@@ -54,6 +62,7 @@ export async function getServerPath(context: ExtensionContext): Promise<string> 
         await fs.promises.mkdir(path.dirname(serverPath), { recursive: true });
         const url = `https://github.com/johnclyde/venticorn/releases/download/v${context.extension.packageJSON.version}/${asset}`;
         await downloadServer(url, serverPath);
+        await ensureExecutable(serverPath);
         return serverPath;
       } catch (error) {
         throw new Error(`Could not prepare ${asset}: ${(error as Error).message}. ${localBuildHelp}`);
