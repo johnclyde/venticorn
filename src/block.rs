@@ -1,3 +1,5 @@
+// Modified for Venticorn.
+
 use std::collections::HashMap;
 use std::fmt;
 
@@ -323,7 +325,7 @@ impl Node {
                     &env.bindings
                 } else {
                     &project
-                        .get_env(module_id)
+                        .get_env_by_id(module_id)
                         .expect("missing module during add_proposition")
                         .bindings
                 };
