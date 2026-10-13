@@ -75,3 +75,10 @@ fn alternating_argument_decreases_do_not_prove_termination() {
         }
     "#);
 }
+
+#[test]
+fn contradictory_self_recursion_is_rejected() {
+    let mut env = Environment::new_test();
+    reject(&mut env, "define loop(a: Bool) -> Bool { not loop(a) }");
+    assert!(!env.bindings.has_identifier("loop"));
+}
