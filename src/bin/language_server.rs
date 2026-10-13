@@ -214,9 +214,9 @@ struct Backend {
 }
 
 impl Backend {
-    fn new(client: Client) -> Backend {
+    fn new(client: Client, project: Project) -> Backend {
         Backend {
-            project: Arc::new(RwLock::new(Project::new("math"))),
+            project: Arc::new(RwLock::new(project)),
             client,
             progress: Arc::new(Mutex::new(ProgressResponse::default())),
             documents: DashMap::new(),
@@ -758,15 +758,23 @@ impl LanguageServer for Backend {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> std::process::ExitCode {
+    let project = match Project::from_library() {
+        Ok(project) => project,
+        Err(error) => {
+            log(&format!("cannot start language server: {}", error));
+            return std::process::ExitCode::FAILURE;
+        }
+    };
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::build(Backend::new)
+    let (service, socket) = LspService::build(|client| Backend::new(client, project))
         .custom_method("acorn/info", Backend::handle_info_request)
         .custom_method("acorn/progress", Backend::handle_progress_request)
         .custom_method("acorn/search", Backend::handle_search_request)
         .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
+    std::process::ExitCode::SUCCESS
 }
