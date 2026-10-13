@@ -31,5 +31,6 @@ python3 tests/language_server_test.py
   cd vscode/info
   npm ci --no-audit --no-fund
   npm run check
+  npm test
   npm run build
 )

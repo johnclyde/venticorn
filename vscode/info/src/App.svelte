@@ -6,6 +6,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Goal from "./Goal.svelte";
+  import ProofStatus from "./ProofStatus.svelte";
   import ProofStep from "./ProofStep.svelte";
 
   // These are updated to reflect the last valid responses from the extension.
@@ -87,10 +88,6 @@
     });
   }
 
-  function spaces(n: number): string {
-    return "\u00A0".repeat(n);
-  }
-
   function clauseClick(id: number) {
     if (searchResponse === null) {
       return;
@@ -129,29 +126,7 @@
     <Goal {searchResponse} {showLocation} />
     <hr />
     <br />
-    {#if searchResponse.status.outcome === null}
-      <pre>Working...</pre>
-    {:else if searchResponse.status.outcome === "Inconsistent"}
-      <pre>Local assumptions are inconsistent.</pre>
-      <pre>If this is a proof by contradiction, put a `false` at the end of this block.</pre>
-      <pre>If there shouldn't be a contradiction, please report a bug!</pre>
-    {:else if !searchResponse.status.needsSimplification}
-      <pre>The proposition follows trivially.</pre>
-    {:else if searchResponse.status.code === null}
-      <pre>Error during code generation:</pre>
-      <pre>    {searchResponse.status.codeError}</pre>
-    {:else if searchResponse.status.code.length === 0}
-      <pre>We found a proof, but it needs to be simplified, and we couldn't
-           decide how to simplify it. Sorry!</pre>
-    {:else if searchResponse.status.steps === null}
-      <pre>We could not find a proof.</pre>
-    {:else}
-      <pre>{["The proof needs to be simplified. Try this:\n"]
-          .concat(searchResponse.status.code)
-          .join("\n\t")
-          .replace(/\t/g, spaces(4))}</pre>
-      <button on:click={insertProof}>Insert code</button>
-    {/if}
+    <ProofStatus status={searchResponse.status} on:click={insertProof} />
 
     {#if searchResponse.status.steps !== null}
       <div class="mono">
