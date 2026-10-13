@@ -5,13 +5,22 @@ Venticorn verifies `.ac` files and displays proof-search results in the editor. 
 
 ## Try a first proof
 
+Run **Venticorn: New Venticorn File** from the command palette, or open an existing `.ac` file.
+Untitled documents use the right language mode; verification and proof search begin after saving.
 Once the language server is available, save a file named `hello.ac` containing:
 
 ```acorn
 theorem identity(value: Bool) { value = value }
 ```
 
-Saving runs verification. Place the cursor on the proposition and run **Venticorn: Assistant: Display** from the command palette, or press **Ctrl+Enter** (**Cmd+Enter** on macOS). The Assistant shows the proof-search result and can insert generated proof code when available. Saved `.ac` files work even outside a workspace; imports use the selected library.
+Saving runs verification. Once the server starts, the Assistant opens beside the first visible saved
+proof file without moving focus out of the editor. Place the cursor on the proposition to inspect its
+proof-search result or insert generated proof code when available. Saved `.ac` files work even outside
+a workspace; imports use the selected library.
+
+If you close the Assistant, reopen it with the small acorn button in the editor title bar,
+**Venticorn: Assistant: Display**, or **Ctrl+Enter** (**Cmd+Enter** on macOS). It stays closed until you
+reopen it or reload the editor window.
 
 ## Language server setup
 
