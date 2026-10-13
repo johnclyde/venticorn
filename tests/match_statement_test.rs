@@ -68,3 +68,49 @@ fn match_statement_checks_its_scrutinee() {
     assert!(error.message.contains("missing"), "{}", error.message);
     assert!(!error.message.contains("not supported yet"));
 }
+
+fn statement_error(env: &mut Environment, source: &str) -> String {
+    let statement = Statement::parse_str(source).unwrap();
+    env.add_statement(&mut Project::new_mock(), &statement)
+        .unwrap_err()
+        .message
+}
+
+#[test]
+fn match_statement_requires_every_constructor() {
+    let mut env = fixture();
+    let error = statement_error(&mut env, "match f { Foo.baz { true } }");
+    assert!(error.contains("not all cases are covered"), "{error}");
+}
+
+#[test]
+fn match_statement_rejects_duplicate_cases_even_after_complete_coverage() {
+    let mut env = fixture();
+    let error = statement_error(
+        &mut env,
+        "match f { Foo.bar(first) { true } Foo.baz { true } Foo.bar(last) { false } }",
+    );
+    assert!(error.contains("duplicate pattern"), "{error}");
+    assert!(!env.bindings.has_identifier("first"));
+    assert!(!env.bindings.has_identifier("last"));
+}
+
+#[test]
+fn match_statement_patterns_must_be_constructors() {
+    let mut env = fixture();
+    let error = statement_error(&mut env, "match f { f { true } }");
+    assert!(error.contains("expected a constructor"), "{error}");
+}
+
+#[test]
+fn match_statement_patterns_reject_invalid_or_existing_names() {
+    let mut env = fixture();
+    for source in [
+        "match f { Foo.bar(true) { true } Foo.baz { true } }",
+        "match f { Foo.bar(f) { true } Foo.baz { true } }",
+        "match f { Foo.bar { true } Foo.baz { true } }",
+    ] {
+        let error = statement_error(&mut env, source);
+        assert!(!error.contains("not supported yet"), "{source}: {error}");
+    }
+}
