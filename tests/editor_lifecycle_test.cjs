@@ -167,3 +167,16 @@ test("the configured executable is used without copying it into the extension", 
   assert.equal(extension.state.serverOptions.debug.command, command);
   await extension.deactivate();
 });
+
+
+test("the extracted search panel does not send requests after its client stops", async () => {
+  const extension = loadExtension();
+  await extension.activate(extension.context);
+  const panel = extension.context.subscriptions.find((value) => typeof value.sendSearchRequest === "function");
+  assert.ok(panel);
+  extension.state.client.running = false;
+  await panel.sendSearchRequest({ id: 1, uri: "file:///proof.ac", version: 1, selectedLine: 0 });
+  await panel.handleWebviewMessage({ command: "infoRequest", params: { clauseId: 1 } });
+  assert.equal(extension.state.requests, 0);
+  panel.dispose();
+});
