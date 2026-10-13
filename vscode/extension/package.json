@@ -99,6 +99,8 @@
     "images/**",
     "LICENSE",
     "NOTICE",
-    "README.md"
-  ]
+    "README.md",
+    "node_modules/**"
+  ],
+  "publisher": "johnclyde"
 }

@@ -164,6 +164,27 @@ Every release pairs a language server and an extension at the same version, even
 
 Publish and verify the server assets before publishing the extension that requests that version. Use a release tag of `v` followed by `VERSION`; server assets are named `venticornserver-vVERSION-linux-x64`, `venticornserver-vVERSION-win32-x64.exe`, and `venticornserver-vVERSION-darwin-arm64`, replacing `VERSION` with its actual value. An extension-only release could otherwise request a server artifact that does not exist. Local build and version commands never create tags, releases, or marketplace uploads.
 
+## Prepare release artifacts locally
+
+Build all three server targets first. The upload helper checks the complete set before doing anything, and uses the exact versioned asset names expected by the extension:
+
+```sh
+./publish.sh --dry-run   # Default: validate paths and print the upload plan.
+./publish.sh --stage     # Copy only those binaries into files/release/vVERSION.
+```
+
+After deliberately creating a release with the matching tag, `./publish.sh --upload` uploads the staged assets to `johnclyde/venticorn` using authenticated GitHub CLI access. It does not create releases or replace existing assets. Version checks and missing or empty target binaries stop the command before any upload. These commands do not publish the editor extension.
+
+Build a local VSIX with Node.js 22 and the pinned packaging tool:
+
+```sh
+VSCE_TOOLS="$(mktemp -d)"
+npm install --prefix "$VSCE_TOOLS" @vscode/vsce@4.0.0 --no-audit --no-fund
+VSCE="$VSCE_TOOLS/node_modules/.bin/vsce" ./package.sh
+```
+
+`package.sh` checks synchronized versions, rebuilds the extension and search UI, and creates `files/release/venticorn-extension-VERSION.vsix`. It then unpacks that archive, verifies runtime dependencies and license notices, excludes development tools and server binaries, and loads the compiled extension with a VS Code host stub. The command does not publish to a marketplace. Install the two project npm dependency sets before running it, as described above. Generated release files are ignored by Git.
+
 ## Optional model training
 
 See [the Python tooling instructions](python/README.md). Training requires separate Python dependencies, a generated dataset, and the CUDA-capable PyTorch setup used by the training configuration. Update `python/config.py` to point to your dataset before running the notebooks. These tools are not needed to verify theorems or use the editor.
@@ -172,7 +193,7 @@ See [the Python tooling instructions](python/README.md). Training requires separ
 
 The default ONNX model is embedded in the executables at compile time, so inference does not need a model file or the original checkout at runtime. See [the model notes](files/models/README.md) before replacing the bundled model. If the embedded model cannot be initialized, the default scorer reports the error and uses the built-in heuristic. Dataset export still writes into the compilation checkout's `files/datasets` directory; keep that directory available when exporting training data.
 
-The extension manifest includes generated build assets, language definitions, artwork, and license notices in its package file list. You can inspect that list locally with `(cd vscode/extension && npm pack --dry-run --ignore-scripts)`; this does not publish a package.
+The extension package includes generated build assets, production Node.js dependencies, language definitions, artwork, and license notices. Validate the actual VSIX with `package.sh`; an npm package listing alone does not verify an installed VS Code extension.
 
 The extension includes its compiled code and proof-search webview under `vscode/extension/build`. Build both before inspecting the package: `npm --prefix vscode/extension run compile` and `npm --prefix vscode/search run build`. The Vite build clears only `build/search`, preserving the compiled extension code. The language server requires the configured `SERVER_PATH` and a library directory, but its embedded model allows the executable to run after relocation. If you move the checkout, update any explicit executable or library paths used by your editor. Source builds and the local workflow are currently the supported setup.
 
