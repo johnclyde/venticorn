@@ -1937,13 +1937,17 @@ impl AcornValue {
         }
     }
 
+    pub fn as_name(&self) -> Option<(ModuleId, &str)> {
+        match self {
+            AcornValue::Constant(module, name, _, _)
+            | AcornValue::Specialized(module, name, _, _) => Some((*module, name)),
+            _ => None,
+        }
+    }
+
     pub fn is_named_function_call(&self) -> Option<(ModuleId, &str)> {
         match self {
-            AcornValue::Application(fa) => match &*fa.function {
-                AcornValue::Constant(module, name, _, _) => Some((*module, name)),
-                AcornValue::Specialized(module, name, _, _) => Some((*module, name)),
-                _ => None,
-            },
+            AcornValue::Application(app) => app.function.as_name(),
             _ => None,
         }
     }
