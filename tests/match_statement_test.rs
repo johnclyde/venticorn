@@ -114,3 +114,21 @@ fn match_statement_patterns_reject_invalid_or_existing_names() {
         assert!(!error.contains("not supported yet"), "{source}: {error}");
     }
 }
+
+#[test]
+fn pattern_evaluation_returns_the_nullary_constructor() {
+    use venticorn::expression::Expression;
+    let env = fixture();
+    let pattern = Expression::expect_value("Foo.baz");
+    let foo = env.bindings.get_type_for_name("Foo").unwrap();
+    let (constructor, args, index, total) = env
+        .bindings
+        .evaluate_pattern(&Project::new_mock(), foo, &pattern)
+        .unwrap();
+    assert_eq!(
+        constructor,
+        env.bindings.get_constant_value("Foo.baz").unwrap()
+    );
+    assert!(args.is_empty());
+    assert_eq!((index, total), (1, 2));
+}

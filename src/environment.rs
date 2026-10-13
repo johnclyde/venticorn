@@ -1410,7 +1410,7 @@ impl Environment {
                 let mut indices = vec![];
                 let mut all_cases = false;
                 for (pattern, _) in &ms.cases {
-                    let (_, index, total) =
+                    let (_, _, index, total) =
                         self.bindings
                             .evaluate_pattern(project, &scrutinee_type, pattern)?;
                     if indices.contains(&index) {

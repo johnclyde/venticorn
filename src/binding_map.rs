@@ -606,6 +606,7 @@ impl BindingMap {
     // Evaluates a pattern match. Infers their types from the pattern.
     // Returns an error if the pattern is not a constructor of the expected type.
     // Returns:
+    //   the constructor value
     //   a list of (name, type) pairs
     //   the index of which constructor this is
     //   the total number of constructors
@@ -614,26 +615,26 @@ impl BindingMap {
         project: &Project,
         expected_type: &AcornType,
         pattern: &Expression,
-    ) -> token::Result<(Vec<(String, AcornType)>, usize, usize)> {
+    ) -> token::Result<(AcornValue, Vec<(String, AcornType)>, usize, usize)> {
         let token = pattern.token();
         let (fn_exp, args) = match pattern {
             Expression::Apply(function, args) => (function, args),
             _ => {
                 // This could be a no-argument constructor.
-                let pattern_val = self.evaluate_value(project, pattern, None)?;
+                let constructor = self.evaluate_value(project, pattern, None)?;
                 let (i, total) =
-                    self.expect_constructor(project, expected_type, &pattern_val, token)?;
-                let pattern_type = pattern_val.get_type();
+                    self.expect_constructor(project, expected_type, &constructor, token)?;
+                let pattern_type = constructor.get_type();
                 if pattern_type.is_functional() {
                     return Err(Error::new(token, "constructor requires arguments"));
                 }
                 check_type(token, Some(expected_type), &pattern_type)?;
-                return Ok((vec![], i, total));
+                return Ok((constructor, vec![], i, total));
             }
         };
-        let fn_value = self.evaluate_value(project, fn_exp, None)?;
-        let (i, total) = self.expect_constructor(project, expected_type, &fn_value, token)?;
-        let fn_type = fn_value.get_type();
+        let constructor = self.evaluate_value(project, fn_exp, None)?;
+        let (i, total) = self.expect_constructor(project, expected_type, &constructor, token)?;
+        let fn_type = constructor.get_type();
         let arg_types = match fn_type {
             AcornType::Function(f) => {
                 if &*f.return_type != expected_type {
@@ -684,7 +685,7 @@ impl BindingMap {
             }
             args.push((name, arg_type));
         }
-        Ok((args, i, total))
+        Ok((constructor, args, i, total))
     }
 
     // This function evaluates numbers when we already know what type they are.
@@ -1362,7 +1363,7 @@ impl BindingMap {
                 let mut indices = vec![];
                 let mut all_cases = false;
                 for (pattern_exp, result_exp) in case_exps {
-                    let (args, i, total) =
+                    let (_, args, i, total) =
                         self.evaluate_pattern(project, &scrutinee_type, pattern_exp)?;
                     // Check every outer-scope conflict before binding any case locals.
                     for (name, _) in &args {
@@ -2049,7 +2050,7 @@ mod tests {
         env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
         let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
         let expression = Expression::expect_value("Foo.pair(left, right)");
-        let (args, index, total) = env
+        let (constructor, args, index, total) = env
             .bindings
             .evaluate_pattern(&Project::new_mock(), &foo, &expression)
             .unwrap();
@@ -2061,6 +2062,10 @@ mod tests {
             ]
         );
         assert_eq!((index, total), (1, 2));
+        assert_eq!(
+            constructor,
+            env.bindings.get_constant_value("Foo.pair").unwrap()
+        );
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
     }
@@ -2099,7 +2104,7 @@ mod tests {
         let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
         let project = Project::new_mock();
         let pattern = Expression::expect_value("Foo.pair(left, right)");
-        let (args, index, total) = env
+        let (constructor, args, index, total) = env
             .bindings
             .evaluate_pattern(&project, &foo, &pattern)
             .unwrap();
@@ -2111,6 +2116,10 @@ mod tests {
             ]
         );
         assert_eq!((index, total), (1, 2));
+        assert_eq!(
+            constructor,
+            env.bindings.get_constant_value("Foo.pair").unwrap()
+        );
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
         for invalid in [
