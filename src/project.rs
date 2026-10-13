@@ -20,9 +20,10 @@ use crate::token::{self, Token};
 
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
-    // The root directory of the project
+    // The root directory of the library, used to resolve imports.
+    // This may differ from the workspace being edited.
     // Set to "/mock" for mock projects.
-    root: PathBuf,
+    library_root: PathBuf,
 
     // Whether we permit loading files from the filesystem
     use_filesystem: bool,
@@ -127,12 +128,12 @@ impl Project {
             d.push(root);
             d
         };
-        Self::with_root(root)
+        Self::with_library_root(root)
     }
 
-    fn with_root(root: PathBuf) -> Project {
+    fn with_library_root(library_root: PathBuf) -> Project {
         Project {
-            root,
+            library_root,
             use_filesystem: true,
             open_files: HashMap::new(),
             modules: new_modules(),
@@ -179,7 +180,7 @@ impl Project {
                 root.display()
             )));
         }
-        Ok(Self::with_root(root.canonicalize()?))
+        Ok(Self::with_library_root(root.canonicalize()?))
     }
 
     // An explicit library takes precedence. Relative overrides use the process directory.
@@ -260,9 +261,11 @@ impl Project {
         }
         // Leave exercises under a problems directory out of verification for now.
         // The project root itself may have any name.
-        let entries = WalkDir::new(&self.root).into_iter().filter_entry(|entry| {
-            entry.depth() == 0 || !entry.file_type().is_dir() || entry.file_name() != "problems"
-        });
+        let entries = WalkDir::new(&self.library_root)
+            .into_iter()
+            .filter_entry(|entry| {
+                entry.depth() == 0 || !entry.file_type().is_dir() || entry.file_name() != "problems"
+            });
         for entry in entries {
             let entry = entry.map_err(|error| LoadError(error.to_string()))?;
             if entry.file_type().is_file() {
@@ -606,7 +609,7 @@ impl Project {
                 path.display()
             )));
         }
-        let relative = match path.strip_prefix(&self.root) {
+        let relative = match path.strip_prefix(&self.library_root) {
             Ok(relative) => relative,
             Err(_) => return Ok(ModuleRef::File(path.to_path_buf())),
         };
@@ -638,7 +641,7 @@ impl Project {
     }
 
     pub fn path_from_module_name(&self, module_name: &str) -> Result<PathBuf, LoadError> {
-        let mut path = self.root.clone();
+        let mut path = self.library_root.clone();
         let parts: Vec<&str> = module_name.split('.').collect();
 
         for (i, part) in parts.iter().enumerate() {
