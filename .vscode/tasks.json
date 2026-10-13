@@ -1,4 +1,4 @@
-// Modified for Venticorn: use locked dependencies for local builds.
+// Modified for Venticorn: locked local builds and portable asset staging.
 {
   "version": "2.0.0",
   "tasks": [
@@ -17,7 +17,9 @@
         "panel": "dedicated",
         "reveal": "silent"
       },
-      "problemMatcher": ["$tsc"]
+      "problemMatcher": [
+        "$tsc"
+      ]
     },
     {
       "label": "extension: npm watch",
@@ -35,7 +37,9 @@
         "panel": "dedicated",
         "reveal": "never"
       },
-      "problemMatcher": ["$tsc-watch"]
+      "problemMatcher": [
+        "$tsc-watch"
+      ]
     },
     {
       "label": "search: npm build",
@@ -52,13 +56,19 @@
         "panel": "dedicated",
         "reveal": "silent"
       },
-      "problemMatcher": ["$tsc"]
+      "problemMatcher": [
+        "$tsc"
+      ]
     },
     {
-      "label": "cargo build",
+      "label": "language server: cargo build",
       "type": "shell",
       "command": "cargo",
-      "args": ["build", "--locked", "--release"],
+      "args": [
+        "build",
+        "--locked",
+        "--release"
+      ],
       "group": {
         "kind": "build",
         "isDefault": true
@@ -70,11 +80,21 @@
       "problemMatcher": []
     },
     {
+      "label": "language server: copy executable",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/scripts/copy-language-server.cjs"
+      ],
+      "dependsOn": "language server: cargo build",
+      "problemMatcher": []
+    },
+    {
       "label": "build all",
       "dependsOn": [
         "extension: npm compile",
         "search: npm build",
-        "cargo build"
+        "language server: copy executable"
       ],
       "dependsOrder": "parallel"
     }

@@ -75,7 +75,7 @@ export VENTICORN_LIBRARY=/absolute/path/to/your/library
 code .
 ```
 
-If an existing VS Code process does not inherit that environment, close it and launch it again from this terminal. Open this repository as the workspace and press F5 with **Launch Extension Host** selected. The prelaunch task builds the Rust release binaries, compiles the extension into `vscode/extension/build/extension`, and builds the proof-search UI. The launch configuration sets `SERVER_PATH` to this checkout's `target/release/language_server`; the extension host inherits `VENTICORN_LIBRARY` from VS Code.
+If an existing VS Code process does not inherit that environment, close it and launch it again from this terminal. Open this repository as the workspace and press F5 with **Launch Extension Host** selected. The prelaunch task builds the Rust release binaries, compiles the extension into `vscode/extension/build/extension`, and builds the proof-search UI. The prelaunch task stages `target/release/language_server` (`language_server.exe` on Windows) in the extension's `build` directory, where the extension starts it. The extension host inherits `VENTICORN_LIBRARY` from VS Code.
 
 In the new Extension Development Host window, open your library directory and an `.ac` file. Saving a document runs verification. Place the cursor on a proposition and use **Venticorn: Search Panel: Display** from the command palette to inspect proof search. The `.ac` extension and existing language and command identifiers remain compatible.
 
@@ -95,6 +95,6 @@ See [the Python tooling instructions](python/README.md). Training requires separ
 
 The model loader reads `files/models/model-*.onnx` from the checkout path embedded at compilation time and chooses the lexicographically latest filename. Dataset export likewise writes into that checkout's `files/datasets` directory. If the model cannot be loaded, the default scorer reports the error and uses the built-in heuristic.
 
-The development extension expects the neighboring `vscode/search/dist` build and the configured `SERVER_PATH`. Keep the checkout and its assets available when running these development binaries; copying a binary or extension folder alone does not create a self-contained installation. Moving the checkout requires rebuilding. Source builds and the local workflow are currently the supported setup.
+The development extension expects the neighboring `vscode/search/dist` build and a language-server binary staged in `vscode/extension/build`. Keep the checkout and its assets available when running these development binaries; copying a binary or extension folder alone does not create a self-contained installation. Moving the checkout requires rebuilding. Source builds and the local workflow are currently the supported setup.
 
 License and attribution information is retained in [LICENSE](LICENSE) and [NOTICE](NOTICE).

@@ -6,7 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-function loadExtension({ failInitialization = false, serverPath = "/server" } = {}) {
+function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform } = {}) {
   const state = {
     notifications: [], logs: [], commands: [], save: [], open: [],
     starts: 0, stops: 0, requests: 0, client: undefined,
@@ -41,6 +41,7 @@ function loadExtension({ failInitialization = false, serverPath = "/server" } = 
   };
   class FakeLanguageClient {
     constructor(_id, _name, _serverOptions, options) {
+      state.serverOptions = _serverOptions;
       this.options = options;
       this.running = false;
       state.client = this;
@@ -84,7 +85,8 @@ function loadExtension({ failInitialization = false, serverPath = "/server" } = 
     exports: exported,
     require: (name) => name === "vscode" ? vscode
       : name === "vscode-languageclient/node" ? clientApi : require(name),
-    process: { env: serverPath ? { SERVER_PATH: serverPath } : {} },
+    process: { env: serverPath ? { SERVER_PATH: serverPath } : {}, platform },
+    __dirname: path.dirname(path.join(extensionRoot, manifest.main)),
     console: { log() {}, warn() {}, error() {} },
     setTimeout,
   });
@@ -142,11 +144,15 @@ test("deactivation stops a running client and disposes an unopened search panel"
   for (const subscription of extension.context.subscriptions) subscription.dispose();
 });
 
-test("a missing executable setting does not register proof-search commands", async () => {
-  const extension = loadExtension({ serverPath: null });
-  await extension.activate(extension.context);
-  assert.equal(extension.state.starts, 0);
-  assert.deepEqual(extension.state.commands, []);
-  assert.deepEqual(extension.state.notifications, ["The SERVER_PATH environment variable is not defined."]);
-  await extension.deactivate();
+test("the bundled server path uses the platform executable name", async () => {
+  for (const platform of ["linux", "darwin", "win32"]) {
+    const extension = loadExtension({ serverPath: null, platform });
+    await extension.activate(extension.context);
+    const name = platform === "win32" ? "language_server.exe" : "language_server";
+    assert.equal(extension.state.serverOptions.run.command,
+      path.join(__dirname, "../vscode/extension/build", name));
+    assert.equal(extension.state.starts, 1);
+    assert.equal(extension.state.notifications.length, 0);
+    await extension.deactivate();
+  }
 });

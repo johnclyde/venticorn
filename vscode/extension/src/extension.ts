@@ -518,13 +518,9 @@ export async function activate(context: ExtensionContext) {
   let traceOutputChannel = window.createOutputChannel("Venticorn Language Server");
   context.subscriptions.push(traceOutputChannel);
 
-  let command = process.env.SERVER_PATH;
-  if (!command) {
-    window.showErrorMessage(
-      "The SERVER_PATH environment variable is not defined."
-    );
-    return;
-  }
+  // Compiled extension code is in build/extension, beside the staged server.
+  const serverName = process.platform === "win32" ? "language_server.exe" : "language_server";
+  let command = path.join(__dirname, "..", serverName);
 
   let exec: Executable = {
     command,
