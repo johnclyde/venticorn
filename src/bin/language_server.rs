@@ -15,8 +15,8 @@ use venticorn::interfaces::{
     InfoParams, InfoResponse, ProgressParams, ProgressResponse, SearchParams, SearchResponse,
     SearchStatus,
 };
-use venticorn::module::Module;
-use venticorn::project::{ModuleRef, Project};
+use venticorn::module::{Module, ModuleRef};
+use venticorn::project::Project;
 use venticorn::prover::{Outcome, Prover};
 use venticorn::token::Token;
 
