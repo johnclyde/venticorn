@@ -100,10 +100,13 @@ class LanguageServerTest(unittest.TestCase):
             return "".join(errors)
 
     def test_initialize_with_workspace(self):
-        self.initialize_and_shutdown(self.library.as_uri())
+        root = self.library.as_uri()
+        stderr = self.initialize_and_shutdown(root)
+        self.assertIn(f"initializing with root {root}", stderr)
 
     def test_initialize_without_workspace(self):
-        self.initialize_and_shutdown(None)
+        stderr = self.initialize_and_shutdown(None)
+        self.assertIn("initializing with no root", stderr)
 
     def test_missing_library_reports_error_without_protocol_output(self):
         self.environment["VENTICORN_LIBRARY"] = str(self.library / "missing")
