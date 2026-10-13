@@ -67,6 +67,36 @@ class CrossbuildTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'x64 PE'):
                 build.validate_artifact('x86_64-pc-windows-msvc', executable)
 
+    def test_macos_build_preserves_flags_without_static_crt(self):
+        with patch.dict(os.environ, {"CARGO_ENCODED_RUSTFLAGS": "-C\x1fdebuginfo=1"}, clear=True):
+            native, env, _ = build.build_plan('aarch64-apple-darwin', 'aarch64-apple-darwin')
+            cross, _, _ = build.build_plan('aarch64-apple-darwin', LINUX)
+        self.assertEqual(native[1], 'build')
+        self.assertEqual(cross[1], 'zigbuild')
+        self.assertEqual(env['CARGO_ENCODED_RUSTFLAGS'], '-C\x1fdebuginfo=1')
+
+    def test_macos_crossbuild_rejects_unconfigured_sdk(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(build, 'require_tool'):
+            with self.assertRaisesRegex(ValueError, 'SDKROOT'):
+                build.preflight('aarch64-apple-darwin', LINUX)
+
+    def test_macos_artifact_architecture_and_dependencies(self):
+        with tempfile.TemporaryDirectory() as folder:
+            executable = Path(folder) / 'venticornserver'
+            for name, valid in [(b'/usr/lib/libSystem.B.dylib', True),
+                                (b'@rpath/libonnxruntime.dylib', False)]:
+                command = struct.pack('<IIIIII', 0xC, 25 + len(name), 24, 0, 0, 0) + name + b'\0'
+                header = struct.pack('<IIIIIIII', 0xFEEDFACF, 0x0100000C, 0, 2, 1, len(command), 0, 0)
+                executable.write_bytes(header + command)
+                if valid:
+                    build.validate_artifact('aarch64-apple-darwin', executable)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'non-system library'):
+                        build.validate_artifact('aarch64-apple-darwin', executable)
+            executable.write_bytes(b'not a Mach-O executable')
+            with self.assertRaisesRegex(ValueError, 'ARM Mach-O'):
+                build.validate_artifact('aarch64-apple-darwin', executable)
+
     def test_missing_artifact_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaisesRegex(ValueError, 'expected artifact'):

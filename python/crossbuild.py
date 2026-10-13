@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {
     "x86_64-unknown-linux-gnu": ("linux-x64", "venticornserver"),
     "x86_64-pc-windows-msvc": ("win32-x64", "venticornserver.exe"),
+    "aarch64-apple-darwin": ("darwin-arm64", "venticornserver"),
 }
 
 
@@ -46,7 +47,9 @@ def build_plan(target, host, no_default_features=False):
     if rustflags is None:
         # Cargo's plain RUSTFLAGS format is whitespace-separated.
         rustflags = '\x1f'.join(env.get("RUSTFLAGS", "").split())
-    env["CARGO_ENCODED_RUSTFLAGS"] = rustflags + ('\x1f' if rustflags else '') + "-C\x1ftarget-feature=+crt-static"
+    if target != "aarch64-apple-darwin":
+        rustflags += ('\x1f' if rustflags else '') + "-C\x1ftarget-feature=+crt-static"
+    env["CARGO_ENCODED_RUSTFLAGS"] = rustflags
     env.pop("RUSTFLAGS", None)
     if target == "x86_64-pc-windows-msvc" and target != host:
         env["CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER"] = env.get(
@@ -55,6 +58,8 @@ def build_plan(target, host, no_default_features=False):
             root = Path(env["XWIN_ROOT"]).expanduser().resolve()
             for directory in ("crt/lib/x86_64", "sdk/lib/um/x86_64", "sdk/lib/ucrt/x86_64"):
                 env["CARGO_ENCODED_RUSTFLAGS"] += "\x1f-Lnative=" + str(root / directory)
+    if target == "aarch64-apple-darwin" and not host.endswith("-apple-darwin"):
+        command[1] = "zigbuild"
     # A fixed output path is part of the release-staging contract.
     env["CARGO_TARGET_DIR"] = str(ROOT / "target")
     output = ROOT / "target" / target / "release" / TARGETS[target][1]
@@ -82,6 +87,19 @@ def preflight(target, host):
                 if not (root / directory).is_dir():
                     raise ValueError(f"Windows SDK library directory is missing: {root / directory}")
             require_tool(os.environ.get("CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER", "lld-link"))
+    elif target == "aarch64-apple-darwin":
+        if host.endswith("-apple-darwin"):
+            require_tool("xcrun")
+            sdk = Path(run(["xcrun", "--show-sdk-path"]).stdout.strip())
+        else:
+            require_tool("cargo-zigbuild")
+            require_tool("zig")
+            sdk_text = os.environ.get("SDKROOT")
+            if not sdk_text:
+                raise ValueError("macOS cross-builds require an explicit SDKROOT")
+            sdk = Path(sdk_text).expanduser().resolve()
+        if not (sdk / "usr/lib").is_dir() or not (sdk / "System/Library/Frameworks").is_dir():
+            raise ValueError(f"macOS SDK libraries/frameworks are missing: {sdk}")
     target_lib = Path(run(["rustc", "--print", "target-libdir", "--target", target]).stdout.strip())
     if not target_lib.is_dir():
         raise ValueError(f"Rust standard library is missing for {target}; install that target explicitly")
@@ -101,11 +119,49 @@ def validate_artifact(target, path):
             if signature != b"PE\0\0\x64\x86":
                 raise ValueError("Windows release server must be an x64 PE executable")
         return
+    if target == "aarch64-apple-darwin":
+        validate_macho(path)
+        return
     # Inspect our own ELF output; do not execute a foreign program with ldd.
     headers = run(["readelf", "-l", str(path)]).stdout
     dynamic = run(["readelf", "-d", str(path)]).stdout
     if "INTERP" in headers or "(NEEDED)" in dynamic:
         raise ValueError("Linux release server must be statically linked (ELF interpreter/dependencies found)")
+
+
+def validate_macho(path):
+    """Inspect a thin ARM64 Mach-O and reject non-system dynamic dependencies."""
+    with path.open("rb") as executable:
+        header = executable.read(32)
+        if len(header) != 32 or struct.unpack_from("<II", header) != (0xFEEDFACF, 0x0100000C):
+            raise ValueError("macOS release server must be a 64-bit ARM Mach-O executable")
+        count, size = struct.unpack_from("<II", header, 16)
+        if size > path.stat().st_size - 32:
+            raise ValueError("invalid Mach-O load-command size")
+        commands = executable.read(size)
+    offset = 0
+    dylib_commands = {0xC, 0x80000018, 0x8000001F, 0x20, 0x80000023}
+    for _ in range(count):
+        if offset + 8 > len(commands):
+            raise ValueError("truncated Mach-O load command")
+        command, length = struct.unpack_from("<II", commands, offset)
+        if length < 8 or offset + length > len(commands):
+            raise ValueError("invalid Mach-O load command")
+        if command in dylib_commands:
+            if length < 24:
+                raise ValueError("truncated Mach-O library command")
+            name_offset = struct.unpack_from("<I", commands, offset + 8)[0]
+            if name_offset < 24 or name_offset >= length:
+                raise ValueError("invalid Mach-O library path")
+            name_bytes = commands[offset + name_offset:offset + length]
+            if b"\0" not in name_bytes:
+                raise ValueError("unterminated Mach-O library path")
+            name = name_bytes.split(b"\0", 1)[0].decode("utf-8")
+            if not name.startswith(("/usr/lib/", "/System/Library/")):
+                raise ValueError(f"macOS release server requires a non-system library: {name}")
+        offset += length
+    if offset != len(commands):
+        raise ValueError("Mach-O load commands do not match their declared size")
 
 
 def main():

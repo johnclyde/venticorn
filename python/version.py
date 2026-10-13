@@ -18,11 +18,12 @@ def replace_toml_version(text, section, version):
     pattern = re.compile(r"(?ms)^" + re.escape(section) + r"\s*\n(?P<body>.*?)(?=^\[|\Z)")
     matches = list(pattern.finditer(text))
     if section == "[[package]]":
-        matches = [m for m in matches if re.search(r'^name = "venticorn"$', m['body'], re.M)]
+        matches = [m for m in matches if re.search(r'^name = "venticorn"\r?$', m['body'], re.M)]
     if len(matches) != 1:
         raise ValueError(f"expected exactly one Venticorn {section} section")
     match = matches[0]
-    body, count = re.subn(r'(?m)^version = "[^"]+"$', f'version = "{version}"', match['body'])
+    body, count = re.subn(r'(?m)^version = "[^"]+"(\r?)$',
+                          lambda m: f'version = "{version}"' + m[1], match['body'])
     if count != 1:
         raise ValueError(f"expected exactly one version in {section}")
     return text[:match.start('body')] + body + text[match.end('body'):]
@@ -37,7 +38,11 @@ def release_files(root):
 
 def read_release(root):
     files = release_files(root)
-    contents = [p.read_text(encoding="utf-8") for p in files]
+    contents = []
+    for path in files:
+        # Rollback must preserve original bytes, including Windows line endings.
+        with path.open(encoding="utf-8", newline="") as stream:
+            contents.append(stream.read())
     cargo = tomllib.loads(contents[0])["package"]
     if cargo["name"] != "venticorn":
         raise ValueError("expected the venticorn Cargo package")
