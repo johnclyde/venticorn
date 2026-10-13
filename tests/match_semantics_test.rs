@@ -73,3 +73,16 @@ fn a_constructor_case_cannot_be_repeated_after_coverage_is_complete() {
     );
     assert!(!env.bindings.has_identifier("b"));
 }
+
+#[test]
+fn a_match_result_must_not_violate_the_declared_return_type() {
+    let mut env = Environment::new_test();
+    env.add("inductive Foo {\n bar\n }\n");
+    add(
+        &mut env,
+        "define foo(f: Foo) -> Bool { match f { Foo.bar { Foo.bar } } }",
+    )
+    .expect_err("Foo result must not define a Boolean function");
+    assert!(!env.bindings.has_identifier("foo"));
+    env.add("let foo: Bool = true");
+}
