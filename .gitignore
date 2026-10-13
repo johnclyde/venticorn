@@ -1,5 +1,10 @@
+# Modified for Venticorn.
 /target
 math/foo*
-/files
+/files/datasets/*
+!/files/datasets/README.md
+/files/models/*
+!/files/models/README.md
+!/files/models/model-2024-09-25-15-33-10.onnx
 perf.data*
 profile.json*
