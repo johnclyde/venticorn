@@ -6,11 +6,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import struct
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {
     "x86_64-unknown-linux-gnu": ("linux-x64", "venticornserver"),
+    "x86_64-pc-windows-msvc": ("win32-x64", "venticornserver.exe"),
 }
 
 
@@ -46,6 +48,13 @@ def build_plan(target, host, no_default_features=False):
         rustflags = '\x1f'.join(env.get("RUSTFLAGS", "").split())
     env["CARGO_ENCODED_RUSTFLAGS"] = rustflags + ('\x1f' if rustflags else '') + "-C\x1ftarget-feature=+crt-static"
     env.pop("RUSTFLAGS", None)
+    if target == "x86_64-pc-windows-msvc" and target != host:
+        env["CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER"] = env.get(
+            "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER", "lld-link")
+        if env.get("XWIN_ROOT"):
+            root = Path(env["XWIN_ROOT"]).expanduser().resolve()
+            for directory in ("crt/lib/x86_64", "sdk/lib/um/x86_64", "sdk/lib/ucrt/x86_64"):
+                env["CARGO_ENCODED_RUSTFLAGS"] += "\x1f-Lnative=" + str(root / directory)
     # A fixed output path is part of the release-staging contract.
     env["CARGO_TARGET_DIR"] = str(ROOT / "target")
     output = ROOT / "target" / target / "release" / TARGETS[target][1]
@@ -55,10 +64,24 @@ def build_plan(target, host, no_default_features=False):
 def preflight(target, host):
     require_tool("cargo")
     require_tool("rustc")
-    # Cross compilers and native runtime archives are outside this script's scope.
-    if target != host:
-        raise ValueError(f"{target} requires a native build host; current Rust host is {host}")
-    require_tool("readelf")
+    if target == "x86_64-unknown-linux-gnu":
+        if target != host:
+            raise ValueError(f"{target} requires a native build host; current Rust host is {host}")
+        require_tool("readelf")
+    elif target == "x86_64-pc-windows-msvc":
+        if target == host:
+            require_tool(os.environ.get("CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER", "link.exe"))
+            if not os.environ.get("LIB"):
+                raise ValueError("Windows builds require an MSVC developer shell with SDK LIB paths")
+        else:
+            root_text = os.environ.get("XWIN_ROOT")
+            if not root_text:
+                raise ValueError("Windows cross-builds require an explicit XWIN_ROOT SDK directory")
+            root = Path(root_text).expanduser().resolve()
+            for directory in ("crt/lib/x86_64", "sdk/lib/um/x86_64", "sdk/lib/ucrt/x86_64"):
+                if not (root / directory).is_dir():
+                    raise ValueError(f"Windows SDK library directory is missing: {root / directory}")
+            require_tool(os.environ.get("CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER", "lld-link"))
     target_lib = Path(run(["rustc", "--print", "target-libdir", "--target", target]).stdout.strip())
     if not target_lib.is_dir():
         raise ValueError(f"Rust standard library is missing for {target}; install that target explicitly")
@@ -67,6 +90,17 @@ def preflight(target, host):
 def validate_artifact(target, path):
     if not path.is_file():
         raise ValueError(f"build succeeded without the expected artifact: {path}")
+    if target == "x86_64-pc-windows-msvc":
+        # Validate the actual PE signature and machine rather than asking ldd about Windows.
+        with path.open("rb") as executable:
+            header = executable.read(64)
+            if len(header) != 64 or header[:2] != b"MZ":
+                raise ValueError("Windows release server is not a PE executable")
+            executable.seek(struct.unpack_from("<I", header, 60)[0])
+            signature = executable.read(6)
+            if signature != b"PE\0\0\x64\x86":
+                raise ValueError("Windows release server must be an x64 PE executable")
+        return
     # Inspect our own ELF output; do not execute a foreign program with ldd.
     headers = run(["readelf", "-l", str(path)]).stdout
     dynamic = run(["readelf", "-d", str(path)]).stdout

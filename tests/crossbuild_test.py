@@ -5,6 +5,7 @@ import importlib.util
 import os
 from pathlib import Path
 import tempfile
+import struct
 import unittest
 from unittest.mock import patch
 
@@ -38,6 +39,33 @@ class CrossbuildTest(unittest.TestCase):
         with patch.object(build, 'require_tool'):
             with self.assertRaisesRegex(ValueError, 'native build host'):
                 build.preflight(LINUX, 'aarch64-apple-darwin')
+
+    def test_windows_plan_uses_explicit_sdk_and_executable_suffix(self):
+        with patch.dict(os.environ, {"XWIN_ROOT": "/sdk with spaces"}, clear=True):
+            command, env, output = build.build_plan('x86_64-pc-windows-msvc', LINUX)
+        self.assertEqual(command[-1], 'x86_64-pc-windows-msvc')
+        self.assertEqual(output.name, 'venticornserver.exe')
+        self.assertEqual(env['CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER'], 'lld-link')
+        self.assertIn('-Lnative=/sdk with spaces/crt/lib/x86_64', env['CARGO_ENCODED_RUSTFLAGS'].split('\x1f'))
+
+    def test_windows_crossbuild_rejects_unconfigured_sdk(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(build, 'require_tool'):
+            with self.assertRaisesRegex(ValueError, 'XWIN_ROOT'):
+                build.preflight('x86_64-pc-windows-msvc', LINUX)
+
+    def test_windows_artifact_must_be_x64_pe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            executable = Path(folder) / 'venticornserver.exe'
+            data = bytearray(70)
+            data[:2] = b'MZ'
+            struct.pack_into('<I', data, 60, 64)
+            data[64:] = b'PE\0\0\x64\x86'
+            executable.write_bytes(data)
+            build.validate_artifact('x86_64-pc-windows-msvc', executable)
+            data[68:70] = b'\x64\xaa'
+            executable.write_bytes(data)
+            with self.assertRaisesRegex(ValueError, 'x64 PE'):
+                build.validate_artifact('x86_64-pc-windows-msvc', executable)
 
     def test_missing_artifact_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
