@@ -1,2 +1,2 @@
 <!-- Modified for Venticorn. -->
-This directory contains generated files used by the extension. TypeScript writes the extension code to `extension/`; Vite writes the proof-search webview to `search/` and cleans only that subdirectory. Generated files are ignored; keep this layout note in version control.
+This directory contains generated files used by the extension. esbuild writes the production bundle and dependency license notices to `extension/`; TypeScript writes isolated test modules to `test/`; Vite writes the proof-search webview to `search/`. Each production builder cleans only its own output subdirectory. Test modules are excluded from the package. Generated files are ignored; keep this layout note in version control.

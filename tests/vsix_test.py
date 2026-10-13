@@ -19,12 +19,13 @@ def check_vsix(filename):
             "extension/node_modules/vscode-jsonrpc/package.json",
             "extension/LICENSE.txt", "extension/NOTICE", "extension/readme.md",
             "extension/build/search/index.html",
+            "extension/build/extension/THIRD_PARTY_NOTICES.txt",
         ]:
             assert required in names, f"VSIX is missing {required}"
         excluded = [
             "extension/src/", "extension/node_modules/typescript/",
             "extension/node_modules/prettier/", "extension/node_modules/@types/",
-            "extension/target/", "extension/files/", "extension/build/old/",
+            "extension/target/", "extension/files/", "extension/build/old/", "extension/build/test/",
         ]
         for name in names:
             assert not any(name.startswith(prefix) for prefix in excluded), f"Unexpected development file: {name}"
@@ -32,6 +33,9 @@ def check_vsix(filename):
             assert not Path(name).is_absolute() and ".." not in Path(name).parts, f"Invalid archive path: {name}"
         package = json.loads(archive.read("extension/package.json"))
         assert "extension/" + package["main"].removeprefix("./") in names, "VSIX entry point is missing"
+        notices = archive.read("extension/build/extension/THIRD_PARTY_NOTICES.txt").decode()
+        for dependency in ["vscode-languageclient", "vscode-languageserver-protocol", "vscode-jsonrpc"]:
+            assert dependency in notices, f"Bundled dependency attribution is missing: {dependency}"
         manifest = ElementTree.fromstring(archive.read("extension.vsixmanifest"))
         identity = next(element for element in manifest.iter() if element.tag.endswith("Identity"))
         assert package.get("publisher") not in (None, "", "undefined"), "A stable extension publisher identity is required"
@@ -41,15 +45,14 @@ def check_vsix(filename):
             archive.extractall(directory)
             extension = Path(directory) / "extension"
             # The VS Code host is the only dependency deliberately absent outside VS Code.
-            # All Node dependencies must resolve from the unpacked VSIX itself.
+            # The bundled entry point must need no external packages, even if this VSIX
+            # still contains the former runtime dependency directories.
             javascript = r'''
 const Module = require("node:module");
 const path = require("node:path");
 const root = require("node:fs").realpathSync(process.argv[1]);
-for (const name of ["vscode-languageclient/node", "vscode-languageserver-protocol", "vscode-jsonrpc"]) {
-  const resolved = require.resolve(name, { paths: [root] });
-  if (!resolved.startsWith(root + path.sep)) throw new Error(`${name} resolved outside the VSIX`);
-}
+const manifest = require(path.join(root, "package.json"));
+const builtins = new Set(Module.builtinModules.flatMap(name => [name, `node:${name}`]));
 let host;
 host = new Proxy(function () {}, {
   get: (_target, key) => key === "version" ? "1.82.0" : host,
@@ -58,9 +61,12 @@ host = new Proxy(function () {}, {
 });
 const originalLoad = Module._load;
 Module._load = function (name, parent, isMain) {
-  return name === "vscode" ? host : originalLoad.call(this, name, parent, isMain);
+  if (name === "vscode") return host;
+  if (!builtins.has(name) && !path.isAbsolute(name)) {
+    throw new Error(`The extension bundle depends on an external runtime module: ${name}`);
+  }
+  return originalLoad.call(this, name, parent, isMain);
 };
-const manifest = require(path.join(root, "package.json"));
 const extension = require(path.join(root, manifest.main));
 if (typeof extension.activate !== "function" || typeof extension.deactivate !== "function") {
   throw new Error("The packaged extension does not expose its lifecycle entry points");
@@ -68,7 +74,7 @@ if (typeof extension.activate !== "function" || typeof extension.deactivate !== 
 '''
             environment = {key: value for key, value in os.environ.items() if key != "NODE_PATH"}
             subprocess.run(["node", "-e", javascript, str(extension)], check=True, cwd=directory, env=environment)
-    print(f"VSIX validation passed: {len(names)} entries, production dependencies and extension entry point load correctly")
+    print(f"VSIX validation passed: {len(names)} entries, bundled entry point loads with only Node builtins and the VS Code host")
 
 
 if __name__ == "__main__":

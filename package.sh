@@ -9,9 +9,8 @@ if ! command -v "$vsce_command" >/dev/null 2>&1; then
   exit 1
 fi
 vsce_command="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$(command -v "$vsce_command")")"
-# Only generated extension output is removed; source and dependencies stay in place.
-rm -rf vscode/extension/build/extension
-npm --prefix vscode/extension run compile
+# The bundler clears only its generated output directory.
+npm --prefix vscode/extension run build
 npm --prefix vscode/search run build
 mkdir -p files/release
 output="$PWD/files/release/venticorn-extension-$version.vsix"

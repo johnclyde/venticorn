@@ -1,3 +1,4 @@
+// Modified for Venticorn: test separate modules while production uses a bundle.
 // Load compiled extension modules with isolated VS Code, environment, and network adapters.
 const fs = require("node:fs");
 const path = require("node:path");
@@ -19,7 +20,8 @@ function loadEditorModule(entry, modules = {}, globals = {}) {
     return exported;
   }
   const extensionRoot = path.join(__dirname, "../vscode/extension");
-  const buildDirectory = path.dirname(require(path.join(extensionRoot, "package.json")).main);
+  // Tests need isolated modules for their mocked host and network adapters.
+  const buildDirectory = "build/test";
   return load(path.join(extensionRoot, buildDirectory, entry));
 }
 module.exports = { loadEditorModule };
