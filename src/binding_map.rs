@@ -76,6 +76,7 @@ pub struct BindingMap {
     // Maps the name of a constant defined in this scope to information about it.
     // Doesn't handle variables defined on the stack, only ones that will be in scope for the
     // entirety of this environment.
+    // Aliases are stored separately and resolve to their canonical constant.
     // Includes "<datatype>.<constant>" for members.
     constants: HashMap<String, ConstantInfo>,
 
