@@ -46,6 +46,28 @@ cargo run --locked --bin search -- hello 1
 
 Verification should report one successful goal, and search should report `Success!`. This directory can hold additional `.ac` modules. Keep the printed value of `VENTICORN_LIBRARY` if you want to reopen it in the editor. Add `--no-default-features` before `--bin` to run these commands with the heuristic scorer.
 
+## Anonymous theorems and axioms
+
+Theorem names are optional. Omitting a name keeps the proof obligation and avoids adding a named binding:
+
+```acorn
+theorem(value: Bool) { value or not value }
+theorem<T>(value: T) { value = value }
+theorem(value: Bool) { value -> value } by { value }
+```
+
+Arguments and type parameters stay within their declaration. Anonymous claims retain their source ranges for diagnostics and editor selection. If a claim cannot yet be printed as source code, the goal is labeled by its source line.
+
+An `axiom` deliberately adds an assumption instead of a proof obligation, with or without a name. For example, this module verifies its theorem using the explicit assumption:
+
+```acorn
+let b: Bool = axiom
+axiom { b }
+theorem { b }
+```
+
+Axioms do not take `by` blocks. Use `theorem` when the declaration should be checked by proof search.
+
 ## Match expressions
 
 Use `match` to define a value by constructor. For example, this complete module verifies with `verify`:

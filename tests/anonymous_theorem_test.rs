@@ -150,3 +150,24 @@ fn theorem_citations_preserve_theorem_rather_than_axiom_provenance() {
     assert_eq!(env.nodes[1].claim.name(), Some("cited"));
     assert_eq!(env.nodes[2].claim.name(), None);
 }
+
+#[test]
+fn anonymous_claim_selection_preserves_distinct_source_ranges() {
+    let mut env = Environment::new_test();
+    env.add("theorem {\ntrue\n} by {\ntrue\n}\ntheorem(value: Bool) {\nvalue or not value\n}\naxiom { true }\n");
+    for (line, index, first, last) in [(1, 0, 0, 2), (6, 1, 5, 7)] {
+        let path = env.path_for_line(line).unwrap();
+        assert_eq!(path, vec![index]);
+        let range = env.nodes[index].claim.source.range;
+        assert_eq!((range.start.line, range.start.character), (first, 0));
+        assert_eq!((range.end.line, range.end.character), (last, 1));
+        let cursor = venticorn::block::NodeCursor::from_path(&env, &path);
+        match cursor.goal_context().unwrap().goal {
+            venticorn::goal::Goal::Prove(proposition) => {
+                assert_eq!(proposition.source.range, range)
+            }
+            _ => panic!("expected theorem proof goal"),
+        }
+    }
+    assert_eq!(env.path_for_line(8).unwrap_err(), "line 9 is an axiom");
+}
