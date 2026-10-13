@@ -1,4 +1,4 @@
-/* Modified for Venticorn: wrapping proof headings with hanging indentation. */
+/* Modified for Venticorn: wrapping headings and CSS-based proof indentation. */
 body {
   font-size: 14px;
   line-height: 1.25;
@@ -22,5 +22,20 @@ body {
   /* Indent continuation lines by two monospace characters. */
   white-space: pre-wrap;
   text-indent: -2ch;
+  padding-inline-start: 2ch;
+}
+
+/* Indent four characters, plus two more on continuation lines. */
+.indent {
+  font-family: monospace;
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-indent: -2ch;
+  padding-inline-start: 6ch;
+}
+
+.premise {
+  display: block;
   padding-inline-start: 2ch;
 }
