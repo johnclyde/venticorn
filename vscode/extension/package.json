@@ -77,7 +77,7 @@
   "scripts": {
     "watch": "tsc -watch -p ./",
     "compile": "tsc -p ./",
-    "test": "npm run compile && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs"
+    "test": "npm run compile && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs"
   },
   "author": "Kevin Lacker",
   "license": "Apache-2.0",
