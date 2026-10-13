@@ -85,3 +85,16 @@ fn empty_match_cases_have_a_parse_diagnostic() {
     let error = error_for(&mut env, "define f(v: Foo) -> Bool { match v { } }");
     assert!(error.contains("expected at least one case"), "{error}");
 }
+
+#[test]
+fn repeated_constructor_cases_cannot_substitute_for_missing_cases() {
+    let mut env = environment();
+    let error = error_for(
+        &mut env,
+        "define f(v: Foo) -> Bool { match v { Foo.bar(a) { a } Foo.bar(b) { b } } }",
+    );
+    assert!(
+        error.contains("multiple cases for the same constructor"),
+        "{error}"
+    );
+}

@@ -1287,6 +1287,6 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
             .unwrap_err();
         assert!(error
             .to_string()
-            .contains("match expression evaluation is not supported yet"));
+            .contains("not all constructors are covered in this match"));
     }
 }
