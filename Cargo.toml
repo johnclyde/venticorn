@@ -37,7 +37,7 @@ name = "verify"
 test = false
 
 [[bin]]
-name = "language_server"
+name = "venticornserver"
 test = false
 
 [[bin]]

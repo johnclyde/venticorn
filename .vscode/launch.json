@@ -15,11 +15,11 @@
       ],
       "preLaunchTask": "build all",
       "env": {
-        "SERVER_PATH": "${workspaceFolder}/target/release/language_server"
+        "SERVER_PATH": "${workspaceFolder}/target/release/venticornserver"
       },
       "windows": {
         "env": {
-          "SERVER_PATH": "${workspaceFolder}/target/release/language_server.exe"
+          "SERVER_PATH": "${workspaceFolder}/target/release/venticornserver.exe"
         }
       }
     }

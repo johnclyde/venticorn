@@ -13,7 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = ROOT / "target" / "debug" / (
-    "language_server.exe" if os.name == "nt" else "language_server"
+    "venticornserver.exe" if os.name == "nt" else "venticornserver"
 )
 
 
