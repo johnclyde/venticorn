@@ -1,7 +1,7 @@
 {
   "name": "venticorn-extension",
   "displayName": "Venticorn",
-  "_venticornNotice": "Modified for Venticorn: product naming and repository metadata.",
+  "_venticornNotice": "Modified for Venticorn: product naming, repository metadata, and supported VS Code version.",
   "version": "0.0.1",
   "description": "The Venticorn theorem prover for VS Code.",
   "repository": {
@@ -10,7 +10,7 @@
     "directory": "vscode/extension"
   },
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.82.0"
   },
   "main": "./out/extension.js",
   "contributes": {
