@@ -27,13 +27,13 @@ fn match_pattern_return_type_must_match_scrutinee() {
 }
 
 #[test]
-fn match_requires_function_patterns_until_nullary_binding_is_available() {
+fn match_patterns_reject_literals() {
     let mut env = environment();
     let error = error_for(
         &mut env,
         "define f(v: Foo) -> Bool { match v { true { false } } }",
     );
-    assert!(error.contains("invalid match pattern"), "{error}");
+    assert!(error.contains("invalid pattern"), "{error}");
 }
 
 #[test]
@@ -67,4 +67,14 @@ fn same_typed_ordinary_functions_are_not_match_constructors() {
         "define f(v: Foo) -> Bool { match v { ordinary(b) { b } } }",
     );
     assert!(error.contains("expected a constructor"), "{error}");
+}
+
+#[test]
+fn bare_patterns_cannot_omit_constructor_arguments() {
+    let mut env = environment();
+    let error = error_for(
+        &mut env,
+        "define f(v: Foo) -> Bool { match v { Foo.bar { true } } }",
+    );
+    assert!(error.contains("constructor requires arguments"), "{error}");
 }
