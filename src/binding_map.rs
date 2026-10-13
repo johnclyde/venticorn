@@ -620,6 +620,38 @@ impl BindingMap {
         Ok(bound_names)
     }
 
+    // Uses a pattern match to bind variables to the stack. Infers their types from the pattern.
+    // Returns an error if the pattern is not a constructor of the expected type.
+    // Returns the list of bound names and a parallel list of their types.
+    fn bind_pattern(
+        &self,
+        stack: &mut Stack,
+        project: &Project,
+        expected_type: &AcornType,
+        pattern: &Expression,
+    ) -> token::Result<(Vec<String>, Vec<AcornType>)> {
+        let (fn_exp, args) = match pattern {
+            Expression::Apply(function, args) => (function, args),
+            _ => return Err(Error::new(pattern.token(), "invalid match pattern")),
+        };
+        let fn_value = self.evaluate_value_with_stack(stack, project, fn_exp, None)?;
+        let fn_type = fn_value.get_type();
+        let arg_types = match fn_type {
+            AcornType::Function(f) => {
+                if &*f.return_type != expected_type {
+                    return Err(Error::new(
+                        pattern.token(),
+                        "pattern type does not match scrutinee",
+                    ));
+                }
+                f.arg_types
+            }
+            _ => return Err(Error::new(fn_exp.token(), "expected a function")),
+        };
+        let arg_names = self.bind_group(stack, args, &arg_types)?;
+        Ok((arg_names, arg_types))
+    }
+
     // This function evaluates numbers when we already know what type they are.
     // token is the token to report errors with.
     // s is the string to parse.
@@ -1292,24 +1324,8 @@ impl BindingMap {
                 let scrutinee_type = scrutinee.get_type();
                 let mut cases = vec![];
                 for (pattern_exp, result_exp) in case_exps {
-                    let (fn_exp, args) = match pattern_exp {
-                        Expression::Apply(function, args) => (function, args),
-                        _ => return Err(Error::new(pattern_exp.token(), "invalid match pattern")),
-                    };
-                    let fn_value = self.evaluate_value_with_stack(stack, project, fn_exp, None)?;
-                    let arg_types = match fn_value.get_type() {
-                        AcornType::Function(function) => {
-                            if *function.return_type != scrutinee_type {
-                                return Err(Error::new(
-                                    pattern_exp.token(),
-                                    "pattern type does not match scrutinee",
-                                ));
-                            }
-                            function.arg_types
-                        }
-                        _ => return Err(Error::new(fn_exp.token(), "expected a function")),
-                    };
-                    let arg_names = self.bind_group(stack, args, &arg_types)?;
+                    let (arg_names, arg_types) =
+                        self.bind_pattern(stack, project, &scrutinee_type, pattern_exp)?;
                     let evaluated = (|| {
                         let pattern =
                             self.evaluate_value_with_stack(stack, project, pattern_exp, None)?;
@@ -1920,6 +1936,22 @@ mod tests {
             Some((AcornType::Data(FIRST_NORMAL, "Pair".to_string()), 0, 1))
         );
         assert!(env.bindings.constants["Pair.first"].constructor.is_none());
+    }
+
+    #[test]
+    fn pattern_arguments_infer_constructor_parameter_types() {
+        let mut env = crate::environment::Environment::new_test();
+        env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
+        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
+        let mut stack = Stack::new();
+        let expression = Expression::expect_value("Foo.pair(left, right)");
+        let (names, types) = env
+            .bindings
+            .bind_pattern(&mut stack, &Project::new_mock(), &foo, &expression)
+            .unwrap();
+        assert_eq!(names, vec!["left", "right"]);
+        assert_eq!(types, vec![AcornType::Bool, foo]);
+        assert_eq!(stack.names(), vec!["left", "right"]);
     }
 
     #[test]
