@@ -19,3 +19,19 @@ fn structure_constructor_match_reaches_the_evaluation_boundary() {
         "{error}"
     );
 }
+
+#[test]
+fn duplicate_names_in_one_match_pattern_are_rejected() {
+    let mut env = Environment::new_test();
+    env.add("inductive Foo {\n bar(Bool, Bool)\n }\n");
+    let error = add(
+        &mut env,
+        "define foo(f: Foo) -> Bool { match f { Foo.bar(b, b) { b } } }",
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("cannot use a name twice in one pattern"),
+        "{error}"
+    );
+    assert!(!env.bindings.has_identifier("b"));
+}
