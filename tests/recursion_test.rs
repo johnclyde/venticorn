@@ -154,3 +154,27 @@ fn recursive_function_cannot_escape_as_a_value() {
     );
     assert!(!env.bindings.has_identifier("cheat"));
 }
+
+#[test]
+fn generic_recursion_is_guarded_until_type_metadata_is_consistent() {
+    let mut env = naturals();
+    let statement = Statement::parse_str(
+        r#"
+        define repeat<T>(n: Nat, f: T -> T, a: T) -> T {
+            match n {
+                Nat.zero { a }
+                Nat.suc(pred) { repeat(pred, f, f(a)) }
+            }
+        }
+    "#,
+    )
+    .unwrap();
+    let error = env
+        .add_statement(&mut Project::new_mock(), &statement)
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("generic recursive definitions are not supported yet"));
+    assert!(!env.bindings.has_identifier("repeat"));
+    assert!(!env.bindings.has_type_name("T"));
+}
