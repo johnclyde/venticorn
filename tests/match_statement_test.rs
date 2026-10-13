@@ -221,3 +221,18 @@ fn quantified_match_statements_require_every_constructor() {
     assert!(!env.bindings.has_identifier("value"));
     assert!(!env.bindings.has_identifier("bit"));
 }
+
+#[test]
+fn ordinary_methods_cannot_be_quantified_match_patterns() {
+    let mut env = fixture();
+    env.add("class Foo { define qux(self, bit: Bool) -> Foo { Foo.baz } }");
+    let node_count = env.nodes.len();
+    let error = statement_error(
+        &mut env,
+        "forall(value: Foo) { match value { Foo.bar(bit) { bit } Foo.qux { false } } }",
+    );
+    assert!(error.contains("expected a constructor"), "{error}");
+    assert_eq!(env.nodes.len(), node_count);
+    assert!(!env.bindings.has_identifier("value"));
+    assert!(!env.bindings.has_identifier("bit"));
+}
