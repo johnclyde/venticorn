@@ -16,7 +16,7 @@ use venticorn::interfaces::{
     SearchStatus,
 };
 use venticorn::module::Module;
-use venticorn::project::Project;
+use venticorn::project::{ModuleRef, Project};
 use venticorn::prover::{Outcome, Prover};
 use venticorn::token::Token;
 
@@ -75,7 +75,7 @@ struct SearchTask {
     prover: Arc<RwLock<Prover>>,
 
     // The module that we're searching for a proof in
-    module_name: String,
+    module_ref: ModuleRef,
 
     // The line in the document the user selected to kick off this task.
     selected_line: u32,
@@ -133,10 +133,10 @@ impl SearchTask {
         // This holds a read lock on the project the whole time.
         // It seems like we should be able to avoid this, but maybe it's just fine.
         let project = self.project.read().await;
-        let env = match project.get_env_by_name(&self.module_name) {
+        let env = match project.get_env_by_ref(&self.module_ref) {
             Some(env) => env,
             None => {
-                log(&format!("no environment for {}", self.module_name));
+                log(&format!("no environment for {:?}", self.module_ref));
                 return;
             }
         };
@@ -486,18 +486,18 @@ impl Backend {
                 );
             }
         }
-        let module_name = match project.module_name_from_path(&path) {
+        let module_ref = match project.module_ref_from_path(&path) {
             Ok(name) => name,
             Err(e) => {
-                return self.search_fail(params, &format!("module_name_from_path failed: {:?}", e))
+                return self.search_fail(params, &format!("module_ref_from_path failed: {:?}", e))
             }
         };
-        let env = match project.get_module_by_name(&module_name) {
+        let env = match project.get_module_by_ref(&module_ref) {
             Module::Ok(env) => env,
             _ => {
                 return self.search_fail(
                     params,
-                    &format!("could not load module named {}", module_name),
+                    &format!("could not load module from {:?}", module_ref),
                 );
             }
         };
@@ -537,7 +537,7 @@ impl Backend {
             project: self.project.clone(),
             document: doc.clone(),
             prover: Arc::new(RwLock::new(prover)),
-            module_name,
+            module_ref,
             selected_line: params.selected_line,
             path,
             goal_name: goal_context.name.clone(),
@@ -583,7 +583,7 @@ impl Backend {
         }
         let project = self.project.read().await;
         let prover = task.prover.read().await;
-        let env = match project.get_env_by_name(&task.module_name) {
+        let env = match project.get_env_by_ref(&task.module_ref) {
             Some(env) => env,
             None => {
                 return self.info_fail(params, "no environment available");
