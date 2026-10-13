@@ -1,10 +1,12 @@
 // Modified for Venticorn.
 // The Venticorn language server, normally started by the editor extension.
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use chrono;
+use clap::Parser;
 use dashmap::DashMap;
 use tokio::sync::{mpsc, Mutex, RwLock, RwLockWriteGuard};
 use tower_lsp::jsonrpc;
@@ -20,6 +22,14 @@ use venticorn::module::{Module, ModuleRef};
 use venticorn::project::Project;
 use venticorn::prover::{Outcome, Prover};
 use venticorn::token::Token;
+
+#[derive(Clone, Parser)]
+#[command(about = "Venticorn language server")]
+struct Args {
+    /// Workspace directory used for local library discovery.
+    #[arg(long)]
+    workspace_root: Option<PathBuf>,
+}
 
 // Messages appear in the "Venticorn Language Server" output channel.
 fn log(message: &str) {
@@ -717,13 +727,15 @@ impl Backend {
 // Connection state can be prepared before the client selects its workspace.
 struct LazyBackend {
     client: Client,
+    args: Args,
     backend: tokio::sync::OnceCell<Backend>,
 }
 
 impl LazyBackend {
-    fn new(client: Client) -> Self {
+    fn new(client: Client, args: Args) -> Self {
         Self {
             client,
+            args,
             backend: tokio::sync::OnceCell::new(),
         }
     }
@@ -774,17 +786,21 @@ impl LanguageServer for LazyBackend {
                 {
                     Some(path) => path,
                     None => {
-                        let root = root_uri.ok_or_else(|| {
-                            jsonrpc::Error::invalid_params(
-                                "open a workspace folder or set VENTICORN_LIBRARY to its directory",
-                            )
-                        })?;
-                        let path = root.to_file_path().map_err(|_| {
-                            jsonrpc::Error::invalid_params(format!(
-                                "workspace root is not a local file URI: {}",
-                                root
-                            ))
-                        })?;
+                        let path = match &self.args.workspace_root {
+                            Some(path) => path.clone(),
+                            None => {
+                                let root = root_uri.ok_or_else(|| {
+                                    jsonrpc::Error::invalid_params(
+                                        "open a workspace folder or set VENTICORN_LIBRARY to its directory",
+                                    )
+                                })?;
+                                root.to_file_path().map_err(|_| {
+                                    jsonrpc::Error::invalid_params(format!(
+                                        "workspace root is not a local file URI: {}", root
+                                    ))
+                                })?
+                            }
+                        };
                         Project::find_local_library(&path)
                             .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
                             .ok_or_else(|| {
@@ -801,9 +817,16 @@ impl LanguageServer for LazyBackend {
                 Ok::<_, jsonrpc::Error>(Backend::new(self.client.clone(), project))
             })
             .await?;
-        match root_uri {
-            Some(root) => log(&format!("initializing with root {}", root)),
-            None => log("initializing with no root"),
+        if let Some(path) = &self.args.workspace_root {
+            log(&format!(
+                "initializing with workspace path {}",
+                path.display()
+            ));
+        } else {
+            match root_uri {
+                Some(root) => log(&format!("initializing with root {}", root)),
+                None => log("initializing with no root"),
+            }
         }
 
         let sync_options = TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
@@ -869,10 +892,11 @@ impl LanguageServer for LazyBackend {
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
+    let args = Args::parse();
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::build(LazyBackend::new)
+    let (service, socket) = LspService::build(move |client| LazyBackend::new(client, args.clone()))
         .custom_method("acorn/info", LazyBackend::handle_info_request)
         .custom_method("acorn/progress", LazyBackend::handle_progress_request)
         .custom_method("acorn/search", LazyBackend::handle_search_request)

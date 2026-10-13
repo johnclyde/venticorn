@@ -140,8 +140,14 @@ export async function activate(context: ExtensionContext) {
     return;
   }
 
+  const args: string[] = [];
+  const workspaceRoot = workspace.workspaceFolders?.[0]?.uri;
+  if (workspaceRoot?.scheme === "file") {
+    args.push("--workspace-root", workspaceRoot.fsPath);
+  }
   let exec: Executable = {
     command,
+    args,
     options: {
       env: {
         RUST_BACKTRACE: "1",
