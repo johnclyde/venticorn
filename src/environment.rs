@@ -1434,13 +1434,17 @@ impl Environment {
                 }
                 // Validate all coverage before constructing any child environments.
                 for (constructor, args, pattern, body) in cases {
-                    let params =
-                        BlockParams::MatchCase(scrutinee.clone(), constructor, pattern.range());
+                    let params = BlockParams::MatchCase(
+                        scrutinee.clone(),
+                        constructor,
+                        args,
+                        pattern.range(),
+                    );
                     let _block = Block::new(
                         project,
                         self,
                         vec![],
-                        args,
+                        vec![],
                         params,
                         body.left_brace.line_number,
                         body.right_brace.line_number,

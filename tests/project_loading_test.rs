@@ -1,3 +1,5 @@
+// Modified for Venticorn.
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -140,4 +142,39 @@ fn verify_exits_with_failure_for_a_missing_target() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("is not loaded"), "{stdout}");
     assert!(stdout.contains("Build failed."), "{stdout}");
+}
+
+#[test]
+fn verify_does_not_discard_match_statement_case_goals() {
+    let directory = TestDirectory::new();
+    directory.write(
+        "main.ac",
+        r#"
+inductive Choice {
+    first
+    second
+}
+let choice: Choice = axiom
+theorem apparent_success { true } by {
+    match choice {
+        Choice.first { false }
+        Choice.second { true }
+    }
+}
+"#,
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_verify"))
+        .env("VENTICORN_LIBRARY", &directory.0)
+        .args(["--module", "main"])
+        .output()
+        .expect("run verify on match statement");
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stdout.contains("match statements are not supported yet"),
+        "{stdout}\n{stderr}"
+    );
+    assert!(stdout.contains("Build failed."), "{stdout}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
 }
