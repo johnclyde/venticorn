@@ -31,6 +31,8 @@
     color: inherit;
     font: inherit;
     text-align: start;
+    text-indent: inherit;
+    white-space: inherit;
     overflow-wrap: anywhere;
     cursor: pointer;
   }
