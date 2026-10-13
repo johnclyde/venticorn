@@ -1,4 +1,5 @@
 // Modified for Venticorn.
+// The Venticorn language server, normally started by the editor extension.
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
