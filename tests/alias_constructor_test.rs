@@ -14,3 +14,36 @@ fn local_aliases_preserve_constructor_identity_only() {
     let error = env.add_statement(&mut Project::new_mock(), &statement).unwrap_err();
     assert!(error.to_string().contains("expected a constructor"));
 }
+
+#[test]
+fn imported_aliases_preserve_canonical_constructor_metadata() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/base.ac", r#"
+        inductive Nat {
+            zero
+            suc(Nat)
+        }
+        let z: Nat = Nat.zero
+        let s: Nat -> Nat = Nat.suc
+        define identity(n: Nat) -> Nat { n }
+        let ordinary: Nat -> Nat = identity
+    "#);
+    project.mock("/mock/good.ac", r#"
+        from base import Nat, z, s
+        define previous(n: Nat) -> Nat {
+            match n { z { z } s(pred) { pred } }
+        }
+    "#);
+    project.expect_ok("good");
+    project.mock("/mock/bad.ac", r#"
+        from base import Nat, z, ordinary
+        define invalid(n: Nat) -> Nat {
+            match n { z { z } ordinary(pred) { pred } }
+        }
+    "#);
+    let id = project.load_module_by_name("bad").unwrap();
+    match project.get_module_by_id(id) {
+        venticorn::module::Module::Error(error) => assert!(error.to_string().contains("expected a constructor")),
+        _ => panic!("ordinary function alias became a constructor"),
+    }
+}
