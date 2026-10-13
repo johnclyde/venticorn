@@ -64,7 +64,7 @@ cargo run --locked --release --bin search -- hello 1
 cargo run --locked --release --bin verify -- --dataset
 ```
 
-Use dotted module names for subdirectories, such as `algebra.groups`. `verify` exits unsuccessfully when loading or verification fails. `search` prints its outcome and is intended for interactive investigation. Release builds are recommended for larger libraries.
+Use dotted module names for subdirectories, such as `algebra.groups`. `verify` exits unsuccessfully when loading or verification fails. `search` prints its outcome and is intended for interactive investigation. Release builds are recommended for larger libraries. The `fastdev` profile uses release optimization while keeping debug symbols for local debugging and profiling; ordinary release builds omit those symbols. For example, run `cargo build --locked --profile fastdev --bin profile_prover`.
 
 ## Run the VS Code extension from source
 
@@ -75,7 +75,7 @@ export VENTICORN_LIBRARY=/absolute/path/to/your/library
 code .
 ```
 
-If an existing VS Code process does not inherit that environment, close it and launch it again from this terminal. Open this repository as the workspace and press F5 with **Launch Extension Host** selected. The prelaunch task builds the Rust release binaries, compiles the extension into `vscode/extension/build/extension`, and builds the proof-search UI into `vscode/extension/build/search`. The launch configuration sets `SERVER_PATH` to this checkout's `target/release/venticornserver` (`venticornserver.exe` on Windows); the extension host inherits `VENTICORN_LIBRARY` from VS Code. The server is run in place and is excluded from the extension package.
+If an existing VS Code process does not inherit that environment, close it and launch it again from this terminal. Open this repository as the workspace and press F5 with **Launch Extension Host** selected. The prelaunch task builds the Rust server with the optimized `fastdev` profile and debug symbols, compiles the extension into `vscode/extension/build/extension`, and builds the proof-search UI into `vscode/extension/build/search`. The launch configuration sets `SERVER_PATH` to this checkout's `target/fastdev/venticornserver` (`venticornserver.exe` on Windows); the extension host inherits `VENTICORN_LIBRARY` from VS Code. The server is run in place and is excluded from the extension package.
 
 In the new Extension Development Host window, open your library directory and an `.ac` file. Saving a document runs verification. Place the cursor on a proposition and use **Venticorn: Search Panel: Display** from the command palette to inspect proof search. The `.ac` extension and existing language and command identifiers remain compatible.
 

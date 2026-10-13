@@ -15,11 +15,11 @@
       ],
       "preLaunchTask": "build all",
       "env": {
-        "SERVER_PATH": "${workspaceFolder}/target/release/venticornserver"
+        "SERVER_PATH": "${workspaceFolder}/target/fastdev/venticornserver"
       },
       "windows": {
         "env": {
-          "SERVER_PATH": "${workspaceFolder}/target/release/venticornserver.exe"
+          "SERVER_PATH": "${workspaceFolder}/target/fastdev/venticornserver.exe"
         }
       }
     }
