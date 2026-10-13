@@ -26,7 +26,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> ExitCode {
     let args = Args::parse();
-    let mut project = match Project::from_library() {
+    let mut project = match Project::new_local() {
         Ok(project) => project,
         Err(error) => {
             eprintln!("error loading library: {}", error);

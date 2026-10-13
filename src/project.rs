@@ -144,7 +144,7 @@ impl Project {
 
     // An explicit library path takes precedence over discovery. Relative paths
     // are resolved from the process working directory, not the build checkout.
-    pub fn from_library() -> Result<Project, LoadError> {
+    pub fn new_from_directory_search(start: &Path) -> Result<Project, LoadError> {
         let root = if let Some(path) = std::env::var_os("VENTICORN_LIBRARY") {
             if path.is_empty() {
                 return Err(LoadError("VENTICORN_LIBRARY must not be empty".to_string()));
@@ -158,15 +158,25 @@ impl Project {
             }
             path
         } else {
-            let working_dir = std::env::current_dir()?;
-            find_library(&working_dir).ok_or_else(|| {
+            let start = start.canonicalize()?;
+            find_library(&start).ok_or_else(|| {
                 LoadError(format!(
                     "no library found from {}; set VENTICORN_LIBRARY to its directory",
-                    working_dir.display()
+                    start.display()
                 ))
             })?
         };
         Ok(Self::with_root(root.canonicalize()?))
+    }
+
+    // A project discovered from the process working directory.
+    pub fn new_local() -> Result<Project, LoadError> {
+        Self::new_from_directory_search(Path::new("."))
+    }
+
+    // Retained while language-server initialization moves to a client-selected path.
+    pub fn from_library() -> Result<Project, LoadError> {
+        Self::new_local()
     }
 
     // A Project where nothing can be imported.
