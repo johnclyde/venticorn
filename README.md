@@ -44,6 +44,26 @@ cargo run --locked --bin search -- hello 1
 
 Verification should report one successful goal, and search should report `Success!`. This directory can hold additional `.ac` modules. Keep the printed value of `VENTICORN_LIBRARY` if you want to reopen it in the editor. Add `--no-default-features` before `--bin` to run these commands with the heuristic scorer.
 
+## Match expressions
+
+Use `match` to define a value by constructor. For example, this complete module verifies with `verify`:
+
+```acorn
+inductive Choice {
+    first
+    second
+}
+let selected: Bool = match Choice.first {
+    Choice.first { true }
+    Choice.second { false }
+}
+theorem selected_is_true { selected }
+```
+
+Match expressions also work in `define` bodies. Include every constructor exactly once, with its full argument list, and give all cases the same result type. A constructor argument is bound by a simple name within that case; names cannot repeat within a pattern or shadow an existing binding. Structure values use their `Type.new(...)` constructor in patterns.
+
+Proof normalization supports nested matches, surrounding quantifiers, comparisons, and function applications. Applying a lambda that contains a match is supported; passing an unapplied lambda containing a match as a higher-order value still reports an unsupported-normalization error. Generating match syntax in proof output is not yet implemented. Some quantified Boolean equalities remain beyond the current proof search. Match statements for splitting a proof into separate case blocks are not available yet.
+
 ## Choose a library and use the CLI
 
 The library is a separate directory containing `.ac` files. Set `VENTICORN_LIBRARY` to choose it explicitly; an absolute path is recommended. Relative values resolve from the process working directory. An empty value or a path that is not a directory is an error.

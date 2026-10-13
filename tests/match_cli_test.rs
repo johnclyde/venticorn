@@ -159,3 +159,21 @@ theorem claim(item: Item) { copy(item) = item }
 "#;
     library.verify("main", &format!("{DEFINITIONS}\n{definition}"), true);
 }
+
+#[test]
+fn let_bound_match_proves_only_its_selected_case_and_matches_readme() {
+    let library = TestLibrary::new();
+    let readme = include_str!("../README.md");
+    let example = readme
+        .split("```acorn\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    library.verify("example", example, true);
+    for (constructor, succeeds) in [("first", true), ("second", false)] {
+        let source = format!("inductive Choice {{\nfirst\nsecond\n}}\nlet selected: Bool = match Choice.{constructor} {{\nChoice.first {{ true }}\nChoice.second {{ false }}\n}}\ntheorem claim {{ selected }}\n");
+        library.verify("main", &source, succeeds);
+    }
+}

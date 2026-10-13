@@ -1381,4 +1381,20 @@ mod prover_test {
         "#;
         assert_eq!(verify(text), Outcome::Success);
     }
+    #[test]
+    fn test_prove_with_match_in_let() {
+        verify_succeeds(
+            r#"
+            inductive Foo {
+                bar
+                baz
+            }
+            let foo: Bool = match Foo.bar {
+                Foo.bar { true }
+                Foo.baz { false }
+            }
+            theorem goal { foo }
+        "#,
+        );
+    }
 }
