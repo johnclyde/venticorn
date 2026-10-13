@@ -95,6 +95,8 @@ See [the Python tooling instructions](python/README.md). Training requires separ
 
 The model loader reads `files/models/model-*.onnx` from the checkout path embedded at compilation time and chooses the lexicographically latest filename. Dataset export likewise writes into that checkout's `files/datasets` directory. If the model cannot be loaded, the default scorer reports the error and uses the built-in heuristic.
 
+The extension manifest includes generated build assets, language definitions, artwork, and license notices in its package file list. You can inspect that list locally with `(cd vscode/extension && npm pack --dry-run --ignore-scripts)`; this does not publish a package.
+
 The development extension expects the neighboring `vscode/search/dist` build and a language-server binary staged in `vscode/extension/build`. Keep the checkout and its assets available when running these development binaries; copying a binary or extension folder alone does not create a self-contained installation. Moving the checkout requires rebuilding. Source builds and the local workflow are currently the supported setup.
 
 License and attribution information is retained in [LICENSE](LICENSE) and [NOTICE](NOTICE).
