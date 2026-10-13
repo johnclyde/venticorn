@@ -57,6 +57,14 @@ pub enum Expression {
         Box<Expression>,
         Token,
     ),
+
+    // The first token is the "match" keyword.
+    // The first expression is the "scrutinee", which we are matching.
+    // The pairs indicate exhaustive and mutually exclusive cases for matching the scrutinee, which
+    // must have an inductive type.
+    // For the pair (exp1, exp2) where exp1 matches the scrutinee, the value of our expression is exp2.
+    // The last token is the closing brace.
+    Match(Token, Box<Expression>, Vec<(Expression, Expression)>, Token),
 }
 
 impl fmt::Display for Expression {
@@ -100,6 +108,13 @@ impl fmt::Display for Expression {
                     "if {} {{ {} }} else {{ {} }}",
                     cond, if_block, else_block
                 )
+            }
+            Expression::Match(_, scrutinee, cases, _) => {
+                write!(f, "match {} {{", scrutinee)?;
+                for (pat, exp) in cases {
+                    write!(f, " {} {{ {} }}", pat, exp)?;
+                }
+                write!(f, " }}")
             }
         }
     }
@@ -225,6 +240,7 @@ impl Expression {
             Expression::Grouping(left_paren, _, _) => left_paren,
             Expression::Binder(token, _, _, _) => token,
             Expression::IfThenElse(token, _, _, _, _) => token,
+            Expression::Match(token, _, _, _) => token,
         }
     }
 
@@ -237,6 +253,7 @@ impl Expression {
             Expression::Grouping(left_paren, _, _) => left_paren,
             Expression::Binder(token, _, _, _) => token,
             Expression::IfThenElse(token, _, _, _, _) => token,
+            Expression::Match(token, _, _, _) => token,
         }
     }
 
@@ -249,6 +266,7 @@ impl Expression {
             Expression::Grouping(_, _, right_paren) => right_paren,
             Expression::Binder(_, _, _, right_brace) => right_brace,
             Expression::IfThenElse(_, _, _, _, right_brace) => right_brace,
+            Expression::Match(_, _, _, right_brace) => right_brace,
         }
     }
 
@@ -290,6 +308,14 @@ impl Expression {
                 println!("  cond: {}", cond);
                 println!("  if: {}", if_block);
                 println!("  else: {}", else_block);
+            }
+            Expression::Match(token, scrutinee, cases, _) => {
+                println!("Match:");
+                println!("  token: {}", token);
+                println!("  scrutinee: {}", scrutinee);
+                for (pat, exp) in cases {
+                    println!("  case: {} => {}", pat, exp);
+                }
             }
         }
     }
@@ -402,7 +428,8 @@ impl Expression {
             Expression::Singleton(_)
             | Expression::Grouping(..)
             | Expression::Binder(..)
-            | Expression::IfThenElse(..) => {
+            | Expression::IfThenElse(..)
+            | Expression::Match(..) => {
                 // These expressions never need to be parenthesized.
                 i8::MAX
             }
@@ -660,10 +687,35 @@ fn parse_partial_expressions(
             }
 
             TokenType::Match => {
-                return Err(Error::new(
-                    &token,
-                    "match expressions are not supported yet",
-                ));
+                if expected_type != ExpressionType::Value {
+                    return Err(Error::new(&token, "'match' cannot be used here"));
+                }
+                let (scrutinee, _) =
+                    Expression::parse_value(tokens, Terminator::Is(TokenType::LeftBrace))?;
+
+                let mut cases = vec![];
+
+                let right_brace = loop {
+                    tokens.skip_newlines();
+                    match tokens.peek() {
+                        None => {
+                            return Err(tokens.error("expected a case but got EOF"));
+                        }
+                        Some(t) => {
+                            if t.token_type == TokenType::RightBrace {
+                                break tokens.next().unwrap();
+                            }
+                        }
+                    }
+
+                    let (pattern, _) =
+                        Expression::parse_value(tokens, Terminator::Is(TokenType::LeftBrace))?;
+                    let (exp, _) =
+                        Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
+                    cases.push((pattern, exp));
+                };
+                let exp = Expression::Match(token, Box::new(scrutinee), cases, right_brace);
+                partials.push_back(PartialExpression::Expression(exp));
             }
 
             TokenType::NewLine => {
@@ -1010,6 +1062,10 @@ mod tests {
 
     #[test]
     fn test_match_expressions() {
-        check_not_value("match a { Foo.bar(b) { b } Foo.qux(b) { b } }");
+        check_value("match a { Foo.bar(b) { b } Foo.qux(b) { b } }");
+        check_value("match a { Foo.bar(b) { match b { Foo.qux { true } } } }");
+        check_not_value("match a { Foo.bar(b) { b }");
+        check_not_value("match a { Foo.bar(b) }");
+        check_not_type("match a { Foo.bar(b) { b } }");
     }
 }
