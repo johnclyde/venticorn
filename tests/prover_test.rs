@@ -72,6 +72,12 @@ mod prover_test {
             prover.verbose = true;
             let outcome = prover.quick_verification_search();
             if outcome != Outcome::Success {
+                if outcome == Outcome::Error {
+                    println!(
+                        "prover error: {}",
+                        prover.error.as_deref().unwrap_or("unknown error")
+                    );
+                }
                 return outcome;
             }
         }
@@ -1357,5 +1363,22 @@ mod prover_test {
         );
         let (outcome, _) = prove(&mut p, "main", "goal");
         assert_eq!(outcome, Outcome::Success);
+    }
+    #[test]
+    fn test_match_definition_proof_reports_unsupported_normalization() {
+        let text = r#"
+            inductive Foo {
+                bar
+                baz
+            }
+            define foo(f: Foo) -> Bool {
+                match f {
+                    Foo.bar { true }
+                    Foo.baz { true }
+                }
+            }
+            theorem goal(f: Foo) { foo(f) }
+        "#;
+        assert_eq!(verify(text), Outcome::Error);
     }
 }
