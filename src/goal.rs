@@ -1,3 +1,4 @@
+// Modified for Venticorn: preserve anonymous goal identity when code generation is unavailable.
 use tower_lsp::lsp_types::Range;
 
 use crate::acorn_value::AcornValue;
@@ -57,7 +58,12 @@ impl GoalContext {
         let name = match &goal {
             Goal::Prove(proposition) => match proposition.name() {
                 Some(name) => name.to_string(),
-                None => env.bindings.value_to_code(&proposition.value).unwrap(),
+                None => env
+                    .bindings
+                    .value_to_code(&proposition.value)
+                    .unwrap_or_else(|_| {
+                        format!("claim at line {}", proposition.source.range.start.line + 1)
+                    }),
             },
             Goal::Solve(value, _) => {
                 let value_str = env.bindings.value_to_code(value).unwrap();
