@@ -28,6 +28,8 @@ import {
   ServerOptions,
 } from "vscode-languageclient/node";
 
+import { getServerPath } from "./server";
+
 class VenticornLanguageClient extends LanguageClient {
   initializationFailed = false;
 
@@ -522,11 +524,12 @@ export async function activate(context: ExtensionContext) {
   let traceOutputChannel = window.createOutputChannel("Venticorn Language Server");
   context.subscriptions.push(traceOutputChannel);
 
-  let command = process.env.SERVER_PATH;
-  if (!command) {
-    window.showErrorMessage(
-      "The SERVER_PATH environment variable is not defined."
-    );
+  let command: string;
+  try {
+    command = await getServerPath(context);
+  } catch (error) {
+    console.error("language server resolution failed:", error);
+    window.showErrorMessage("Venticorn: " + (error as Error).message);
     return;
   }
 
