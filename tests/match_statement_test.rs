@@ -207,3 +207,17 @@ fn match_statement_case_body_errors_are_reported_without_binding_leaks() {
     assert!(error.contains("unknown"), "{error}");
     assert!(!env.bindings.has_identifier("b"));
 }
+
+#[test]
+fn quantified_match_statements_require_every_constructor() {
+    let mut env = fixture();
+    let node_count = env.nodes.len();
+    let error = statement_error(
+        &mut env,
+        "forall(value: Foo) { match value { Foo.bar(bit) { bit } } }",
+    );
+    assert!(error.contains("not all cases are covered"), "{error}");
+    assert_eq!(env.nodes.len(), node_count);
+    assert!(!env.bindings.has_identifier("value"));
+    assert!(!env.bindings.has_identifier("bit"));
+}
