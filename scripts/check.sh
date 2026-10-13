@@ -17,7 +17,7 @@ python3 tests/language_server_test.py
 (
   cd vscode/extension
   npm ci --no-audit --no-fund
-  npm run compile
+  npm test
 )
 
 (
