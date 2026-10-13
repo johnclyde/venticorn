@@ -1,3 +1,4 @@
+/* Modified for Venticorn: shared, wrapping proof-heading styles. */
 body {
   font-size: 14px;
   line-height: 1.25;
@@ -6,4 +7,16 @@ body {
 .mono {
   font-family: monospace;
   display: block;
+}
+
+.header {
+  font-family: monospace;
+  display: block;
+  font-size: 1.5em;
+  font-weight: 550;
+  margin-block-start: 0.67em;
+  margin-block-end: 0.67em;
+  margin-inline-start: 0;
+  margin-inline-end: 0;
+  overflow-wrap: anywhere;
 }

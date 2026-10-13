@@ -1,4 +1,4 @@
-<!-- Modified for Venticorn: wrap the proof panel's empty-state heading. -->
+<!-- Modified for Venticorn: wrapping proof-panel headings with shared styles. -->
 <script context="module">
   let vscode = acquireVsCodeApi();
 </script>
@@ -125,7 +125,7 @@
 
 <main>
   {#if searchResponse === null || searchResponse.goalName === null}
-    <h1 class="mono">Select a proposition to see its proof.</h1>
+    <h1 class="header">Select a proposition to see its proof.</h1>
   {:else}
     <Goal {searchResponse} {showLocation} />
     <hr />
