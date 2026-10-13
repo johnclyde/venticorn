@@ -1,3 +1,4 @@
+// Modified for Venticorn: match syntax and highlighting.
 use std::fmt;
 use std::iter::Peekable;
 use std::sync::Arc;
@@ -57,6 +58,7 @@ pub enum TokenType {
     Satisfy,
     SelfToken,
     Inductive,
+    Match,
 }
 
 // The token types that we export via the language server protocol
@@ -280,6 +282,7 @@ impl TokenType {
             TokenType::Satisfy => "satisfy",
             TokenType::SelfToken => "self",
             TokenType::Inductive => "inductive",
+            TokenType::Match => "match",
         }
     }
 
@@ -440,7 +443,8 @@ impl Token {
             | TokenType::Or
             | TokenType::And
             | TokenType::SelfToken
-            | TokenType::Inductive => Some(SemanticTokenType::KEYWORD),
+            | TokenType::Inductive
+            | TokenType::Match => Some(SemanticTokenType::KEYWORD),
 
             TokenType::NewLine => {
                 // Comments are encoded as newlines because syntactically they act like newlines.
@@ -773,6 +777,13 @@ impl TokenIter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn match_token_has_keyword_metadata() {
+        let token = TokenType::Match.generate();
+        assert_eq!(token.text(), "match");
+        assert_eq!(token.lsp_type(), Some(SemanticTokenType::KEYWORD));
+    }
 
     #[test]
     fn test_scanning_ok() {
