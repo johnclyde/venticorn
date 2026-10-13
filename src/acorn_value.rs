@@ -1076,6 +1076,15 @@ impl AcornValue {
         }
     }
 
+    // A fallible boundary for match lowering; unsupported values cannot reach CNF.
+    pub fn replace_match(self, _stack_size: AtomId) -> Result<AcornValue, String> {
+        if self.contains_match() {
+            Err("match expressions are not supported by proof normalization yet".to_string())
+        } else {
+            Ok(self)
+        }
+    }
+
     // Removes all "forall" nodes, collecting the quantified types into quantifiers.
     pub fn remove_forall(self, quantifiers: &mut Vec<AcornType>) -> AcornValue {
         match self {

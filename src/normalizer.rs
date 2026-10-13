@@ -360,10 +360,15 @@ impl Normalizer {
     pub fn normalize(&mut self, value: &AcornValue, local: bool) -> Normalization {
         // Keep incomplete match lowering out of all proof transformations.
         if value.contains_match() {
-            return Normalization::Error(
-                "match expressions are not supported by proof normalization yet".to_string(),
-            );
+            if let Err(error) = value.validate() {
+                return Normalization::Error(error);
+            }
         }
+        let value = match value.clone().replace_match(0) {
+            Ok(value) => value,
+            Err(error) => return Normalization::Error(error),
+        };
+        let value = &value;
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             // Check for defining one constant to equal another constant.
             if let AcornValue::Constant(left_module, left_name, _, _) = left.as_ref() {
