@@ -91,7 +91,7 @@
   "dependencies": {
     "vscode-languageclient": "^9.0.0"
   },
-  "icon": "images/venticorn-green-128.png",
+  "icon": "images/venticorn-assistant-128.png",
   "files": [
     "build/extension/**",
     "build/info/**",
