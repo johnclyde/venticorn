@@ -1,3 +1,4 @@
+<!-- Modified for Venticorn: wrap the proof panel's empty-state heading. -->
 <script context="module">
   let vscode = acquireVsCodeApi();
 </script>
@@ -124,7 +125,7 @@
 
 <main>
   {#if searchResponse === null || searchResponse.goalName === null}
-    <h1><pre>Select a proposition to see its proof.</pre></h1>
+    <h1 class="mono">Select a proposition to see its proof.</h1>
   {:else}
     <Goal {searchResponse} {showLocation} />
     <hr />

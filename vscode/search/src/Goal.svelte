@@ -1,3 +1,4 @@
+<!-- Modified for Venticorn: wrapping headings and keyboard-accessible navigation. -->
 <script lang="ts">
   export let searchResponse: SearchResponse;
   export let showLocation: (uri: string, range: Range) => void;
@@ -10,23 +11,36 @@
 </script>
 
 {#if searchResponse.goalName === null}
-  <h1><pre>There is no goal.</pre></h1>
+  <h1 class="mono">There is no goal.</h1>
 {:else if searchResponse.goalRange === null}
-  <h1><pre>{searchResponse.goalName}</pre></h1>
+  <h1 class="mono">{searchResponse.goalName}</h1>
 {:else}
-  <h1>
-    <pre><span class="goal-link" on:click={callback}
-        >{searchResponse.goalName}</span
-      ></pre>
+  <h1 class="mono">
+    <button class="goal-link" type="button" on:click={callback}
+      >{searchResponse.goalName}</button>
   </h1>
 {/if}
 
 <style>
+  h1 {
+    overflow-wrap: anywhere;
+  }
+
   .goal-link {
+    display: block;
+    width: 100%;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    overflow-wrap: anywhere;
     cursor: pointer;
   }
 
-  .goal-link:hover {
+  .goal-link:hover,
+  .goal-link:focus-visible {
     text-decoration: underline;
   }
 </style>
