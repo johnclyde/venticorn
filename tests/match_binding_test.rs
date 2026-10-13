@@ -18,15 +18,12 @@ fn error_for(env: &mut Environment, code: &str) -> String {
 #[test]
 fn match_pattern_return_type_must_match_scrutinee() {
     let mut env = environment();
-    env.add("define wrong(b: Bool) -> Bool { b }");
+    env.add("inductive Other {\n wrong(Bool)\n }\n");
     let error = error_for(
         &mut env,
-        "define f(v: Foo) -> Bool { match v { wrong(b) { b } } }",
+        "define f(v: Foo) -> Bool { match v { Other.wrong(b) { b } } }",
     );
-    assert!(
-        error.contains("pattern type does not match scrutinee"),
-        "{error}"
-    );
+    assert!(error.contains("expected type Foo"), "{error}");
 }
 
 #[test]
@@ -59,4 +56,15 @@ fn match_case_body_errors_do_not_make_binding_names_leak() {
     assert!(error.contains("missing"), "{error}");
     assert!(!env.bindings.has_identifier("local"));
     env.add("let local: Bool = true");
+}
+
+#[test]
+fn same_typed_ordinary_functions_are_not_match_constructors() {
+    let mut env = environment();
+    env.add("define ordinary(b: Bool) -> Foo { Foo.bar(b) }");
+    let error = error_for(
+        &mut env,
+        "define f(v: Foo) -> Bool { match v { ordinary(b) { b } } }",
+    );
+    assert!(error.contains("expected a constructor"), "{error}");
 }
