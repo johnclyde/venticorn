@@ -1,7 +1,8 @@
+// Modified for Venticorn: hide generated extension files.
 {
   "files.exclude": {
     "vscode/extension/node_modules/": true,
-    "vscode/extension/out/": true,
+    "vscode/extension/build/": true,
     "**/package-lock.json": true,
     "**/Cargo.lock": true
   },
