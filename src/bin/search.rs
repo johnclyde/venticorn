@@ -8,19 +8,26 @@
 
 const USAGE: &str = "cargo run --release --bin=search <module name> <line number>";
 
+use std::process::ExitCode;
 use venticorn::block::NodeCursor;
 use venticorn::project::Project;
 use venticorn::prover::{Outcome, Prover};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     // Parse command line arguments
     let mut args = std::env::args().skip(1);
     let module_name = args.next().expect(USAGE);
     let external_line_number = args.next().expect(USAGE).parse::<u32>().expect(USAGE);
     let internal_line_number = external_line_number - 1;
 
-    let mut project = Project::new("math");
+    let mut project = match Project::from_library() {
+        Ok(project) => project,
+        Err(error) => {
+            eprintln!("error loading library: {}", error);
+            return ExitCode::FAILURE;
+        }
+    };
     let module_id = project.load_module(&module_name).unwrap();
     let env = project.get_env(module_id).unwrap();
     let path = match env.path_for_line(internal_line_number) {
@@ -30,7 +37,7 @@ async fn main() {
                 "no proposition for line {} in {}: {}",
                 external_line_number, module_name, s
             );
-            return;
+            return ExitCode::SUCCESS;
         }
     };
 
@@ -91,4 +98,5 @@ async fn main() {
 
         break;
     }
+    ExitCode::SUCCESS
 }

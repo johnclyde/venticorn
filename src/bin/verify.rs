@@ -25,9 +25,14 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let mut project = Project::new("math");
-
     let args = Args::parse();
+    let mut project = match Project::from_library() {
+        Ok(project) => project,
+        Err(error) => {
+            eprintln!("error loading library: {}", error);
+            return ExitCode::FAILURE;
+        }
+    };
     if let Some(module_name) = args.module {
         project.add_target(&module_name);
     } else {

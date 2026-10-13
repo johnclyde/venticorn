@@ -121,8 +121,10 @@ fn verified_goal_is_a_successful_build() {
 
 #[test]
 fn verify_exits_with_failure_for_a_missing_target() {
+    let directory = TestDirectory::new();
     let module = format!("venticorn_missing_module_{}", std::process::id());
     let output = Command::new(env!("CARGO_BIN_EXE_verify"))
+        .env("VENTICORN_LIBRARY", &directory.0)
         .args(["--module", &module])
         .output()
         .expect("run verify");
