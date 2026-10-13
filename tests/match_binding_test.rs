@@ -48,3 +48,15 @@ fn match_constructor_arity_is_checked_before_names_are_bound() {
     );
     assert!(error.contains("expected 1 arguments but got 2"), "{error}");
 }
+
+#[test]
+fn match_case_body_errors_do_not_make_binding_names_leak() {
+    let mut env = environment();
+    let error = error_for(
+        &mut env,
+        "define f(v: Foo) -> Bool { match v { Foo.bar(local) { missing } } }",
+    );
+    assert!(error.contains("missing"), "{error}");
+    assert!(!env.bindings.has_identifier("local"));
+    env.add("let local: Bool = true");
+}
