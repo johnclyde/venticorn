@@ -12,7 +12,7 @@
   "engines": {
     "vscode": "^1.82.0"
   },
-  "main": "./build/extension/extension.js",
+  "main": "build/extension/extension.js",
   "contributes": {
     "languages": [
       {
@@ -25,14 +25,14 @@
           "Acorn",
           "acorn"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "language-configuration.json"
       }
     ],
     "grammars": [
       {
         "language": "acorn",
         "scopeName": "source.acorn",
-        "path": "./syntaxes/acorn.tmLanguage.json"
+        "path": "syntaxes/acorn.tmLanguage.json"
       }
     ],
     "commands": [
@@ -90,5 +90,14 @@
   "dependencies": {
     "vscode-languageclient": "^9.0.0"
   },
-  "icon": "./images/venticorn-green-128.png"
+  "icon": "images/venticorn-green-128.png",
+  "files": [
+    "build/**",
+    "language-configuration.json",
+    "syntaxes/**",
+    "images/**",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ]
 }
