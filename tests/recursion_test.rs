@@ -9,11 +9,12 @@ fn naturals() -> Environment {
     env
 }
 
-fn reject(env: &mut Environment, text: &str) {
+fn reject_termination(env: &mut Environment, text: &str) {
     let statement = Statement::parse_str(text).expect("recursion fixture must parse");
-    assert!(env
+    let error = env
         .add_statement(&mut Project::new_mock(), &statement)
-        .is_err());
+        .unwrap_err();
+    assert!(error.to_string().contains("termination checker"), "{error}");
 }
 
 #[test]
@@ -51,7 +52,7 @@ fn right_recursive_definition_terminates() {
 #[test]
 fn unchanged_recursive_arguments_are_rejected() {
     let mut env = naturals();
-    reject(
+    reject_termination(
         &mut env,
         r#"
         define loop(a: Nat, b: Nat) -> Nat {
@@ -68,7 +69,7 @@ fn unchanged_recursive_arguments_are_rejected() {
 #[test]
 fn alternating_argument_decreases_do_not_prove_termination() {
     let mut env = naturals();
-    reject(
+    reject_termination(
         &mut env,
         r#"
         define loop(a: Nat, b: Nat, c: Bool) -> Bool {
@@ -91,7 +92,7 @@ fn alternating_argument_decreases_do_not_prove_termination() {
 #[test]
 fn contradictory_self_recursion_is_rejected() {
     let mut env = Environment::new_test();
-    reject(&mut env, "define loop(a: Bool) -> Bool { not loop(a) }");
+    reject_termination(&mut env, "define loop(a: Bool) -> Bool { not loop(a) }");
     assert!(!env.bindings.has_identifier("loop"));
 }
 
@@ -113,10 +114,11 @@ fn recursive_function_name_cannot_collide_with_a_type_parameter() {
 #[test]
 fn failed_generic_declarations_do_not_leak_temporary_bindings() {
     let mut env = Environment::new_test();
-    reject(
-        &mut env,
-        "define bad<T>(value: T) -> Bool { missing(value) }",
-    );
+    let statement =
+        Statement::parse_str("define bad<T>(value: T) -> Bool { missing(value) }").unwrap();
+    assert!(env
+        .add_statement(&mut Project::new_mock(), &statement)
+        .is_err());
     assert!(!env.bindings.has_identifier("bad"));
     assert!(!env.bindings.has_type_name("T"));
     env.add("define good<T>(value: T) -> T { value }");
@@ -148,7 +150,7 @@ fn recursive_constructor_types_must_be_direct_fields() {
 fn recursive_function_cannot_escape_as_a_value() {
     let mut env = naturals();
     env.add("define apply(f: Nat -> Bool, n: Nat) -> Bool { f(n) }");
-    reject(
+    reject_termination(
         &mut env,
         "define cheat(n: Nat) -> Bool { not apply(cheat, n) }",
     );
@@ -173,5 +175,19 @@ fn generic_recursive_definitions_preserve_type_metadata() {
         .unwrap();
     assert!(env.bindings.has_identifier("repeat"));
     env.get_definition("repeat").unwrap().validate().unwrap();
+    assert!(!env.bindings.has_type_name("T"));
+}
+
+#[test]
+fn higher_order_wrappers_do_not_hide_recursive_calls() {
+    let mut env = naturals();
+    env.add("define apply(f: Nat -> Bool, n: Nat) -> Bool { f(n) }");
+    reject_termination(
+        &mut env,
+        "define cheat(n: Nat) -> Bool { not apply(function(k: Nat) { cheat(k) }, n) }",
+    );
+    assert!(!env.bindings.has_identifier("cheat"));
+    reject_termination(&mut env, "define generic<T>(n: Nat, value: T) -> Bool { not apply(function(k: Nat) { generic(k, value) }, n) }");
+    assert!(!env.bindings.has_identifier("generic"));
     assert!(!env.bindings.has_type_name("T"));
 }
