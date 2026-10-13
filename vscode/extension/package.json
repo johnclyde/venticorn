@@ -38,6 +38,11 @@
     "commands": [
       {
         "category": "Venticorn",
+        "command": "acorn.newFile",
+        "title": "New Venticorn File"
+      },
+      {
+        "category": "Venticorn",
         "command": "acorn.displayInfoView",
         "title": "Info View: Display",
         "description": "Show the info view.",
