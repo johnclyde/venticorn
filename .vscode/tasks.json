@@ -1,4 +1,4 @@
-// Modified for Venticorn: locked local builds and portable asset staging.
+// Modified for Venticorn: locked local builds.
 {
   "version": "2.0.0",
   "tasks": [
@@ -80,21 +80,11 @@
       "problemMatcher": []
     },
     {
-      "label": "language server: copy executable",
-      "type": "process",
-      "command": "node",
-      "args": [
-        "${workspaceFolder}/scripts/copy-language-server.cjs"
-      ],
-      "dependsOn": "language server: cargo build",
-      "problemMatcher": []
-    },
-    {
       "label": "build all",
       "dependsOn": [
         "extension: npm compile",
         "search: npm build",
-        "language server: copy executable"
+        "language server: cargo build"
       ],
       "dependsOrder": "parallel"
     }

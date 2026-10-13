@@ -92,7 +92,7 @@
   },
   "icon": "images/venticorn-green-128.png",
   "files": [
-    "build/**",
+    "build/extension/**",
     "language-configuration.json",
     "syntaxes/**",
     "images/**",
