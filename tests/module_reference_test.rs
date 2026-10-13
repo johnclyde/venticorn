@@ -13,7 +13,7 @@ fn diagnostics_preserve_file_identity_for_success_and_warning() {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", "theorem impossible { false }");
     let environment = project
-        .get_env_by_ref(&ModuleRef::from_name("main"))
+        .get_env_by_ref(&ModuleRef::Name("main".to_string()))
         .unwrap();
     let goal = environment
         .iter_goals()

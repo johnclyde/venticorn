@@ -358,7 +358,10 @@ impl Backend {
                     let path = match project.path_from_module_ref(&module_ref) {
                         Some(path) => path,
                         None => {
-                            log(&format!("no path available for {:?}", module_ref));
+                            log(&format!(
+                                "cannot publish diagnostic; no path available for {:?}",
+                                module_ref
+                            ));
                             continue;
                         }
                     };
@@ -445,7 +448,10 @@ impl Backend {
         let path = match url.to_file_path() {
             Ok(path) => path,
             Err(_) => {
-                log(&format!("no path available for {}", url));
+                log(&format!(
+                    "cannot update document; no path available for {}",
+                    url
+                ));
                 return;
             }
         };
