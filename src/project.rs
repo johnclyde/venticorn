@@ -585,6 +585,7 @@ impl Project {
     }
 
     // Returns a load error if the path doesn't correspond to a module.
+    // Prefer module_ref_from_path when the caller must preserve file references.
     pub fn module_name_from_path(&self, path: &Path) -> Result<String, LoadError> {
         let module_ref = self.module_ref_from_path(path)?;
         match module_ref {
