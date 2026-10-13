@@ -1,3 +1,5 @@
+// Modified for Venticorn.
+
 use std::collections::HashMap;
 
 use tower_lsp::lsp_types::Range;
@@ -1216,7 +1218,7 @@ impl Environment {
                     ));
                 }
                 let full_name = is.components.join(".");
-                let module_id = match project.load_module(&full_name) {
+                let module_id = match project.load_module_by_name(&full_name) {
                     Ok(module_id) => module_id,
                     Err(LoadError(s)) => {
                         // The error is with the import statement itself, like a circular import.
