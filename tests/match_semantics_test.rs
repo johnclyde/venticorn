@@ -35,3 +35,29 @@ fn duplicate_names_in_one_match_pattern_are_rejected() {
     );
     assert!(!env.bindings.has_identifier("b"));
 }
+
+#[test]
+fn distinct_match_cases_can_reuse_local_binding_names() {
+    let mut env = Environment::new_test();
+    env.add("inductive Foo {\n first(Bool)\n second(Bool)\n }\n");
+    let text = "define foo(f: Foo) -> Bool { match f { Foo.first(b) { b } Foo.second(b) { b } } }";
+    let error = add(&mut env, text).expect_err("match evaluation is not enabled yet");
+    assert!(
+        error.contains("match expression evaluation is not supported yet"),
+        "{error}"
+    );
+    assert!(!env.bindings.has_identifier("b"));
+    env.add("let b: Bool = true");
+}
+
+#[test]
+fn match_case_names_cannot_shadow_enclosing_arguments() {
+    let mut env = Environment::new_test();
+    env.add("inductive Foo {\n bar(Bool)\n }\n");
+    let error = add(
+        &mut env,
+        "define foo(f: Foo, b: Bool) -> Bool { match f { Foo.bar(b) { b } } }",
+    )
+    .unwrap_err();
+    assert!(error.contains("name b already bound"), "{error}");
+}
