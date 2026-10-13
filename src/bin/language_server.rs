@@ -286,15 +286,21 @@ impl Backend {
                     log(&message);
                 }
 
-                if let Some((module_name, diagnostic)) = event.diagnostic {
-                    let path = match project.path_from_module_name(&module_name) {
-                        Ok(path) => path,
-                        Err(_) => {
-                            log(&format!("no path available for {}", module_name));
-                            return;
+                if let Some((module_ref, diagnostic)) = event.diagnostic {
+                    let path = match project.path_from_module_ref(&module_ref) {
+                        Some(path) => path,
+                        None => {
+                            log(&format!("no path available for {:?}", module_ref));
+                            continue;
                         }
                     };
-                    let url = Url::from_file_path(path).unwrap();
+                    let url = match Url::from_file_path(&path) {
+                        Ok(url) => url,
+                        Err(_) => {
+                            log(&format!("invalid diagnostic path: {}", path.display()));
+                            continue;
+                        }
+                    };
                     let diagnostics = diagnostic_map.entry(url.clone()).or_default();
                     if let Some(d) = diagnostic {
                         diagnostics.push(d);

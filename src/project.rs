@@ -638,8 +638,8 @@ impl Project {
         Ok(path)
     }
 
-    pub fn path_from_module(&self, module_id: ModuleId) -> Option<PathBuf> {
-        let name = match &self.modules[module_id as usize].0 {
+    pub fn path_from_module_ref(&self, module_ref: &ModuleRef) -> Option<PathBuf> {
+        let name = match module_ref {
             ModuleRef::Name(name) => name,
             ModuleRef::File(path) => return Some(path.clone()),
             ModuleRef::Anonymous => return None,
@@ -649,6 +649,10 @@ impl Project {
             Ok(path) => Some(path),
             Err(_) => None,
         }
+    }
+
+    pub fn path_from_module_id(&self, module_id: ModuleId) -> Option<PathBuf> {
+        self.path_from_module_ref(&self.modules.get(module_id as usize)?.0)
     }
 
     // Loads a module from cache if possible, or else from the filesystem.
@@ -835,7 +839,7 @@ mod tests {
         assert_eq!(project.load_module("foo").unwrap(), first);
         assert!(matches!(project.get_module_by_name("foo"), Module::Ok(_)));
         assert_eq!(
-            project.path_from_module(first),
+            project.path_from_module_id(first),
             Some(PathBuf::from("/mock/foo.ac"))
         );
     }
@@ -871,6 +875,26 @@ mod tests {
             project.get_module_by_ref(&ModuleRef::Anonymous),
             Module::None
         ));
+    }
+
+    #[test]
+    fn test_reference_paths_and_unknown_module_ids() {
+        let project = Project::new_mock();
+        assert_eq!(
+            project.path_from_module_ref(&ModuleRef::from_name("nested.module")),
+            Some(PathBuf::from("/mock/nested/module.ac"))
+        );
+        let file = PathBuf::from("/outside/unsaved.ac");
+        assert_eq!(
+            project.path_from_module_ref(&ModuleRef::File(file.clone())),
+            Some(file)
+        );
+        assert_eq!(project.path_from_module_ref(&ModuleRef::Anonymous), None);
+        assert_eq!(
+            project.path_from_module_ref(&ModuleRef::from_name("invalid-name")),
+            None
+        );
+        assert_eq!(project.path_from_module_id(ModuleId::MAX), None);
     }
 
     #[test]

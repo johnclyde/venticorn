@@ -1,6 +1,6 @@
 // Modified for Venticorn.
 
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use crate::{environment::Environment, token};
 
@@ -46,6 +46,16 @@ pub enum ModuleRef {
     // A filename.
     // This sort of module can be loaded by a project, but not referred to in code.
     File(PathBuf),
+}
+
+impl fmt::Display for ModuleRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            ModuleRef::Anonymous => write!(f, "<anonymous>"),
+            ModuleRef::Name(name) => write!(f, "{}", name),
+            ModuleRef::File(path) => write!(f, "{}", path.display()),
+        }
+    }
 }
 
 impl ModuleRef {

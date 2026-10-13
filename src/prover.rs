@@ -1,3 +1,5 @@
+// Modified for Venticorn.
+
 use std::collections::HashSet;
 use std::fmt;
 use std::sync::atomic::AtomicBool;
@@ -783,7 +785,7 @@ impl Prover {
         let (rule, location) = match &step.rule {
             Rule::Assumption(info) => {
                 let location = project
-                    .path_from_module(info.source.module)
+                    .path_from_module_id(info.source.module)
                     .and_then(|path| Url::from_file_path(path).ok())
                     .map(|uri| Location {
                         uri,
