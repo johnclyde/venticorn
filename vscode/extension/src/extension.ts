@@ -1,9 +1,8 @@
-// Modified for Venticorn: editor-facing product names.
+// Modified for Venticorn: editor-facing names and language-server lifecycle.
 import {
   commands,
   Disposable,
   ExtensionContext,
-  languages,
   Position,
   ProgressLocation,
   Range,
@@ -517,6 +516,11 @@ export function activate(context: ExtensionContext) {
       fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
     },
     traceOutputChannel,
+    initializationFailedHandler: (error) => {
+      console.error("initialization failed:", error);
+      // Let the user fix the configuration before explicitly trying again.
+      return false;
+    },
   };
 
   // Create the language client and start the client.
