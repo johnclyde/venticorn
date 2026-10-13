@@ -1403,6 +1403,11 @@ impl Environment {
                 self.add_prop_lines(index, statement);
                 Ok(())
             }
+
+            StatementInfo::Match(_) => Err(Error::new(
+                &statement.first_token,
+                "match statements are not supported yet",
+            )),
         }
     }
 

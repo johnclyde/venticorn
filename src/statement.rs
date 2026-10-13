@@ -174,6 +174,14 @@ pub struct SolveStatement {
     pub body: Body,
 }
 
+pub struct MatchStatement {
+    // The thing we are matching patterns against.
+    pub scrutinee: Expression,
+
+    // (pattern, body) pairs.
+    pub cases: Vec<(Expression, Body)>,
+}
+
 // Acorn is a statement-based language. There are several types.
 // Each type has its own struct.
 pub struct Statement {
@@ -200,6 +208,7 @@ pub enum StatementInfo {
     Numerals(NumeralsStatement),
     Solve(SolveStatement),
     Problem(Body),
+    Match(MatchStatement),
 }
 
 const ONE_INDENT: &str = "    ";
@@ -958,6 +967,16 @@ impl Statement {
                 write!(f, "problem")?;
                 write_block(f, &body.statements, indentation)
             }
+
+            StatementInfo::Match(ms) => {
+                let case_indentation = add_indent(indentation);
+                write!(f, "match {} {{", ms.scrutinee)?;
+                for (pattern, body) in &ms.cases {
+                    write!(f, "\n{}{}", case_indentation, pattern)?;
+                    write_block(f, &body.statements, &case_indentation)?;
+                }
+                write!(f, "\n{}}}", indentation)
+            }
         }
     }
 
@@ -1584,6 +1603,30 @@ mod tests {
                 }
             }"},
             "unexpected token at the top level",
+        );
+    }
+    #[test]
+    fn test_match_statement_ast_formatting() {
+        let original = should_parse("if Foo.bar { baz }");
+        let StatementInfo::If(branch) = original.statement else {
+            panic!("expected an if statement fixture");
+        };
+        let statement = Statement {
+            first_token: TokenType::Match.new_token("match"),
+            last_token: original.last_token,
+            statement: StatementInfo::Match(MatchStatement {
+                scrutinee: Expression::Singleton(TokenType::Identifier.new_token("x")),
+                cases: vec![(branch.condition, branch.body)],
+            }),
+        };
+        assert_eq!(
+            statement.to_string(),
+            indoc! {"
+            match x {
+                Foo.bar {
+                    baz
+                }
+            }"}
         );
     }
 }
