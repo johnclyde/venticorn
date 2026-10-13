@@ -1,6 +1,6 @@
 // Modified for Venticorn: editor-facing names and language-server lifecycle.
 import {
-  ExtensionContext, ProgressLocation, TextDocument, window, workspace,
+  ExtensionContext, OutputChannel, ProgressLocation, TextDocument, window, workspace,
 } from "vscode";
 import * as os from "os";
 import {
@@ -27,6 +27,11 @@ class VenticornLanguageClient extends LanguageClient {
 }
 
 let client: VenticornLanguageClient;
+let outputChannel: OutputChannel | undefined;
+
+function log(message: string) {
+  outputChannel?.appendLine(`[${new Date().toLocaleTimeString()}] ${message}`);
+}
 
 async function getProgress() {
   if (!client?.isRunning()) {
@@ -38,7 +43,7 @@ async function getProgress() {
     if (!client?.isRunning()) {
       return undefined;
     }
-    console.error("error in getProgress:", e);
+    log(`Progress request failed: ${String(e)}`);
     throw e;
   }
 }
@@ -65,7 +70,7 @@ async function showProgressBar() {
       let elapsed = Date.now() - startTime;
       if (elapsed > 2000) {
         // It's been a while. Let's give up.
-        console.log("giving up on progress bar");
+        log("No verification progress appeared before the notification timeout");
         return;
       }
     }
@@ -79,7 +84,7 @@ async function showProgressBar() {
       },
       async (progress, token) => {
         token.onCancellationRequested(() => {
-          console.log("Venticorn validation progress bar canceled");
+          log("Validation progress notification canceled");
         });
 
         while (response.total !== response.done) {
@@ -98,16 +103,14 @@ async function showProgressBar() {
       }
     );
   } catch (e) {
-    console.error("error showing progress bar:", e);
+    log(`Progress notification failed: ${String(e)}`);
   }
 }
 
 export async function activate(context: ExtensionContext) {
-  let timestamp = new Date().toLocaleTimeString();
-  console.log(
-    `activating Venticorn-${os.platform()}-${os.arch()} extension at`,
-    timestamp
-  );
+  outputChannel = window.createOutputChannel("Venticorn Extension");
+  context.subscriptions.push(outputChannel);
+  log(`Activating Venticorn ${context.extension.packageJSON.version} on ${os.platform()}-${os.arch()}`);
 
   let command: string;
   try {
@@ -130,9 +133,9 @@ export async function activate(context: ExtensionContext) {
           }
         });
       });
-    });
+    }, log);
   } catch (error) {
-    console.error("language server resolution failed:", error);
+    log(`Language server resolution failed: ${(error as Error).message}`);
     window.showErrorMessage("Venticorn: " + (error as Error).message);
     return;
   }
@@ -171,11 +174,11 @@ export async function activate(context: ExtensionContext) {
     },
     errorHandler: {
       error: (error) => {
-        console.error("language server error:", error);
+        log(`Language server error: ${error.message}`);
         return { action: ErrorAction.Shutdown, handled: client.initializationFailed };
       },
       closed: () => {
-        console.warn("language server process closed");
+        log("Language server process closed");
         return { action: CloseAction.DoNotRestart, handled: client.initializationFailed };
       },
     },
@@ -193,7 +196,7 @@ export async function activate(context: ExtensionContext) {
   try {
     await client.start();
   } catch (error) {
-    console.error("client failed to start:", error);
+    log(`Language client failed to start: ${String(error)}`);
     return;
   }
 

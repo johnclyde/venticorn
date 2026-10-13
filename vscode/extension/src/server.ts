@@ -47,17 +47,19 @@ export type ShowDownloadProgress = (
   download: (progress?: DownloadProgress) => Promise<void>,
 ) => Promise<void>;
 
-export async function getServerPath(context: ExtensionContext, showDownloadProgress?: ShowDownloadProgress): Promise<string> {
+export async function getServerPath(context: ExtensionContext, showDownloadProgress?: ShowDownloadProgress, log: (message: string) => void = () => {}): Promise<string> {
   if (process.env.SERVER_PATH !== undefined) {
     if (!process.env.SERVER_PATH.trim()) {
       throw new Error("SERVER_PATH is empty. " + localBuildHelp);
     }
+    log(`Using configured language server: ${process.env.SERVER_PATH}`);
     return process.env.SERVER_PATH;
   }
   const asset = serverAsset(context.extension.packageJSON.version);
   const serverPath = path.join(context.globalStorageUri.fsPath, "bin", asset);
   if (await isCachedServer(serverPath)) {
     await ensureExecutable(serverPath);
+    log(`Using cached language server: ${serverPath}`);
     return serverPath;
   }
   let pending = downloads.get(serverPath);
@@ -66,6 +68,7 @@ export async function getServerPath(context: ExtensionContext, showDownloadProgr
       try {
         await fs.promises.mkdir(path.dirname(serverPath), { recursive: true });
         const url = `https://github.com/johnclyde/venticorn/releases/download/v${context.extension.packageJSON.version}/${asset}`;
+        log(`Downloading ${url} to ${serverPath}`);
         const download = (progress?: DownloadProgress) => downloadServer(url, serverPath, progress);
         if (showDownloadProgress) {
           await showDownloadProgress(asset, download);
@@ -73,8 +76,10 @@ export async function getServerPath(context: ExtensionContext, showDownloadProgr
           await download();
         }
         await ensureExecutable(serverPath);
+        log(`Language server download complete: ${serverPath}`);
         return serverPath;
       } catch (error) {
+        log(`Language server setup failed: ${(error as Error).message}`);
         throw new Error(`Could not prepare ${asset}: ${(error as Error).message}. ${localBuildHelp}`);
       } finally {
         downloads.delete(serverPath);

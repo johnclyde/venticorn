@@ -8,7 +8,7 @@ const { loadEditorModule } = require("./editor_modules.cjs");
 
 function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports } = {}) {
   const state = {
-    notifications: [], logs: [], commands: [], save: [], open: [],
+    notifications: [], logs: [], output: [], channels: [], commands: [], save: [], open: [],
     starts: 0, stops: 0, requests: 0, client: undefined, downloadWindows: [], reports: [],
   };
   const disposable = () => ({ dispose() {} });
@@ -30,7 +30,10 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
         return task({ report: (report) => state.reports.push(report) }, { onCancellationRequested() {} });
       },
       createTextEditorDecorationType: disposable,
-      createOutputChannel: disposable,
+      createOutputChannel: (name) => {
+        state.channels.push(name);
+        return { ...disposable(), appendLine: (message) => state.output.push(message) };
+      },
       onDidChangeTextEditorSelection: () => disposable(),
       showErrorMessage: (message) => {
         state.notifications.push(message);
@@ -207,4 +210,17 @@ test("download notifications report bounded monotonic progress and support unkno
     assert.equal(unknown.state.downloadWindows.length, 1);
     assert.ok(unknown.state.reports.every((value) => value.increment === undefined && /MiB received/.test(value.message)));
   }
+});
+
+
+test("extension setup and failures remain visible in its output channel", async () => {
+  const configured = loadExtension({ serverPath: "/configured/server" });
+  await configured.activate(configured.context);
+  assert.deepEqual(configured.state.channels, ["Venticorn Extension"]);
+  assert.ok(configured.state.output.some(line => line.includes("/configured/server")));
+  const failed = loadExtension({ serverPath: null });
+  await failed.activate(failed.context);
+  assert.ok(failed.state.output.some(line => line.includes("Language server setup failed")));
+  assert.ok(failed.state.output.some(line => line.includes("offline test")));
+  assert.equal(failed.state.notifications.length, 1);
 });
