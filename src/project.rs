@@ -19,6 +19,7 @@ use crate::prover::Prover;
 use crate::token::{self, Token};
 
 // ModuleRef enumerates the different ways to refer to a module.
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 enum ModuleRef {
     // Anything that can't be referred to
     Anonymous,
@@ -29,7 +30,7 @@ enum ModuleRef {
 
     // A filename.
     // This sort of module can be loaded by a project, but not referred to in code.
-    File(String),
+    File(PathBuf),
 }
 
 // The Project is responsible for importing different files and assigning them module ids.
@@ -50,12 +51,12 @@ pub struct Project {
     // From vscode, it'll be the vscode version number.
     pub open_files: HashMap<PathBuf, (String, i32)>,
 
-    // modules[module_id] is the (name, Module) for the given module id.
+    // modules[module_id] is the (ref, Module) for the given module id.
     // Built-in modules have no name.
-    modules: Vec<(Option<String>, Module)>,
+    modules: Vec<(ModuleRef, Module)>,
 
-    // module_map maps from a module name specified in Venticorn to its id
-    module_map: HashMap<String, ModuleId>,
+    // module_map maps from a module ref to its id
+    module_map: HashMap<ModuleRef, ModuleId>,
 
     // The module names that we want to build.
     targets: HashSet<String>,
@@ -81,10 +82,10 @@ impl fmt::Display for LoadError {
     }
 }
 
-fn new_modules() -> Vec<(Option<String>, Module)> {
+fn new_modules() -> Vec<(ModuleRef, Module)> {
     let mut modules = vec![];
     while modules.len() < FIRST_NORMAL as usize {
-        modules.push((None, Module::None));
+        modules.push((ModuleRef::Anonymous, Module::None));
     }
     modules
 }
@@ -528,7 +529,8 @@ impl Project {
     }
 
     pub fn get_module_by_name(&self, module_name: &str) -> &Module {
-        if let Some(module) = self.module_map.get(module_name) {
+        let module_ref = ModuleRef::Name(module_name.to_string());
+        if let Some(module) = self.module_map.get(&module_ref) {
             self.get_module(*module)
         } else {
             &Module::None
@@ -544,7 +546,8 @@ impl Project {
     }
 
     pub fn get_env_by_name(&self, module_name: &str) -> Option<&Environment> {
-        if let Some(module_id) = self.module_map.get(module_name) {
+        let module_ref = ModuleRef::Name(module_name.to_string());
+        if let Some(module_id) = self.module_map.get(&module_ref) {
             self.get_env(*module_id)
         } else {
             None
@@ -632,9 +635,10 @@ impl Project {
     }
 
     pub fn path_from_module(&self, module_id: ModuleId) -> Option<PathBuf> {
-        let name = match &self.modules[module_id as usize] {
-            (Some(name), _) => name,
-            _ => return None,
+        let name = match &self.modules[module_id as usize].0 {
+            ModuleRef::Name(name) => name,
+            ModuleRef::File(path) => return Some(path.clone()),
+            ModuleRef::Anonymous => return None,
         };
 
         match self.path_from_module_name(&name) {
@@ -653,7 +657,8 @@ impl Project {
     // for the id will have an error.
     // If "open" is passed, then we cache this file's content in open files.
     pub fn load_module(&mut self, module_name: &str) -> Result<ModuleId, LoadError> {
-        if let Some(module_id) = self.module_map.get(module_name) {
+        let module_ref = ModuleRef::Name(module_name.to_string());
+        if let Some(module_id) = self.module_map.get(&module_ref) {
             if *module_id < FIRST_NORMAL {
                 panic!("module {} should not be loadable", module_id);
             }
@@ -668,9 +673,8 @@ impl Project {
 
         // Give this module an id before parsing it, so that we can catch circular imports.
         let module_id = self.modules.len() as ModuleId;
-        self.modules
-            .push((Some(module_name.to_string()), Module::Loading));
-        self.module_map.insert(module_name.to_string(), module_id);
+        self.modules.push((module_ref.clone(), Module::Loading));
+        self.module_map.insert(module_ref, module_id);
 
         let mut env = Environment::new(module_id);
         let tokens = Token::scan(&text);
@@ -811,6 +815,19 @@ mod tests {
     let foo: Foo = axiom
     define fooify(x: Foo) -> Foo { foo }
     "#;
+
+    #[test]
+    fn test_named_module_cache_and_path() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/foo.ac", FOO_AC);
+        let first = project.load_module("foo").unwrap();
+        assert_eq!(project.load_module("foo").unwrap(), first);
+        assert!(matches!(project.get_module_by_name("foo"), Module::Ok(_)));
+        assert_eq!(
+            project.path_from_module(first),
+            Some(PathBuf::from("/mock/foo.ac"))
+        );
+    }
 
     #[test]
     fn test_basic_import() {
