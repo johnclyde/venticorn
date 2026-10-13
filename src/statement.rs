@@ -1692,4 +1692,24 @@ mod tests {
         fail_with("match x { Foo.bar { true }", "unterminated match statement");
         fail("match x { Foo.bar { true");
     }
+    #[test]
+    fn test_nested_match_statement_formatting() {
+        ok(indoc! {"
+            forall(x: Foo) {
+                match x {
+                    Foo.bar(b) {
+                        match b {
+                            Bar.baz {
+                                true
+                            }
+                        }
+                        b = b
+                    }
+                    Foo.qux {
+                        true
+                    }
+                }
+                x = x
+            }"});
+    }
 }
