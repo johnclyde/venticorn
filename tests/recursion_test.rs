@@ -212,3 +212,21 @@ fn reserved_todo_syntax_never_discharges_proof_obligations() {
         ));
     }
 }
+
+#[test]
+fn member_recursion_can_decrease_the_receiver() {
+    let mut env = naturals();
+    env.add(
+        r#"
+        class Nat {
+            define add(self, other: Nat) -> Nat {
+                match self {
+                    Nat.zero { other }
+                    Nat.suc(pred) { pred.add(other).suc }
+                }
+            }
+        }
+    "#,
+    );
+    assert!(env.bindings.has_identifier("Nat.add"));
+}
