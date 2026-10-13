@@ -102,6 +102,19 @@ python3 python/version.py 0.1.1
 
 The update command changes local files only. Review its diff and run `bash scripts/check.sh` before committing a version change. A mismatched manifest or lockfile causes the command to fail before writing anything; repair the inconsistency deliberately before retrying. The private webview and optional training package are not separately released through this tool.
 
+## Local release builds
+
+The local build script currently supports `x86_64-unknown-linux-gnu` on a native Linux x64 Rust host. It builds only the server, uses locked dependencies, and puts the result in `target/x86_64-unknown-linux-gnu/release/venticornserver`. An explicit target build scopes the static C runtime flags to that target. The script checks its ELF headers with `readelf` and rejects a Linux executable with an interpreter or shared-library dependencies.
+
+```sh
+./crossbuild.sh --plan x86_64-unknown-linux-gnu
+./crossbuild.sh x86_64-unknown-linux-gnu
+# Optional heuristic scorer; it uses the same artifact path.
+./crossbuild.sh --no-default-features x86_64-unknown-linux-gnu
+```
+
+`--plan` prints commands and paths without building. A real build requires Cargo, the target's Rust standard library, native development/linker tools, and `readelf` from binutils. Dependencies must already be cached for an offline build; otherwise Cargo and the ONNX runtime build may need network access. Set `CARGO_NET_OFFLINE=true` to require cached dependencies. The script never installs toolchains, downloads SDKs, or publishes. Other host/target combinations fail with a configuration error.
+
 ## Coordinated releases
 
 Every release pairs a language server and an extension at the same version, even when only one component changed. Prepare them from the same reviewed, merged revision. Run local checks, build each supported server target, and inspect the extension package before publishing anything.
