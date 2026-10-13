@@ -78,3 +78,10 @@ fn bare_patterns_cannot_omit_constructor_arguments() {
     );
     assert!(error.contains("constructor requires arguments"), "{error}");
 }
+
+#[test]
+fn empty_match_cases_have_a_parse_diagnostic() {
+    let mut env = environment();
+    let error = error_for(&mut env, "define f(v: Foo) -> Bool { match v { } }");
+    assert!(error.contains("expected at least one case"), "{error}");
+}
