@@ -113,7 +113,26 @@ export async function activate(context: ExtensionContext) {
 
   let command: string;
   try {
-    command = await getServerPath(context);
+    command = await getServerPath(context, async (_asset, download) => {
+      await window.withProgress({
+        location: ProgressLocation.Notification,
+        title: "Downloading Venticorn language server",
+        cancellable: false,
+      }, async (progress) => {
+        let previousPercent = 0;
+        await download((received, total) => {
+          const message = `${(received / (1024 * 1024)).toFixed(1)} MiB received`;
+          if (total !== undefined && Number.isFinite(total) && total > 0) {
+            const percent = Math.min(100, Math.max(previousPercent, Math.floor(100 * received / total)));
+            progress.report({ message, increment: percent - previousPercent });
+            previousPercent = percent;
+          } else {
+            // Chunked responses have no total, so show bytes without inventing a percentage.
+            progress.report({ message });
+          }
+        });
+      });
+    });
   } catch (error) {
     console.error("language server resolution failed:", error);
     window.showErrorMessage("Venticorn: " + (error as Error).message);

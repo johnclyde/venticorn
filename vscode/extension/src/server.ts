@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import type { ExtensionContext } from "vscode";
-import { downloadServer } from "./download";
+import { downloadServer, DownloadProgress } from "./download";
 
 const downloads = new Map<string, Promise<string>>();
 
@@ -42,7 +42,12 @@ async function ensureExecutable(serverPath: string): Promise<void> {
   }
 }
 
-export async function getServerPath(context: ExtensionContext): Promise<string> {
+export type ShowDownloadProgress = (
+  asset: string,
+  download: (progress?: DownloadProgress) => Promise<void>,
+) => Promise<void>;
+
+export async function getServerPath(context: ExtensionContext, showDownloadProgress?: ShowDownloadProgress): Promise<string> {
   if (process.env.SERVER_PATH !== undefined) {
     if (!process.env.SERVER_PATH.trim()) {
       throw new Error("SERVER_PATH is empty. " + localBuildHelp);
@@ -61,7 +66,12 @@ export async function getServerPath(context: ExtensionContext): Promise<string> 
       try {
         await fs.promises.mkdir(path.dirname(serverPath), { recursive: true });
         const url = `https://github.com/johnclyde/venticorn/releases/download/v${context.extension.packageJSON.version}/${asset}`;
-        await downloadServer(url, serverPath);
+        const download = (progress?: DownloadProgress) => downloadServer(url, serverPath, progress);
+        if (showDownloadProgress) {
+          await showDownloadProgress(asset, download);
+        } else {
+          await download();
+        }
         await ensureExecutable(serverPath);
         return serverPath;
       } catch (error) {
