@@ -88,6 +88,13 @@ class VersionTest(unittest.TestCase):
         self.assertEqual(before, self.contents())
         self.assertFalse(list(self.root.rglob(".*.*")))
 
+    def test_version_file_mismatch_is_rejected(self):
+        (self.root / "VERSION").write_text("98.76.54\n")
+        before = self.contents()
+        with self.assertRaisesRegex(ValueError, "disagree"):
+            version.update_version(self.root, "12.34.56")
+        self.assertEqual(before, self.contents())
+
     def test_mismatch_is_rejected_before_any_write(self):
         path = self.root / "vscode/extension/package.json"
         data = json.loads(path.read_text())
