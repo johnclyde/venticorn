@@ -762,14 +762,11 @@ impl LanguageServer for Backend {
 }
 
 // Connection state can be prepared before the client selects its workspace.
-// Request forwarding is introduced separately before this wrapper is activated.
-#[allow(dead_code)]
 struct LazyBackend {
     client: Client,
     backend: tokio::sync::OnceCell<Backend>,
 }
 
-#[allow(dead_code)]
 impl LazyBackend {
     fn new(client: Client) -> Self {
         Self {
@@ -778,6 +775,38 @@ impl LazyBackend {
         }
     }
 
+    fn initialized_backend(&self) -> jsonrpc::Result<&Backend> {
+        self.backend.get().ok_or_else(|| jsonrpc::Error {
+            code: jsonrpc::ErrorCode::ServerError(-32002),
+            message: "Server not initialized".into(),
+            data: None,
+        })
+    }
+
+    async fn handle_info_request(&self, params: InfoParams) -> jsonrpc::Result<InfoResponse> {
+        self.initialized_backend()?
+            .handle_info_request(params)
+            .await
+    }
+
+    async fn handle_progress_request(
+        &self,
+        params: ProgressParams,
+    ) -> jsonrpc::Result<ProgressResponse> {
+        self.initialized_backend()?
+            .handle_progress_request(params)
+            .await
+    }
+
+    async fn handle_search_request(&self, params: SearchParams) -> jsonrpc::Result<SearchResponse> {
+        self.initialized_backend()?
+            .handle_search_request(params)
+            .await
+    }
+}
+
+#[tower_lsp::async_trait]
+impl LanguageServer for LazyBackend {
     async fn initialize(&self, params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
         let backend = self
             .backend
@@ -793,24 +822,58 @@ impl LazyBackend {
             .await?;
         backend.initialize(params).await
     }
+
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        if let Some(backend) = self.backend.get() {
+            backend.did_save(params).await;
+        }
+    }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        if let Some(backend) = self.backend.get() {
+            backend.did_open(params).await;
+        }
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        if let Some(backend) = self.backend.get() {
+            backend.did_change(params).await;
+        }
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        if let Some(backend) = self.backend.get() {
+            backend.did_close(params).await;
+        }
+    }
+
+    async fn shutdown(&self) -> jsonrpc::Result<()> {
+        match self.backend.get() {
+            Some(backend) => backend.shutdown().await,
+            None => Ok(()),
+        }
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> jsonrpc::Result<Option<SemanticTokensResult>> {
+        match self.backend.get() {
+            Some(backend) => backend.semantic_tokens_full(params).await,
+            None => Ok(None),
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
-    let project = match Project::from_library() {
-        Ok(project) => project,
-        Err(error) => {
-            log(&format!("cannot start language server: {}", error));
-            return std::process::ExitCode::FAILURE;
-        }
-    };
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::build(|client| Backend::new(client, project))
-        .custom_method("acorn/info", Backend::handle_info_request)
-        .custom_method("acorn/progress", Backend::handle_progress_request)
-        .custom_method("acorn/search", Backend::handle_search_request)
+    let (service, socket) = LspService::build(LazyBackend::new)
+        .custom_method("acorn/info", LazyBackend::handle_info_request)
+        .custom_method("acorn/progress", LazyBackend::handle_progress_request)
+        .custom_method("acorn/search", LazyBackend::handle_search_request)
         .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
