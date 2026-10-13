@@ -104,7 +104,7 @@ The update command changes local files only. Review its diff and run `bash scrip
 
 ## Local release builds
 
-The local build script currently supports `x86_64-unknown-linux-gnu` on a native Linux x64 Rust host. It builds only the server, uses locked dependencies, and puts the result in `target/x86_64-unknown-linux-gnu/release/venticornserver`. An explicit target build scopes the static C runtime flags to that target. The script checks its ELF headers with `readelf` and rejects a Linux executable with an interpreter or shared-library dependencies.
+The local build script supports `x86_64-unknown-linux-gnu` on a native Linux x64 Rust host, plus the Windows setup below. It builds only the server, uses locked dependencies, and puts the result in `target/x86_64-unknown-linux-gnu/release/venticornserver`. An explicit target build scopes the static C runtime flags to that target. The script checks its ELF headers with `readelf` and rejects a Linux executable with an interpreter or shared-library dependencies.
 
 ```sh
 ./crossbuild.sh --plan x86_64-unknown-linux-gnu
@@ -113,7 +113,7 @@ The local build script currently supports `x86_64-unknown-linux-gnu` on a native
 ./crossbuild.sh --no-default-features x86_64-unknown-linux-gnu
 ```
 
-`--plan` prints commands and paths without building. A real build requires Cargo, the target's Rust standard library, native development/linker tools, and `readelf` from binutils. Dependencies must already be cached for an offline build; otherwise Cargo and the ONNX runtime build may need network access. Set `CARGO_NET_OFFLINE=true` to require cached dependencies. The script never installs toolchains, downloads SDKs, or publishes. Other host/target combinations fail with a configuration error.
+`--plan` prints commands and paths without building. A real build requires Cargo, the target's Rust standard library, native development/linker tools, and `readelf` from binutils. Dependencies must already be cached for an offline build; otherwise Cargo and the ONNX runtime build may need network access. Set `CARGO_NET_OFFLINE=true` to require cached dependencies. The script never installs toolchains, downloads SDKs, or publishes. Unconfigured host/target combinations fail with a configuration error.
 
 ### Toolchains and target names
 
@@ -125,7 +125,21 @@ Use these complete Rust triples when preparing release hosts:
 | Windows x64 | `x86_64-pc-windows-msvc` | MSVC linker and Windows SDK, or an explicitly configured cross-toolchain |
 | macOS Apple silicon | `aarch64-apple-darwin` | Xcode Command Line Tools and macOS SDK, or an explicitly configured cross-toolchain |
 
-Install a missing Rust standard library explicitly with `rustup target add TARGET`, substituting the chosen triple. Rust's target standard library does not install the platform linker, C/C++ libraries, or SDK. Keep SDK locations in your local environment; repository configuration must not assume a particular home directory or silently accept SDK licenses. Windows and macOS build paths are being added separately; the target table describes the release contract, not completed platform validation.
+Install a missing Rust standard library explicitly with `rustup target add TARGET`, substituting the chosen triple. Rust's target standard library does not install the platform linker, C/C++ libraries, or SDK. Keep SDK locations in your local environment; repository configuration must not assume a particular home directory or silently accept SDK licenses. The target table describes the release contract, not completed platform validation.
+
+### Windows x64 builds
+
+On Windows, run `python python/crossbuild.py x86_64-pc-windows-msvc` in an MSVC developer shell with the Windows SDK available. The Python entrypoint does not require Bash.
+
+For a cross-build, first provision an xwin-compatible SDK yourself and review its licensing. Set `XWIN_ROOT` to its absolute path; the script requires `crt/lib/x86_64`, `sdk/lib/um/x86_64`, and `sdk/lib/ucrt/x86_64` under that directory. It uses `lld-link`, or the executable named by `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER`. No user-specific linker paths are stored in the repository.
+
+```sh
+export XWIN_ROOT=/absolute/path/to/your/windows-sdk
+./crossbuild.sh --plan x86_64-pc-windows-msvc
+./crossbuild.sh x86_64-pc-windows-msvc
+```
+
+The output is `target/x86_64-pc-windows-msvc/release/venticornserver.exe`. The build requests a static C runtime and verifies the output is x64 PE; it does not claim the file has no Windows system-library dependencies. Test the resulting server on Windows before release. Cross SDKs and ONNX runtime compatibility require platform validation and are not installed or repaired by this script.
 
 Before creating a release, merge and review the version change, run the local checks, then build and validate each platform artifact. A successful `--plan` is only a command preview. It is not evidence that a cross-toolchain can link or that a foreign executable runs.
 
