@@ -569,57 +569,6 @@ impl BindingMap {
         Ok((names, types))
     }
 
-    // Validate every name before mutating the stack, then bind the whole group.
-    fn bind_group(
-        &self,
-        stack: &mut Stack,
-        names: &Expression,
-        types: &[AcornType],
-    ) -> token::Result<Vec<String>> {
-        let name_exps = names.flatten_list(false)?;
-        if name_exps.len() != types.len() {
-            return Err(Error::new(
-                names.token(),
-                &format!(
-                    "expected {} arguments but got {}",
-                    types.len(),
-                    name_exps.len()
-                ),
-            ));
-        }
-        let mut bound_names = vec![];
-        for name_exp in name_exps {
-            let name = match name_exp {
-                Expression::Singleton(token) if token.token_type == TokenType::Identifier => {
-                    token.text().to_string()
-                }
-                _ => {
-                    return Err(Error::new(
-                        name_exp.token(),
-                        "expected a simple name in argument list",
-                    ))
-                }
-            };
-            if self.name_in_use(&name) || stack.get(&name).is_some() {
-                return Err(Error::new(
-                    name_exp.token(),
-                    &format!("name {} already bound", name),
-                ));
-            }
-            if bound_names.contains(&name) {
-                return Err(Error::new(
-                    name_exp.token(),
-                    "cannot use a name twice in one pattern",
-                ));
-            }
-            bound_names.push(name);
-        }
-        for (name, acorn_type) in bound_names.iter().zip(types) {
-            stack.insert(name.clone(), acorn_type.clone());
-        }
-        Ok(bound_names)
-    }
-
     // Errors if the value is not a constructor of the expected type.
     // Returns the index of which constructor this is, and the total number of constructors.
     fn expect_constructor(
@@ -737,55 +686,6 @@ impl BindingMap {
             names.push(name);
         }
         Ok((names, arg_types, i, total))
-    }
-
-    // Uses a pattern match to bind variables to the stack. Infers their types from the pattern.
-    // Returns an error if the pattern is not a constructor of the expected type.
-    // Returns:
-    //   the list of bound names
-    //   a parallel list of their types
-    //   the index of which constructor this is
-    //   the total number of constructors
-    fn bind_pattern(
-        &self,
-        stack: &mut Stack,
-        project: &Project,
-        expected_type: &AcornType,
-        pattern: &Expression,
-    ) -> token::Result<(Vec<String>, Vec<AcornType>, usize, usize)> {
-        let token = pattern.token();
-        let (fn_exp, args) = match pattern {
-            Expression::Apply(function, args) => (function, args),
-            _ => {
-                // A bare constructor must take no arguments.
-                let pattern_val = self.evaluate_value_with_stack(stack, project, pattern, None)?;
-                let (i, total) =
-                    self.expect_constructor(project, expected_type, &pattern_val, token)?;
-                let pattern_type = pattern_val.get_type();
-                if pattern_type.is_functional() {
-                    return Err(Error::new(token, "constructor requires arguments"));
-                }
-                check_type(token, Some(expected_type), &pattern_type)?;
-                return Ok((vec![], vec![], i, total));
-            }
-        };
-        let fn_value = self.evaluate_value_with_stack(stack, project, fn_exp, None)?;
-        let (i, total) = self.expect_constructor(project, expected_type, &fn_value, token)?;
-        let fn_type = fn_value.get_type();
-        let arg_types = match fn_type {
-            AcornType::Function(f) => {
-                if &*f.return_type != expected_type {
-                    return Err(Error::new(
-                        pattern.token(),
-                        "pattern type does not match scrutinee",
-                    ));
-                }
-                f.arg_types
-            }
-            _ => return Err(Error::new(fn_exp.token(), "expected a function")),
-        };
-        let arg_names = self.bind_group(stack, args, &arg_types)?;
-        Ok((arg_names, arg_types, i, total))
     }
 
     // This function evaluates numbers when we already know what type they are.
@@ -1464,9 +1364,17 @@ impl BindingMap {
                 let mut all_cases = false;
                 for (pattern_exp, result_exp) in case_exps {
                     let (arg_names, arg_types, i, total) =
-                        self.bind_pattern(stack, project, &scrutinee_type, pattern_exp)?;
+                        self.evaluate_pattern(project, &scrutinee_type, pattern_exp)?;
+                    // Check every outer-scope conflict before binding any case locals.
+                    for name in &arg_names {
+                        if stack.get(name).is_some() {
+                            return Err(Error::new(
+                                pattern_exp.token(),
+                                &format!("name {} already bound", name),
+                            ));
+                        }
+                    }
                     if indices.contains(&i) {
-                        stack.remove_all(&arg_names);
                         return Err(Error::new(
                             pattern_exp.token(),
                             "cannot have multiple cases for the same constructor",
@@ -1475,6 +1383,9 @@ impl BindingMap {
                     indices.push(i);
                     if total == indices.len() {
                         all_cases = true;
+                    }
+                    for (name, arg_type) in arg_names.iter().zip(&arg_types) {
+                        stack.insert(name.clone(), arg_type.clone());
                     }
                     let evaluated = (|| {
                         let pattern =
@@ -2033,30 +1944,39 @@ mod tests {
 
     #[test]
     fn pattern_binding_is_transactional_and_cannot_shadow_stack_names() {
-        let bindings = BindingMap::new(FIRST_NORMAL);
-        for input in [
-            "(fresh, outer)",
-            "(fresh, fresh)",
-            "(fresh, true)",
-            "(fresh, f(x))",
+        let mut env = crate::environment::Environment::new_test();
+        env.add("inductive Pair {\n pair(Bool, Bool)\n }\n");
+        env.add("let pair: Pair = axiom");
+        for args in [
+            "first, first",
+            "first, true",
+            "first, outer",
+            "first",
+            "first, missing(value)",
         ] {
             let mut stack = Stack::new();
             stack.insert("outer".to_string(), AcornType::Bool);
-            let names = Expression::expect_value(input);
-            assert!(bindings
-                .bind_group(&mut stack, &names, &[AcornType::Bool, AcornType::Bool])
-                .is_err());
-            assert_eq!(stack.names(), vec!["outer"], "{input}");
+            let expression =
+                Expression::expect_value(&format!("match pair {{ Pair.pair({args}) {{ true }} }}"));
+            assert!(
+                env.bindings
+                    .evaluate_value_with_stack(&mut stack, &Project::new_mock(), &expression, None)
+                    .is_err(),
+                "{args}"
+            );
+            assert_eq!(stack.names(), vec!["outer"]);
         }
         let mut stack = Stack::new();
-        let names = Expression::expect_value("(first, second)");
-        assert_eq!(
-            bindings
-                .bind_group(&mut stack, &names, &[AcornType::Bool, AcornType::Bool])
-                .unwrap(),
-            vec!["first", "second"]
+        stack.insert("outer".to_string(), AcornType::Bool);
+        let expression = Expression::expect_value(
+            "match pair { Pair.pair(first, second) { first and second } }",
         );
-        assert_eq!(stack.names(), vec!["first", "second"]);
+        let value = env
+            .bindings
+            .evaluate_value_with_stack(&mut stack, &Project::new_mock(), &expression, None)
+            .unwrap();
+        assert_eq!(value.get_type(), AcornType::Bool);
+        assert_eq!(stack.names(), vec!["outer"]);
     }
 
     #[test]
@@ -2125,33 +2045,30 @@ mod tests {
         let mut env = crate::environment::Environment::new_test();
         env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
         let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
-        let mut stack = Stack::new();
         let expression = Expression::expect_value("Foo.pair(left, right)");
         let (names, types, index, total) = env
             .bindings
-            .bind_pattern(&mut stack, &Project::new_mock(), &foo, &expression)
+            .evaluate_pattern(&Project::new_mock(), &foo, &expression)
             .unwrap();
         assert_eq!(names, vec!["left", "right"]);
         assert_eq!(types, vec![AcornType::Bool, foo]);
         assert_eq!((index, total), (1, 2));
-        assert_eq!(stack.names(), vec!["left", "right"]);
+        assert!(!env.bindings.has_identifier("left"));
+        assert!(!env.bindings.has_identifier("right"));
     }
 
     #[test]
     fn nullary_patterns_preserve_the_existing_stack() {
         let mut env = crate::environment::Environment::new_test();
         env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
-        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
         let mut stack = Stack::new();
         stack.insert("outer".to_string(), AcornType::Bool);
-        let expression = Expression::expect_value("Foo.end");
-        let (names, types, index, total) = env
-            .bindings
-            .bind_pattern(&mut stack, &Project::new_mock(), &foo, &expression)
+        let expression = Expression::expect_value(
+            "match Foo.end { Foo.end { outer } Foo.pair(left, right) { left } }",
+        );
+        env.bindings
+            .evaluate_value_with_stack(&mut stack, &Project::new_mock(), &expression, None)
             .unwrap();
-        assert!(names.is_empty());
-        assert!(types.is_empty());
-        assert_eq!((index, total), (0, 2));
         assert_eq!(stack.names(), vec!["outer"]);
     }
 
