@@ -15,7 +15,7 @@ use crate::project::Project;
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 use crate::statement::Body;
-use crate::token::{self, Error, Token, TokenType};
+use crate::token::{self, Error, Token};
 
 // Proofs are structured into blocks.
 // The environment specific to this block can have a bunch of propositions that need to be
@@ -27,7 +27,8 @@ pub struct Block {
     // Externally, these are generic data types.
     type_params: Vec<String>,
 
-    // The arguments to this block.
+    // The arguments to this block, from forall or theorem parameters.
+    // Pattern variables are constrained by their match case and are stored separately.
     // Internally to the block, the arguments are constants.
     // Externally, these arguments are variables.
     args: Vec<(String, AcornType)>,
@@ -65,8 +66,8 @@ pub enum BlockParams<'a> {
     FunctionSatisfy(AcornValue, AcornType, Range),
 
     // MatchCase represents a single case within a match statement.
-    // The scrutinee, the constructor, and the range of the pattern.
-    MatchCase(AcornValue, AcornValue, Range),
+    // The scrutinee, constructor, pattern arguments, and source range of the pattern.
+    MatchCase(AcornValue, AcornValue, Vec<(String, AcornType)>, Range),
 
     // No special params needed
     ForAll,
@@ -157,14 +158,24 @@ impl Block {
                 let prop = Proposition::anonymous(bound_goal, env.module_id, range);
                 Some(Goal::Prove(prop))
             }
-            BlockParams::MatchCase(..) => {
-                let token = body
-                    .map(|body| body.left_brace.clone())
-                    .unwrap_or_else(|| TokenType::Match.new_token("match"));
-                return Err(Error::new(
-                    &token,
-                    "match case blocks are not supported yet",
-                ));
+            BlockParams::MatchCase(scrutinee, constructor, pattern_args, range) => {
+                // Each pattern variable is a local constant constrained by this case.
+                let mut arg_values = vec![];
+                for (arg_name, arg_type) in pattern_args {
+                    subenv
+                        .bindings
+                        .add_constant(&arg_name, vec![], arg_type, None, None);
+                    arg_values.push(subenv.bindings.get_constant_value(&arg_name).unwrap());
+                }
+                let applied = AcornValue::new_apply(constructor, arg_values);
+                let equality = AcornValue::new_equals(scrutinee, applied);
+                subenv.add_node(
+                    project,
+                    true,
+                    Proposition::premise(equality, env.module_id, range),
+                    None,
+                );
+                None
             }
             BlockParams::Solve(target, range) => Some(Goal::Solve(target, range)),
             BlockParams::ForAll | BlockParams::Problem => None,

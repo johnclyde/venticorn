@@ -21,23 +21,25 @@ fn match_statements_report_unsupported_semantics_without_adding_nodes() {
     let error = env
         .add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err();
-    assert!(error.message.contains("not supported yet"));
+    assert!(error
+        .message
+        .contains("match statements are not supported yet"));
     assert_eq!(env.nodes.len(), node_count);
     assert!(!env.bindings.has_identifier("b"));
 }
 
 #[test]
-fn match_case_block_construction_reports_unsupported_semantics() {
+fn nullary_match_case_blocks_assume_the_constructor_equality() {
     use tower_lsp::lsp_types::Range;
+    use venticorn::acorn_value::AcornValue;
     use venticorn::block::{Block, BlockParams};
 
     let env = fixture();
-    let params = BlockParams::MatchCase(
-        env.bindings.get_constant_value("f").unwrap(),
-        env.bindings.get_constant_value("Foo.baz").unwrap(),
-        Range::default(),
-    );
-    let result = Block::new(
+    let value = env.bindings.get_constant_value("f").unwrap();
+    let constructor = env.bindings.get_constant_value("Foo.baz").unwrap();
+    let params =
+        BlockParams::MatchCase(value.clone(), constructor.clone(), vec![], Range::default());
+    let block = Block::new(
         &mut Project::new_mock(),
         &env,
         vec![],
@@ -46,14 +48,15 @@ fn match_case_block_construction_reports_unsupported_semantics() {
         0,
         0,
         None,
+    )
+    .unwrap();
+    assert!(block.goal.is_none());
+    assert_eq!(block.env.nodes.len(), 1);
+    assert!(block.env.nodes[0].structural);
+    assert_eq!(
+        block.env.nodes[0].claim.value,
+        AcornValue::new_equals(value, constructor)
     );
-    let error = match result {
-        Err(error) => error,
-        Ok(_) => panic!("expected an explicit unsupported error"),
-    };
-    assert!(error
-        .message
-        .contains("match case blocks are not supported yet"));
 }
 
 #[test]
@@ -129,4 +132,60 @@ fn pattern_evaluation_returns_the_nullary_constructor() {
     );
     assert!(args.is_empty());
     assert_eq!((index, total), (1, 2));
+}
+
+#[test]
+fn match_case_blocks_keep_variables_local_and_retain_body_goals() {
+    use venticorn::acorn_value::AcornValue;
+    use venticorn::block::{Block, BlockParams};
+    use venticorn::statement::StatementInfo;
+
+    let env = fixture();
+    let node_count = env.nodes.len();
+    let statement =
+        Statement::parse_str("match f {\n Foo.bar(b) {\n false\n }\n Foo.baz { true }\n}").unwrap();
+    let StatementInfo::Match(ms) = statement.statement else {
+        panic!("expected match fixture");
+    };
+    let (pattern, body) = &ms.cases[0];
+    let value = env.bindings.get_constant_value("f").unwrap();
+    let (constructor, args, _, _) = env
+        .bindings
+        .evaluate_pattern(&Project::new_mock(), &value.get_type(), pattern)
+        .unwrap();
+    let params = BlockParams::MatchCase(value.clone(), constructor.clone(), args, pattern.range());
+    let block = Block::new(
+        &mut Project::new_mock(),
+        &env,
+        vec![],
+        vec![],
+        params,
+        body.left_brace.line_number,
+        body.right_brace.line_number,
+        Some(body),
+    )
+    .unwrap();
+    let local = block.env.bindings.get_constant_value("b").unwrap();
+    assert_eq!(
+        block.env.nodes[0].claim.value,
+        AcornValue::new_equals(value, AcornValue::new_apply(constructor, vec![local]))
+    );
+    assert!(block.env.nodes[0].structural);
+    let goal = block.env.nodes.last().unwrap();
+    assert!(!goal.structural);
+    assert!(goal.has_goal());
+    assert_eq!(goal.claim.value, AcornValue::Bool(false));
+    assert_eq!(env.nodes.len(), node_count);
+    assert!(!env.bindings.has_identifier("b"));
+}
+
+#[test]
+fn match_statement_case_body_errors_are_reported_before_the_support_guard() {
+    let mut env = fixture();
+    let error = statement_error(
+        &mut env,
+        "match f { Foo.bar(b) { unknown } Foo.baz { true } }",
+    );
+    assert!(error.contains("unknown"), "{error}");
+    assert!(!env.bindings.has_identifier("b"));
 }
