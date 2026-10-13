@@ -211,7 +211,7 @@ impl Project {
     // Returns whether it loaded okay.
     // Either way, it's still added as a target.
     pub fn add_target_by_name(&mut self, module_name: &str) -> bool {
-        let answer = self.load_module(module_name).is_ok();
+        let answer = self.load_module_by_name(module_name).is_ok();
         self.targets.insert(module_name.to_string());
         answer
     }
@@ -665,25 +665,32 @@ impl Project {
     // If there is an error in the file, the load will return a module id, but the module
     // for the id will have an error.
     // If "open" is passed, then we cache this file's content in open files.
-    pub fn load_module(&mut self, module_name: &str) -> Result<ModuleId, LoadError> {
-        let module_ref = ModuleRef::from_name(module_name);
+    fn load_module_by_ref(&mut self, module_ref: &ModuleRef) -> Result<ModuleId, LoadError> {
         if let Some(module_id) = self.module_map.get(&module_ref) {
             if *module_id < FIRST_NORMAL {
                 panic!("module {} should not be loadable", module_id);
             }
             if let Module::Loading = self.get_module_by_id(*module_id) {
-                return Err(LoadError(format!("circular import of {}", module_name)));
+                return Err(LoadError(format!("circular import of {}", module_ref)));
             }
             return Ok(*module_id);
         }
 
-        let path = self.path_from_module_name(module_name)?;
+        let path = match self.path_from_module_ref(module_ref) {
+            Some(path) => path,
+            None => {
+                return Err(LoadError(format!(
+                    "unloadable module ref: {:?}",
+                    module_ref
+                )))
+            }
+        };
         let text = self.read_file(&path)?;
 
         // Give this module an id before parsing it, so that we can catch circular imports.
         let module_id = self.modules.len() as ModuleId;
         self.modules.push((module_ref.clone(), Module::Loading));
-        self.module_map.insert(module_ref, module_id);
+        self.module_map.insert(module_ref.clone(), module_id);
 
         let mut env = Environment::new(module_id);
         let tokens = Token::scan(&text);
@@ -695,6 +702,11 @@ impl Project {
         self.modules[module_id as usize].1 = module;
 
         Ok(module_id)
+    }
+
+    pub fn load_module_by_name(&mut self, module_name: &str) -> Result<ModuleId, LoadError> {
+        let module_ref = ModuleRef::from_name(module_name);
+        self.load_module_by_ref(&module_ref)
     }
 
     // Appends all dependencies, including chains of direct dependencies.
@@ -751,7 +763,7 @@ impl Project {
     // Expects the module to load successfully and for there to be no errors in the loaded module.
     // Only for testing.
     pub fn expect_ok(&mut self, module_name: &str) -> ModuleId {
-        let module_id = self.load_module(module_name).expect("load failed");
+        let module_id = self.load_module_by_name(module_name).expect("load failed");
         match self.get_module_by_id(module_id) {
             Module::Ok(_) => module_id,
             Module::Error(e) => panic!("error in {}: {}", module_name, e),
@@ -762,13 +774,13 @@ impl Project {
     // This expects there to be an error during loading itself.
     #[cfg(test)]
     fn expect_load_err(&mut self, module_name: &str) {
-        assert!(self.load_module(module_name).is_err());
+        assert!(self.load_module_by_name(module_name).is_err());
     }
 
     // This expects the module to load, but for there to be an error in the loaded module.
     #[cfg(test)]
     fn expect_module_err(&mut self, module_name: &str) {
-        let module_id = self.load_module(module_name).expect("load failed");
+        let module_id = self.load_module_by_name(module_name).expect("load failed");
         if let Module::Error(_) = self.get_module_by_id(module_id) {
             // What we expected
         } else {
@@ -836,8 +848,8 @@ mod tests {
     fn test_named_module_cache_and_path() {
         let mut project = Project::new_mock();
         project.mock("/mock/foo.ac", FOO_AC);
-        let first = project.load_module("foo").unwrap();
-        assert_eq!(project.load_module("foo").unwrap(), first);
+        let first = project.load_module_by_name("foo").unwrap();
+        assert_eq!(project.load_module_by_name("foo").unwrap(), first);
         assert!(matches!(project.get_module_by_name("foo"), Module::Ok(_)));
         assert_eq!(
             project.path_from_module_id(first),
@@ -896,6 +908,21 @@ mod tests {
             None
         );
         assert_eq!(project.path_from_module_id(ModuleId::MAX), None);
+    }
+
+    #[test]
+    fn test_load_file_reference_and_anonymous_reference() {
+        let mut project = Project::new_mock();
+        let path = PathBuf::from("/outside/direct.ac");
+        project
+            .open_files
+            .insert(path.clone(), ("theorem identity { true }".to_string(), 1));
+        let reference = ModuleRef::File(path.clone());
+        let id = project.load_module_by_ref(&reference).unwrap();
+        assert_eq!(project.load_module_by_ref(&reference).unwrap(), id);
+        assert!(project.get_env_by_ref(&reference).is_some());
+        assert_eq!(project.path_from_module_id(id), Some(path));
+        assert!(project.load_module_by_ref(&ModuleRef::Anonymous).is_err());
     }
 
     #[test]
@@ -1057,8 +1084,8 @@ mod tests {
             theorem goal { foo.fooify(new_foo) = foo.foo }
         "#,
         );
-        p.load_module("foo").expect("loading foo failed");
-        p.load_module("main").expect("loading main failed");
+        p.load_module_by_name("foo").expect("loading foo failed");
+        p.load_module_by_name("main").expect("loading main failed");
         p.add_target_by_name("foo");
         p.add_target_by_name("main");
         p.expect_build_ok();
@@ -1151,13 +1178,13 @@ mod tests {
     fn test_external_update_is_rejected_without_changing_state() {
         let mut project = Project::new_mock();
         project.mock("/mock/main.ac", "theorem identity { true }");
-        let module_id = project.load_module("main").unwrap();
+        let module_id = project.load_module_by_name("main").unwrap();
         let outside_path = PathBuf::from("/outside/foo.ac");
         assert!(project
             .update_file(outside_path.clone(), FOO_AC, 1)
             .is_err());
         assert!(!project.open_files.contains_key(&outside_path));
-        assert_eq!(project.load_module("main").unwrap(), module_id);
+        assert_eq!(project.load_module_by_name("main").unwrap(), module_id);
         project.expect_build_ok();
     }
 
