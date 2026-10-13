@@ -8,6 +8,7 @@ use crate::code_gen_error::CodeGenError;
 use crate::expression::{Declaration, Expression, Terminator};
 use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::project::Project;
+use crate::termination_checker::TerminationChecker;
 use crate::token::{self, Error, Token, TokenIter, TokenType};
 
 // A representation of the variables on the stack.
@@ -1433,7 +1434,7 @@ impl BindingMap {
     //   (None means expect a boolean value.)
     // value_expr is the expression for the value itself.
     //
-    // This function mutates the binding map but sets it back to its original state when finished.
+    // Evaluates in an isolated temporary scope, leaving these bindings unchanged on every path.
     //
     // Returns a tuple with:
     //   a list of type parameter names
@@ -1456,6 +1457,35 @@ impl BindingMap {
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
         class_name: Option<&str>,
+        function_name: Option<&str>,
+    ) -> token::Result<(
+        Vec<String>,
+        Vec<String>,
+        Vec<AcornType>,
+        Option<AcornValue>,
+        AcornType,
+    )> {
+        let mut scope = self.clone();
+        scope.evaluate_subvalue_in_scope(
+            project,
+            type_param_tokens,
+            args,
+            value_type_expr,
+            value_expr,
+            class_name,
+            function_name,
+        )
+    }
+
+    fn evaluate_subvalue_in_scope(
+        &mut self,
+        project: &Project,
+        type_param_tokens: &[Token],
+        args: &[Declaration],
+        value_type_expr: Option<&Expression>,
+        value_expr: &Expression,
+        class_name: Option<&str>,
+        function_name: Option<&str>,
     ) -> token::Result<(
         Vec<String>,
         Vec<String>,
@@ -1500,11 +1530,25 @@ impl BindingMap {
             }
         }
 
+        if let Some(name) = function_name {
+            if self.name_in_use(name) {
+                return Err(Error::new(
+                    value_expr.token(),
+                    "function name conflicts with a type parameter",
+                ));
+            }
+        }
+
         // Evaluate the inner value using our modified bindings
         let specific_value_type = match value_type_expr {
             Some(e) => self.evaluate_type(project, e)?,
             None => AcornType::Bool,
         };
+        if let Some(name) = function_name {
+            let function_type =
+                AcornType::new_functional(specific_arg_types.clone(), specific_value_type.clone());
+            self.add_constant(name, vec![], function_type, None, None);
+        }
         let generic_value = if value_expr.token().token_type == TokenType::Axiom {
             None
         } else {
@@ -1514,6 +1558,25 @@ impl BindingMap {
                 value_expr,
                 Some(&specific_value_type),
             )?;
+            if let Some(name) = function_name {
+                let mut checker = TerminationChecker::new(
+                    self.module,
+                    name.to_string(),
+                    specific_arg_types.len(),
+                );
+                if !checker.check(&specific_value) {
+                    return Err(Error::new(
+                        value_expr.token(),
+                        "the termination checker could not prove that this terminates",
+                    ));
+                }
+                if checker.is_recursive() && !type_param_names.is_empty() {
+                    return Err(Error::new(
+                        value_expr.token(),
+                        "generic recursive definitions are not supported yet",
+                    ));
+                }
+            }
             let generic_value = specific_value.parametrize(self.module, &type_param_names);
             Some(generic_value)
         };
@@ -1524,11 +1587,6 @@ impl BindingMap {
             .into_iter()
             .map(|t| t.parametrize(self.module, &type_param_names))
             .collect();
-
-        // Reset the bindings
-        for name in type_param_names.iter().rev() {
-            self.remove_data_type(&name);
-        }
 
         Ok((
             type_param_names,
