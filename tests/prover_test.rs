@@ -1365,7 +1365,7 @@ mod prover_test {
         assert_eq!(outcome, Outcome::Success);
     }
     #[test]
-    fn test_match_definition_proof_reports_unsupported_normalization() {
+    fn test_prove_with_match_in_define() {
         let text = r#"
             inductive Foo {
                 bar
@@ -1379,6 +1379,6 @@ mod prover_test {
             }
             theorem goal(f: Foo) { foo(f) }
         "#;
-        assert_eq!(verify(text), Outcome::Error);
+        assert_eq!(verify(text), Outcome::Success);
     }
 }
