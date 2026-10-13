@@ -1590,9 +1590,9 @@ impl AcornValue {
             AcornValue::Variable(i, var_type) => {
                 AcornValue::Variable(*i, var_type.specialize(params))
             }
-            AcornValue::Constant(_, _, _, c_params) => {
+            AcornValue::Constant(module, name, acorn_type, c_params) => {
                 assert!(c_params.is_empty());
-                self.clone()
+                AcornValue::Constant(*module, name.clone(), acorn_type.specialize(params), vec![])
             }
             AcornValue::Application(app) => AcornValue::Application(FunctionApplication {
                 function: Box::new(app.function.specialize(params)),
