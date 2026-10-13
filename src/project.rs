@@ -245,7 +245,7 @@ impl Project {
     }
 
     pub fn add_target_by_name(&mut self, module_name: &str) -> bool {
-        self.add_target_by_ref(&ModuleRef::from_name(module_name))
+        self.add_target_by_ref(&ModuleRef::Name(module_name.to_string()))
     }
 
     fn add_target_by_path(&mut self, path: &Path) -> Result<(), LoadError> {
@@ -723,7 +723,7 @@ impl Project {
     }
 
     pub fn load_module_by_name(&mut self, module_name: &str) -> Result<ModuleId, LoadError> {
-        let module_ref = ModuleRef::from_name(module_name);
+        let module_ref = ModuleRef::Name(module_name.to_string());
         self.load_module_by_ref(&module_ref)
     }
 
@@ -869,7 +869,7 @@ mod tests {
         let first = project.load_module_by_name("foo").unwrap();
         assert_eq!(project.load_module_by_name("foo").unwrap(), first);
         assert!(matches!(
-            project.get_module_by_ref(&ModuleRef::from_name("foo")),
+            project.get_module_by_ref(&ModuleRef::Name("foo".to_string())),
             Module::Ok(_)
         ));
         assert_eq!(
@@ -915,7 +915,7 @@ mod tests {
     fn test_reference_paths_and_unknown_module_ids() {
         let project = Project::new_mock();
         assert_eq!(
-            project.path_from_module_ref(&ModuleRef::from_name("nested.module")),
+            project.path_from_module_ref(&ModuleRef::Name("nested.module".to_string())),
             Some(PathBuf::from("/mock/nested/module.ac"))
         );
         let file = PathBuf::from("/outside/unsaved.ac");
@@ -925,7 +925,7 @@ mod tests {
         );
         assert_eq!(project.path_from_module_ref(&ModuleRef::Anonymous), None);
         assert_eq!(
-            project.path_from_module_ref(&ModuleRef::from_name("invalid-name")),
+            project.path_from_module_ref(&ModuleRef::Name("invalid-name".to_string())),
             None
         );
         assert_eq!(project.path_from_module_id(ModuleId::MAX), None);
