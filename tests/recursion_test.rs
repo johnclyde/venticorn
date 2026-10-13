@@ -55,3 +55,23 @@ fn unchanged_recursive_arguments_are_rejected() {
     "#);
     assert!(!env.bindings.has_identifier("loop"));
 }
+
+#[test]
+fn alternating_argument_decreases_do_not_prove_termination() {
+    let mut env = naturals();
+    reject(&mut env, r#"
+        define loop(a: Nat, b: Nat, c: Bool) -> Bool {
+            if c {
+                match a {
+                    Nat.zero { false }
+                    Nat.suc(pred) { not loop(pred, b.suc, false) }
+                }
+            } else {
+                match b {
+                    Nat.zero { false }
+                    Nat.suc(pred) { loop(a.suc, pred, true) }
+                }
+            }
+        }
+    "#);
+}
