@@ -1,9 +1,0 @@
-// Just used for local testing.
-
-type Nat: axiom
-
-let f: Nat -> Bool = axiom
-
-axiom exists_a_fa {
-    exists(a: Nat) { f(a) }
-} 

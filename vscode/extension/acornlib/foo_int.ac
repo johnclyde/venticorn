@@ -1,5 +1,0 @@
-from foo import Nat, f
-
-theorem exists_a_fa {
-    exists(a: Nat) { f(a) }
-} 
