@@ -620,21 +620,61 @@ impl BindingMap {
         Ok(bound_names)
     }
 
+    // Errors if the value is not a constructor of the expected type.
+    // Returns the index of which constructor this is, and the total number of constructors.
+    fn expect_constructor(
+        &self,
+        project: &Project,
+        expected_type: &AcornType,
+        value: &AcornValue,
+        token: &Token,
+    ) -> token::Result<(usize, usize)> {
+        let info = match value {
+            AcornValue::Constant(module, name, _, _) => {
+                let bindings = if *module == self.module {
+                    &self
+                } else {
+                    project
+                        .get_bindings(*module)
+                        .ok_or_else(|| Error::new(token, "constructor module is unavailable"))?
+                };
+                bindings
+                    .constants
+                    .get(name)
+                    .ok_or_else(|| Error::new(token, "constructor metadata is unavailable"))?
+            }
+            _ => return Err(Error::new(token, "invalid pattern")),
+        };
+        match &info.constructor {
+            Some((constructor_type, i, total)) => {
+                check_type(token, Some(expected_type), &constructor_type)?;
+                Ok((*i, *total))
+            }
+            None => Err(Error::new(token, "expected a constructor")),
+        }
+    }
+
     // Uses a pattern match to bind variables to the stack. Infers their types from the pattern.
     // Returns an error if the pattern is not a constructor of the expected type.
-    // Returns the list of bound names and a parallel list of their types.
+    // Returns:
+    //   the list of bound names
+    //   a parallel list of their types
+    //   the index of which constructor this is
+    //   the total number of constructors
     fn bind_pattern(
         &self,
         stack: &mut Stack,
         project: &Project,
         expected_type: &AcornType,
         pattern: &Expression,
-    ) -> token::Result<(Vec<String>, Vec<AcornType>)> {
+    ) -> token::Result<(Vec<String>, Vec<AcornType>, usize, usize)> {
+        let token = pattern.token();
         let (fn_exp, args) = match pattern {
             Expression::Apply(function, args) => (function, args),
-            _ => return Err(Error::new(pattern.token(), "invalid match pattern")),
+            _ => return Err(Error::new(token, "invalid match pattern")),
         };
         let fn_value = self.evaluate_value_with_stack(stack, project, fn_exp, None)?;
+        let (i, total) = self.expect_constructor(project, expected_type, &fn_value, token)?;
         let fn_type = fn_value.get_type();
         let arg_types = match fn_type {
             AcornType::Function(f) => {
@@ -649,7 +689,7 @@ impl BindingMap {
             _ => return Err(Error::new(fn_exp.token(), "expected a function")),
         };
         let arg_names = self.bind_group(stack, args, &arg_types)?;
-        Ok((arg_names, arg_types))
+        Ok((arg_names, arg_types, i, total))
     }
 
     // This function evaluates numbers when we already know what type they are.
@@ -1324,7 +1364,7 @@ impl BindingMap {
                 let scrutinee_type = scrutinee.get_type();
                 let mut cases = vec![];
                 for (pattern_exp, result_exp) in case_exps {
-                    let (arg_names, arg_types) =
+                    let (arg_names, arg_types, _, _) =
                         self.bind_pattern(stack, project, &scrutinee_type, pattern_exp)?;
                     let evaluated = (|| {
                         let pattern =
@@ -1945,12 +1985,13 @@ mod tests {
         let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
         let mut stack = Stack::new();
         let expression = Expression::expect_value("Foo.pair(left, right)");
-        let (names, types) = env
+        let (names, types, index, total) = env
             .bindings
             .bind_pattern(&mut stack, &Project::new_mock(), &foo, &expression)
             .unwrap();
         assert_eq!(names, vec!["left", "right"]);
         assert_eq!(types, vec![AcornType::Bool, foo]);
+        assert_eq!((index, total), (1, 2));
         assert_eq!(stack.names(), vec!["left", "right"]);
     }
 
