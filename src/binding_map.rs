@@ -671,7 +671,18 @@ impl BindingMap {
         let token = pattern.token();
         let (fn_exp, args) = match pattern {
             Expression::Apply(function, args) => (function, args),
-            _ => return Err(Error::new(token, "invalid match pattern")),
+            _ => {
+                // A bare constructor must take no arguments.
+                let pattern_val = self.evaluate_value_with_stack(stack, project, pattern, None)?;
+                let (i, total) =
+                    self.expect_constructor(project, expected_type, &pattern_val, token)?;
+                let pattern_type = pattern_val.get_type();
+                if pattern_type.is_functional() {
+                    return Err(Error::new(token, "constructor requires arguments"));
+                }
+                check_type(token, Some(expected_type), &pattern_type)?;
+                return Ok((vec![], vec![], i, total));
+            }
         };
         let fn_value = self.evaluate_value_with_stack(stack, project, fn_exp, None)?;
         let (i, total) = self.expect_constructor(project, expected_type, &fn_value, token)?;
@@ -1993,6 +2004,24 @@ mod tests {
         assert_eq!(types, vec![AcornType::Bool, foo]);
         assert_eq!((index, total), (1, 2));
         assert_eq!(stack.names(), vec!["left", "right"]);
+    }
+
+    #[test]
+    fn nullary_patterns_preserve_the_existing_stack() {
+        let mut env = crate::environment::Environment::new_test();
+        env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
+        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
+        let mut stack = Stack::new();
+        stack.insert("outer".to_string(), AcornType::Bool);
+        let expression = Expression::expect_value("Foo.end");
+        let (names, types, index, total) = env
+            .bindings
+            .bind_pattern(&mut stack, &Project::new_mock(), &foo, &expression)
+            .unwrap();
+        assert!(names.is_empty());
+        assert!(types.is_empty());
+        assert_eq!((index, total), (0, 2));
+        assert_eq!(stack.names(), vec!["outer"]);
     }
 
     #[test]
