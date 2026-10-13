@@ -13,7 +13,7 @@ import {
 } from "vscode-languageclient/node";
 
 import { getServerPath } from "./server";
-import { InfoView } from "./info-view";
+import { Assistant } from "./assistant";
 
 class VenticornLanguageClient extends LanguageClient {
   initializationFailed = false;
@@ -211,8 +211,8 @@ export async function activate(context: ExtensionContext) {
     return;
   }
 
-  let infoViewPath = context.asAbsolutePath("build/info");
-  context.subscriptions.push(new InfoView(client, infoViewPath));
+  let assistantPath = context.asAbsolutePath("build/assistant");
+  context.subscriptions.push(new Assistant(client, assistantPath));
 
   let onDocumentChange = async (document: TextDocument) => {
     if (!client?.isRunning() || document.languageId !== "acorn" || document.uri.scheme !== "file") {

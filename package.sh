@@ -11,7 +11,7 @@ fi
 vsce_command="$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$(command -v "$vsce_command")")"
 # The bundler clears only its generated output directory.
 npm --prefix vscode/extension run build
-npm --prefix vscode/info run build
+npm --prefix vscode/assistant run build
 mkdir -p files/release
 output="$PWD/files/release/venticorn-extension-$version.vsix"
 (

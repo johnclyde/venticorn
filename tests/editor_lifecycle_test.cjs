@@ -151,7 +151,7 @@ test("a stopped initialized client receives no document requests or restart", as
   const extension = loadExtension();
   await extension.activate(extension.context);
   const { state } = extension;
-  assert.equal(state.commands.length, 4);
+  assert.equal(state.commands.length, 6);
   assert.equal(state.notifications.length, 0);
   state.client.running = false;
   for (const handler of [...state.save, ...state.open]) {
@@ -169,7 +169,7 @@ test("a stopped initialized client receives no document requests or restart", as
   assert.deepEqual(state.notifications, ["unexpected runtime error"]);
 });
 
-test("deactivation stops a running client and disposes an unopened info view", async () => {
+test("deactivation stops a running client and disposes an unopened assistant", async () => {
   const extension = loadExtension();
   await extension.activate(extension.context);
   await extension.deactivate();
@@ -197,7 +197,7 @@ test("the configured executable is used without copying it into the extension", 
 });
 
 
-test("the extracted info view does not send requests after its client stops", async () => {
+test("the extracted assistant does not send requests after its client stops", async () => {
   const extension = loadExtension();
   await extension.activate(extension.context);
   const panel = extension.context.subscriptions.find((value) => typeof value.sendSearchRequest === "function");

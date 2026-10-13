@@ -26,12 +26,12 @@ function openPanel() {
     Uri: { file: (fsPath) => ({ fsPath }) },
     ViewColumn: { Two: 2, Three: 3 },
   };
-  const { InfoView } = loadEditorModule("info-view", {
+  const { Assistant } = loadEditorModule("assistant", {
     vscode: api,
     "vscode-languageclient/node": {},
     fs: { readFileSync: () => '<html><head><script src="./app.js"></script></head></html>' },
   });
-  const view = new InfoView({ isRunning: () => false }, "/extension/build/info");
+  const view = new Assistant({ isRunning: () => false }, "/extension/build/assistant");
   view.display(undefined);
   return { panel, view, registrations, creation };
 }
@@ -47,18 +47,18 @@ test("webview policy allows only host-supplied packaged resources", () => {
   assert.doesNotMatch(policy, /unsafe-inline|unsafe-eval|vscode-resource:|https:;/);
   assert.ok(html.indexOf("Content-Security-Policy") < html.indexOf("<script"));
   assert.match(html, /name=a&amp;b/);
-  assert.equal(creation[3].localResourceRoots[0].fsPath, "/extension/build/info");
+  assert.equal(creation[3].localResourceRoots[0].fsPath, "/extension/build/assistant");
 });
 
-test("the Info View keeps legacy display and toggle command aliases", () => {
+test("the Assistant keeps legacy display and toggle command aliases", () => {
   const { view, registrations, creation } = openPanel();
-  assert.equal(creation[0], "acornInfoView");
+  assert.equal(creation[0], "acornAssistant");
   let displayed = 0;
   let toggled = 0;
   view.display = () => displayed++;
   view.toggle = () => toggled++;
-  for (const name of ["acorn.displayInfoView", "acorn.displaySearchPanel"]) registrations.get(name)();
-  for (const name of ["acorn.toggleInfoView", "acorn.toggleSearchPanel"]) registrations.get(name)();
-  assert.equal(displayed, 2);
-  assert.equal(toggled, 2);
+  for (const name of ["acorn.displayAssistant", "acorn.displayInfoView", "acorn.displaySearchPanel"]) registrations.get(name)();
+  for (const name of ["acorn.toggleAssistant", "acorn.toggleInfoView", "acorn.toggleSearchPanel"]) registrations.get(name)();
+  assert.equal(displayed, 3);
+  assert.equal(toggled, 3);
 });

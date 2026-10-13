@@ -15,7 +15,7 @@ def check_vsix(filename):
         names = set(archive.namelist())
         for required in [
             "extension/LICENSE.txt", "extension/NOTICE", "extension/readme.md",
-            "extension/build/info/index.html",
+            "extension/build/assistant/index.html",
             "extension/build/extension/THIRD_PARTY_NOTICES.txt",
             "extension/acornlib/nat.ac", "extension/acornlib/int.ac",
             "extension/acornlib/nat_gcd.ac", "extension/acornlib/LICENSE",
@@ -25,7 +25,7 @@ def check_vsix(filename):
         excluded = [
             "extension/src/", "extension/node_modules/",
             "extension/acornlib/problems/", "extension/acornlib/.git/",
-            "extension/target/", "extension/files/", "extension/build/old/", "extension/build/test/",
+            "extension/target/", "extension/files/", "extension/build/old/", "extension/build/test/", "extension/build/info/",
         ]
         for name in names:
             assert not any(name.startswith(prefix) for prefix in excluded), f"Unexpected development file: {name}"

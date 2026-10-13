@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const test = require("node:test");
-const info = path.join(__dirname, "../vscode/info");
+const info = path.join(__dirname, "../vscode/assistant");
 const resolve = name => require.resolve(name, { paths: [info] });
 const { compile, preprocess } = require(resolve("svelte/compiler"));
 const ts = require(resolve("typescript"));

@@ -28,7 +28,7 @@ python3 tests/language_server_test.py
 )
 
 (
-  cd vscode/info
+  cd vscode/assistant
   npm ci --no-audit --no-fund
   npm run check
   npm test

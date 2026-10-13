@@ -47,9 +47,9 @@
       },
       {
         "category": "Venticorn",
-        "command": "acorn.displayInfoView",
-        "title": "Info View: Display",
-        "description": "Show the info view.",
+        "command": "acorn.displayAssistant",
+        "title": "Assistant: Display",
+        "description": "Show the assistant.",
         "icon": {
           "light": "images/venticorn-assistant-color.png",
           "dark": "images/venticorn-assistant-color.png"
@@ -57,20 +57,20 @@
       },
       {
         "category": "Venticorn",
-        "command": "acorn.toggleInfoView",
-        "title": "Info View: Toggle",
-        "description": "Toggle whether the info view is displayed."
+        "command": "acorn.toggleAssistant",
+        "title": "Assistant: Toggle",
+        "description": "Toggle whether the assistant is displayed."
       }
     ],
     "keybindings": [
       {
-        "command": "acorn.toggleInfoView",
+        "command": "acorn.toggleAssistant",
         "key": "ctrl+shift+enter",
         "mac": "cmd+shift+enter",
         "when": "editorTextFocus && editorLangId == acorn"
       },
       {
-        "command": "acorn.toggleInfoView",
+        "command": "acorn.toggleAssistant",
         "key": "ctrl+enter",
         "mac": "cmd+enter",
         "when": "editorTextFocus && editorLangId == acorn"
@@ -79,7 +79,7 @@
     "menus": {
       "editor/title": [
         {
-          "command": "acorn.displayInfoView",
+          "command": "acorn.displayAssistant",
           "group": "navigation",
           "when": "editorLangId == acorn"
         }
@@ -89,7 +89,7 @@
   "scripts": {
     "check": "tsc -p ./ --noEmit",
     "build": "npm run check && node build.mjs",
-    "test": "tsc -p ./ && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs ../../tests/info_view_test.cjs"
+    "test": "tsc -p ./ && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs ../../tests/assistant_test.cjs"
   },
   "author": "Kevin Lacker",
   "license": "Apache-2.0",
@@ -106,7 +106,7 @@
   "icon": "images/venticorn-assistant-128.png",
   "files": [
     "build/extension/**",
-    "build/info/**",
+    "build/assistant/**",
     "language-configuration.json",
     "syntaxes/**",
     "images/**",
