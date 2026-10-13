@@ -138,12 +138,9 @@ impl Environment {
         );
     }
 
-    fn add_prop_lines(&mut self, index: usize, statement: &Statement) {
-        self.add_line_types(
-            LineType::Node(index),
-            statement.first_line(),
-            statement.last_line(),
-        );
+    // Associate a proof node with the source range that selects it.
+    fn add_node_lines(&mut self, index: usize, range: &Range) {
+        self.add_line_types(LineType::Node(index), range.start.line, range.end.line);
     }
 
     fn get_line_type(&self, line: u32) -> Option<LineType> {
@@ -598,7 +595,7 @@ impl Environment {
                     ),
                     block,
                 );
-                self.add_prop_lines(index, statement);
+                self.add_node_lines(index, &statement.range());
                 self.bindings.mark_as_theorem(&ts.name);
 
                 Ok(())
@@ -628,7 +625,7 @@ impl Environment {
                         Proposition::anonymous(claim, self.module_id, statement.range()),
                         None,
                     );
-                    self.add_prop_lines(index, statement);
+                    self.add_node_lines(index, &statement.range());
                 }
                 Ok(())
             }
@@ -664,7 +661,7 @@ impl Environment {
                     Proposition::anonymous(outer_claim, self.module_id, range),
                     Some(block),
                 );
-                self.add_prop_lines(index, statement);
+                self.add_node_lines(index, &statement.range());
                 Ok(())
             }
 
@@ -716,7 +713,7 @@ impl Environment {
                     Proposition::anonymous(general_claim, self.module_id, statement.range()),
                     None,
                 );
-                self.add_prop_lines(index, statement);
+                self.add_node_lines(index, &statement.range());
 
                 // Define the quantifiers as constants
                 for (quant_name, quant_type) in quant_names.iter().zip(quant_types.iter()) {
@@ -835,7 +832,7 @@ impl Environment {
                 );
 
                 let index = self.add_node(project, false, prop, Some(block));
-                self.add_prop_lines(index, statement);
+                self.add_node_lines(index, &statement.range());
                 Ok(())
             }
 
@@ -1376,7 +1373,7 @@ impl Environment {
                 };
 
                 let index = self.add_node(project, false, prop, Some(block));
-                self.add_prop_lines(index, statement);
+                self.add_node_lines(index, &statement.range());
                 Ok(())
             }
 
@@ -1400,7 +1397,7 @@ impl Environment {
                 );
 
                 let index = self.add_node(project, false, vacuous_prop, Some(block));
-                self.add_prop_lines(index, statement);
+                self.add_node_lines(index, &statement.range());
                 Ok(())
             }
 
@@ -1455,24 +1452,28 @@ impl Environment {
                     )?;
                     let (claim, _) = block.export_last_claim(self, &body.right_brace)?;
                     disjuncts.push(claim);
-                    blocks.push(block);
+                    blocks.push((block, body.range()));
                 }
 
                 // All branches are exhaustive and retain their own proof obligations.
                 // Only their disjunction is usable after the complete case split.
                 let mut exported = Some(AcornValue::reduce(BinaryOp::Or, disjuncts));
                 let last = blocks.len() - 1;
-                for (index, block) in blocks.into_iter().enumerate() {
+                for (index, (block, range)) in blocks.into_iter().enumerate() {
                     let claim = if index == last {
                         exported.take().unwrap()
                     } else {
                         AcornValue::Bool(true)
                     };
                     let prop = Proposition::anonymous(claim, self.module_id, statement.range());
-                    self.add_node(project, false, prop, Some(block));
+                    let node_index = self.add_node(project, false, prop, Some(block));
+                    self.add_node_lines(node_index, &range);
                 }
-                // Per-case source selection requires mapping each body separately.
-                self.add_other_lines(statement);
+                self.add_line_types(
+                    LineType::Other,
+                    statement.last_line(),
+                    statement.last_line(),
+                );
                 Ok(())
             }
         }
