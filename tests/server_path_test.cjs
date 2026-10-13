@@ -48,3 +48,26 @@ test("empty overrides and absent cached servers report actionable errors", async
   const missing = fixture(t);
   await assert.rejects(missing.getServerPath(missing.context), /SERVER_PATH/);
 });
+
+
+test("cached POSIX servers regain executable permission", { skip: process.platform === "win32" }, async (t) => {
+  const f = fixture(t);
+  const directory = path.join(f.directory, "bin");
+  fs.mkdirSync(directory);
+  const binary = path.join(directory, "venticornserver-v0.1.0-linux-x64");
+  fs.writeFileSync(binary, "cached binary", { mode: 0o600 });
+  await f.getServerPath(f.context);
+  assert.equal(fs.statSync(binary).mode & 0o777, 0o755);
+});
+
+test("Windows cached executables never use chmod", async () => {
+  const server = loadEditorModule("server", {
+    os: { platform: () => "win32", arch: () => "x64" },
+    fs: { promises: {
+      lstat: async () => ({ isFile: () => true, size: 8 }),
+      chmod: async () => { throw new Error("chmod is unsupported"); },
+    } },
+  }, { process: { env: {} } });
+  const context = { extension: { packageJSON: { version: "0.1.0" } }, globalStorageUri: { fsPath: "/storage" } };
+  assert.equal(path.basename(await server.getServerPath(context)), "venticornserver-v0.1.0-win32-x64.exe");
+});
