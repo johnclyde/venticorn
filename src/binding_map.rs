@@ -654,6 +654,91 @@ impl BindingMap {
         }
     }
 
+    // Evaluates a pattern match. Infers their types from the pattern.
+    // Returns an error if the pattern is not a constructor of the expected type.
+    // Returns:
+    //   the list of names
+    //   a parallel list of their types
+    //   the index of which constructor this is
+    //   the total number of constructors
+    fn evaluate_pattern(
+        &self,
+        project: &Project,
+        expected_type: &AcornType,
+        pattern: &Expression,
+    ) -> token::Result<(Vec<String>, Vec<AcornType>, usize, usize)> {
+        let token = pattern.token();
+        let (fn_exp, args) = match pattern {
+            Expression::Apply(function, args) => (function, args),
+            _ => {
+                // This could be a no-argument constructor.
+                let pattern_val = self.evaluate_value(project, pattern, None)?;
+                let (i, total) =
+                    self.expect_constructor(project, expected_type, &pattern_val, token)?;
+                let pattern_type = pattern_val.get_type();
+                if pattern_type.is_functional() {
+                    return Err(Error::new(token, "constructor requires arguments"));
+                }
+                check_type(token, Some(expected_type), &pattern_type)?;
+                return Ok((vec![], vec![], i, total));
+            }
+        };
+        let fn_value = self.evaluate_value(project, fn_exp, None)?;
+        let (i, total) = self.expect_constructor(project, expected_type, &fn_value, token)?;
+        let fn_type = fn_value.get_type();
+        let arg_types = match fn_type {
+            AcornType::Function(f) => {
+                if &*f.return_type != expected_type {
+                    return Err(Error::new(
+                        pattern.token(),
+                        "pattern type does not match scrutinee",
+                    ));
+                }
+                f.arg_types
+            }
+            _ => return Err(Error::new(fn_exp.token(), "expected a function")),
+        };
+        let name_exps = args.flatten_list(false)?;
+        if name_exps.len() != arg_types.len() {
+            return Err(Error::new(
+                token,
+                &format!(
+                    "expected {} arguments but got {}",
+                    arg_types.len(),
+                    name_exps.len()
+                ),
+            ));
+        }
+        let mut names = vec![];
+        for name_exp in name_exps {
+            let name = match name_exp {
+                Expression::Singleton(token) if token.token_type == TokenType::Identifier => {
+                    token.text().to_string()
+                }
+                _ => {
+                    return Err(Error::new(
+                        name_exp.token(),
+                        "expected a simple name in pattern",
+                    ))
+                }
+            };
+            if self.name_in_use(&name) {
+                return Err(Error::new(
+                    name_exp.token(),
+                    &format!("name {} already bound", name),
+                ));
+            }
+            if names.contains(&name) {
+                return Err(Error::new(
+                    name_exp.token(),
+                    "cannot use a name twice in one pattern",
+                ));
+            }
+            names.push(name);
+        }
+        Ok((names, arg_types, i, total))
+    }
+
     // Uses a pattern match to bind variables to the stack. Infers their types from the pattern.
     // Returns an error if the pattern is not a constructor of the expected type.
     // Returns:
@@ -2080,5 +2165,38 @@ mod tests {
         b.assert_type_ok("(Bool, Bool) -> Bool");
         b.assert_type_bad("Bool, Bool -> Bool");
         b.assert_type_bad("(Bool, Bool)");
+    }
+    #[test]
+    fn pattern_evaluation_validates_arguments_without_binding_them() {
+        let mut env = crate::environment::Environment::new_test();
+        env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
+        env.add("let existing: Bool = true");
+        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
+        let project = Project::new_mock();
+        let pattern = Expression::expect_value("Foo.pair(left, right)");
+        let (names, types, index, total) = env
+            .bindings
+            .evaluate_pattern(&project, &foo, &pattern)
+            .unwrap();
+        assert_eq!(names, vec!["left", "right"]);
+        assert_eq!(types, vec![AcornType::Bool, foo.clone()]);
+        assert_eq!((index, total), (1, 2));
+        assert!(!env.bindings.has_identifier("left"));
+        assert!(!env.bindings.has_identifier("right"));
+        for invalid in [
+            "Foo.pair",
+            "Foo.pair(one)",
+            "Foo.pair(same, same)",
+            "Foo.pair(true, value)",
+            "Foo.pair(existing, value)",
+        ] {
+            let pattern = Expression::expect_value(invalid);
+            assert!(
+                env.bindings
+                    .evaluate_pattern(&project, &foo, &pattern)
+                    .is_err(),
+                "{invalid}"
+            );
+        }
     }
 }
