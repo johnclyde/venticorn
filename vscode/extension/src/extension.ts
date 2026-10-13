@@ -587,7 +587,7 @@ export async function activate(context: ExtensionContext) {
     return;
   }
 
-  let searchPath = context.asAbsolutePath("../search/dist");
+  let searchPath = context.asAbsolutePath("build/search");
   context.subscriptions.push(new SearchPanel(searchPath));
 
   let onDocumentChange = async (document: TextDocument) => {
