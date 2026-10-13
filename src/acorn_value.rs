@@ -27,6 +27,33 @@ impl FunctionApplication {
         fmt_values(&self.args, f, stack_size)?;
         write!(f, ")")
     }
+
+    fn typecheck(&self) -> Result<(), String> {
+        let function_type = self.function.get_type();
+        let AcornType::Function(function) = function_type else {
+            return Err(format!(
+                "function application has non-function type {}",
+                function_type
+            ));
+        };
+        if self.args.len() > function.arg_types.len() {
+            return Err(format!(
+                "function application has {} arguments, but expected at most {}",
+                self.args.len(),
+                function.arg_types.len()
+            ));
+        }
+        for (i, (value, expected)) in self.args.iter().zip(&function.arg_types).enumerate() {
+            let actual = value.get_type();
+            if actual != *expected {
+                return Err(format!(
+                    "argument {} has type {}, but expected {}",
+                    i, actual, expected
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1476,7 +1503,7 @@ impl AcornValue {
                 for arg in &app.args {
                     arg.validate_against_stack(stack)?;
                 }
-                Ok(())
+                app.typecheck()
             }
             AcornValue::Lambda(args, value)
             | AcornValue::ForAll(args, value)
@@ -1632,11 +1659,16 @@ impl AcornValue {
             AcornValue::Variable(i, var_type) => {
                 AcornValue::Variable(*i, var_type.parametrize(module, type_names))
             }
-            AcornValue::Constant(_, _, _, params) => {
+            AcornValue::Constant(cmod, cname, ctype, params) => {
                 if !params.is_empty() {
-                    panic!("we should only be genericizing concrete values");
+                    panic!("we should only be parametrizing concrete values");
                 }
-                self.clone()
+                AcornValue::Constant(
+                    *cmod,
+                    cname.clone(),
+                    ctype.parametrize(module, type_names),
+                    vec![],
+                )
             }
             AcornValue::Application(app) => AcornValue::Application(FunctionApplication {
                 function: Box::new(app.function.parametrize(module, type_names)),
