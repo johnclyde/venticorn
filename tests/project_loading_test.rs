@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use venticorn::builder::BuildStatus;
-use venticorn::project::Project;
+use venticorn::project::{ModuleRef, Project};
 
 static NEXT_DIRECTORY: AtomicUsize = AtomicUsize::new(0);
 
@@ -82,9 +82,15 @@ fn discovery_only_skips_named_problems_subdirectories() {
 
     project.add_all_targets().unwrap();
 
-    assert!(project.get_env_by_name("main").is_some());
-    assert!(project.get_env_by_name("problems").is_some());
-    assert!(project.get_env_by_name("problems.broken").is_none());
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("main".to_string()))
+        .is_some());
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("problems".to_string()))
+        .is_some());
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("problems.broken".to_string()))
+        .is_none());
     assert_eq!(project.sync_build().0, BuildStatus::Good);
 }
 
