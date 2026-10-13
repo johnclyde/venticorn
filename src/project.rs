@@ -174,11 +174,6 @@ impl Project {
         Self::new_from_directory_search(Path::new("."))
     }
 
-    // Retained while language-server initialization moves to a client-selected path.
-    pub fn from_library() -> Result<Project, LoadError> {
-        Self::new_local()
-    }
-
     // A Project where nothing can be imported.
     pub fn new_mock() -> Project {
         let mut p = Project::new("/mock");

@@ -128,6 +128,49 @@ class LanguageServerTest(unittest.TestCase):
         stderr = self.initialize_and_shutdown(None)
         self.assertIn("initializing with no root", stderr)
 
+    def test_workspace_discovery_ignores_the_server_working_directory(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        workspace = self.library / "venticorn-library"
+        workspace.mkdir()
+        unrelated = self.library / "unrelated"
+        unrelated.mkdir()
+        stderr = self.initialize_and_shutdown(workspace.as_uri(), cwd=unrelated)
+        self.assertIn(f"initializing with root {workspace.as_uri()}", stderr)
+
+    def test_workspace_folders_work_without_legacy_root_uri(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        workspace = self.library / "acornlib"
+        workspace.mkdir()
+        self.initialize_and_shutdown(None, initialize_params={
+            "workspaceFolders": [{"uri": workspace.as_uri(), "name": "library"}],
+        })
+
+    def test_explicit_library_takes_precedence_over_remote_workspace(self):
+        self.initialize_and_shutdown("https://example.invalid/workspace")
+
+    def test_missing_workspace_library_does_not_fall_back_to_cwd(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        working = self.library / "working"
+        (working / "venticorn-library").mkdir(parents=True)
+        workspace = self.library / "workspace"
+        workspace.mkdir()
+        self.initialize_and_shutdown(
+            workspace.as_uri(), cwd=working, expected_error="no library found from",
+        )
+
+    def test_missing_workspace_requires_explicit_library(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        self.initialize_and_shutdown(
+            None, expected_error="open a workspace folder or set VENTICORN_LIBRARY",
+        )
+
+    def test_non_file_workspace_is_rejected_without_override(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        self.initialize_and_shutdown(
+            "https://example.invalid/workspace",
+            expected_error="workspace root is not a local file URI",
+        )
+
     def test_missing_library_returns_initialize_error(self):
         self.environment["VENTICORN_LIBRARY"] = str(self.library / "missing")
         stderr = self.initialize_and_shutdown(
