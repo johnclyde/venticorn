@@ -58,7 +58,7 @@ fn substituting_outer_values_preserves_match_case_scope() {
 }
 
 #[test]
-fn incomplete_match_normalization_and_codegen_return_errors() {
+fn match_normalization_completes_while_codegen_reports_unsupported() {
     let value = bound_match(AcornType::Bool).bind_values(0, 0, &[AcornValue::Bool(true)]);
     let boolean = AcornValue::Binary(
         BinaryOp::Equals,
@@ -68,9 +68,7 @@ fn incomplete_match_normalization_and_codegen_return_errors() {
     let nested = AcornValue::Not(Box::new(AcornValue::new_forall(vec![], boolean)));
     for expression in [value.clone(), nested] {
         let result = Normalizer::new().normalize(&expression, false);
-        assert!(
-            matches!(result, Normalization::Error(message) if message.contains("match expressions"))
-        );
+        assert!(!matches!(result, Normalization::Error(_)), "{result:?}");
     }
     assert!(BindingMap::new(FIRST_NORMAL).value_to_code(&value).is_err());
 }
@@ -97,10 +95,9 @@ fn match_lowering_checks_nested_boolean_scopes_without_panicking() {
     ];
     for expression in expressions {
         expression.validate().unwrap();
-        assert!(expression
-            .replace_match(0)
-            .unwrap_err()
-            .contains("match expressions"));
+        let lowered = expression.replace_match(0).unwrap();
+        assert!(!lowered.contains_match());
+        lowered.validate().unwrap();
     }
     let plain = AcornValue::new_and(AcornValue::Bool(true), AcornValue::Bool(false));
     assert_eq!(plain.clone().replace_match(0).unwrap(), plain);

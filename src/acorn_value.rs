@@ -1076,8 +1076,124 @@ impl AcornValue {
         }
     }
 
-    // Keep unsupported matches explicit while traversing Boolean scopes safely.
+    // Extract a match without crossing a binder. Each returned case result contains
+    // the surrounding expression, with its existing binders shifted past the case's
+    // newly introduced variables. Variables below stack_size remain in their scope.
+    fn extract_one_match(
+        &self,
+        stack_size: AtomId,
+    ) -> Option<(AcornValue, Vec<(Vec<AcornType>, AcornValue, AcornValue)>)> {
+        fn in_context(
+            extracted: (AcornValue, Vec<(Vec<AcornType>, AcornValue, AcornValue)>),
+            context: impl Fn(AcornValue, AtomId) -> AcornValue,
+        ) -> (AcornValue, Vec<(Vec<AcornType>, AcornValue, AcornValue)>) {
+            let (scrutinee, cases) = extracted;
+            let cases = cases
+                .into_iter()
+                .map(|(vars, pattern, result)| {
+                    let count = vars.len() as AtomId;
+                    (vars, pattern, context(result, count))
+                })
+                .collect();
+            (scrutinee, cases)
+        }
+
+        match self {
+            AcornValue::Match(scrutinee, cases) => Some((*scrutinee.clone(), cases.clone())),
+            AcornValue::Application(app) => {
+                if let Some(extracted) = app.function.extract_one_match(stack_size) {
+                    return Some(in_context(extracted, |result, count| {
+                        AcornValue::Application(FunctionApplication {
+                            function: Box::new(result),
+                            args: app
+                                .args
+                                .iter()
+                                .map(|arg| arg.clone().insert_stack(stack_size, count))
+                                .collect(),
+                        })
+                    }));
+                }
+                for (i, arg) in app.args.iter().enumerate() {
+                    if let Some(extracted) = arg.extract_one_match(stack_size) {
+                        return Some(in_context(extracted, |result, count| {
+                            let mut args: Vec<_> = app
+                                .args
+                                .iter()
+                                .map(|arg| arg.clone().insert_stack(stack_size, count))
+                                .collect();
+                            args[i] = result;
+                            AcornValue::Application(FunctionApplication {
+                                function: Box::new(
+                                    app.function.clone().insert_stack(stack_size, count),
+                                ),
+                                args,
+                            })
+                        }));
+                    }
+                }
+                None
+            }
+            AcornValue::Binary(op, left, right) => {
+                if let Some(extracted) = left.extract_one_match(stack_size) {
+                    Some(in_context(extracted, |result, count| {
+                        AcornValue::Binary(
+                            *op,
+                            Box::new(result),
+                            Box::new(right.clone().insert_stack(stack_size, count)),
+                        )
+                    }))
+                } else {
+                    right.extract_one_match(stack_size).map(|extracted| {
+                        in_context(extracted, |result, count| {
+                            AcornValue::Binary(
+                                *op,
+                                Box::new(left.clone().insert_stack(stack_size, count)),
+                                Box::new(result),
+                            )
+                        })
+                    })
+                }
+            }
+            AcornValue::IfThenElse(cond, yes, no) => {
+                let parts = [cond, yes, no];
+                for (i, part) in parts.iter().enumerate() {
+                    if let Some(extracted) = part.extract_one_match(stack_size) {
+                        return Some(in_context(extracted, |result, count| {
+                            let mut values: Vec<_> = parts
+                                .iter()
+                                .map(|part| {
+                                    Box::new((*part).clone().insert_stack(stack_size, count))
+                                })
+                                .collect();
+                            values[i] = Box::new(result);
+                            let mut values = values.into_iter();
+                            AcornValue::IfThenElse(
+                                values.next().unwrap(),
+                                values.next().unwrap(),
+                                values.next().unwrap(),
+                            )
+                        }));
+                    }
+                }
+                None
+            }
+            AcornValue::Not(value) => value.extract_one_match(stack_size).map(|extracted| {
+                in_context(extracted, |result, _| AcornValue::Not(Box::new(result)))
+            }),
+            _ => None,
+        }
+    }
+
+    // For a Boolean context C, an exhaustive match is equivalent to the conjunction
+    // of forall(case variables) { scrutinee = pattern -> C(case result) }.
+    // Keep quantifiers in their original scope; only lift matches within that scope.
     pub fn replace_match(self, stack_size: AtomId) -> Result<AcornValue, String> {
+        if !self.contains_match() {
+            return Ok(self);
+        }
+        if self.get_type() != AcornType::Bool {
+            return Err("match lowering requires a Boolean context".to_string());
+        }
         match self {
             AcornValue::Binary(op, left, right) if left.get_type() == AcornType::Bool => {
                 Ok(AcornValue::Binary(
@@ -1103,10 +1219,32 @@ impl AcornValue {
                     Box::new(value.replace_match(new_stack_size)?),
                 ))
             }
-            value if value.contains_match() => {
-                Err("match expressions are not supported by proof normalization yet".to_string())
+            AcornValue::IfThenElse(cond, yes, no) => Ok(AcornValue::IfThenElse(
+                Box::new(cond.replace_match(stack_size)?),
+                Box::new(yes.replace_match(stack_size)?),
+                Box::new(no.replace_match(stack_size)?),
+            )),
+            value => {
+                let (scrutinee, cases) = value.extract_one_match(stack_size).ok_or_else(|| {
+                    "match inside a higher-order function cannot be normalized yet".to_string()
+                })?;
+                if cases.is_empty() {
+                    return Err("match must contain at least one case".to_string());
+                }
+                let mut conjuncts = Vec::with_capacity(cases.len());
+                for (vars, pattern, result) in cases {
+                    let count = vars.len() as AtomId;
+                    let condition = AcornValue::new_equals(
+                        scrutinee.clone().insert_stack(stack_size, count),
+                        pattern,
+                    );
+                    let implication = AcornValue::new_implies(condition, result)
+                        .expand_lambdas(stack_size + count)
+                        .replace_match(stack_size + count)?;
+                    conjuncts.push(AcornValue::new_forall(vars, implication));
+                }
+                Ok(AcornValue::reduce(BinaryOp::And, conjuncts))
             }
-            value => Ok(value),
         }
     }
 
