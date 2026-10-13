@@ -89,5 +89,6 @@
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.0"
-  }
+  },
+  "icon": "./images/venticorn-green-128.png"
 }
