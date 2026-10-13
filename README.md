@@ -102,6 +102,12 @@ python3 python/version.py 0.1.1
 
 The update command changes local files only. Review its diff and run `bash scripts/check.sh` before committing a version change. A mismatched manifest or lockfile causes the command to fail before writing anything; repair the inconsistency deliberately before retrying. The private webview and optional training package are not separately released through this tool.
 
+## Coordinated releases
+
+Every release pairs a language server and an extension at the same version, even when only one component changed. Prepare them from the same reviewed, merged revision. Run local checks, build each supported server target, and inspect the extension package before publishing anything.
+
+Publish and verify the server assets before publishing the extension that requests that version. Use a release tag of `v` followed by `VERSION`; server assets are named `venticornserver-vVERSION-linux-x64`, `venticornserver-vVERSION-win32-x64.exe`, and `venticornserver-vVERSION-darwin-arm64`, replacing `VERSION` with its actual value. An extension-only release could otherwise request a server artifact that does not exist. Local build and version commands never create tags, releases, or marketplace uploads.
+
 ## Optional model training
 
 See [the Python tooling instructions](python/README.md). Training requires separate Python dependencies, a generated dataset, and the CUDA-capable PyTorch setup used by the training configuration. Update `python/config.py` to point to your dataset before running the notebooks. These tools are not needed to verify theorems or use the editor.
