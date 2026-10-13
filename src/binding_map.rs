@@ -1374,9 +1374,22 @@ impl BindingMap {
                     self.evaluate_value_with_stack(stack, project, scrutinee_exp, None)?;
                 let scrutinee_type = scrutinee.get_type();
                 let mut cases = vec![];
+                let mut indices = vec![];
+                let mut all_cases = false;
                 for (pattern_exp, result_exp) in case_exps {
-                    let (arg_names, arg_types, _, _) =
+                    let (arg_names, arg_types, i, total) =
                         self.bind_pattern(stack, project, &scrutinee_type, pattern_exp)?;
+                    if indices.contains(&i) {
+                        stack.remove_all(&arg_names);
+                        return Err(Error::new(
+                            pattern_exp.token(),
+                            "cannot have multiple cases for the same constructor",
+                        ));
+                    }
+                    indices.push(i);
+                    if total == indices.len() {
+                        all_cases = true;
+                    }
                     let evaluated = (|| {
                         let pattern =
                             self.evaluate_value_with_stack(stack, project, pattern_exp, None)?;
@@ -1387,6 +1400,12 @@ impl BindingMap {
                     stack.remove_all(&arg_names);
                     let (pattern, result) = evaluated?;
                     cases.push((arg_types, pattern, result));
+                }
+                if !all_cases {
+                    return Err(Error::new(
+                        expression.token(),
+                        "not all constructors are covered in this match",
+                    ));
                 }
                 Err(Error::new(
                     expression.token(),
@@ -1965,6 +1984,28 @@ mod tests {
             .evaluate_value_with_stack(&mut stack, &Project::new_mock(), &expression, None)
             .unwrap_err();
         assert!(error.to_string().contains("unknown"));
+        assert_eq!(stack.names(), vec!["value"]);
+    }
+
+    #[test]
+    fn repeated_constructor_cases_restore_outer_stack() {
+        let mut env = crate::environment::Environment::new_test();
+        env.add("inductive Foo {\n bar(Bool)\n }\n");
+        let mut stack = Stack::new();
+        stack.insert(
+            "value".to_string(),
+            AcornType::Data(FIRST_NORMAL, "Foo".to_string()),
+        );
+        let expression = Expression::expect_value(
+            "match value { Foo.bar(first) { first } Foo.bar(second) { second } }",
+        );
+        let error = env
+            .bindings
+            .evaluate_value_with_stack(&mut stack, &Project::new_mock(), &expression, None)
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("multiple cases for the same constructor"));
         assert_eq!(stack.names(), vec!["value"]);
     }
 
