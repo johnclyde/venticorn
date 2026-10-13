@@ -8,6 +8,9 @@ if [[ -d .github/workflows ]]; then
   exit 1
 fi
 
+python3 python/version.py
+python3 tests/version_test.py
+
 cargo fmt --all -- --check
 cargo test --locked --all-targets
 cargo test --locked --all-targets --no-default-features
