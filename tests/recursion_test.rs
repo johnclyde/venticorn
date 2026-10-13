@@ -156,7 +156,7 @@ fn recursive_function_cannot_escape_as_a_value() {
 }
 
 #[test]
-fn generic_recursion_is_guarded_until_type_metadata_is_consistent() {
+fn generic_recursive_definitions_preserve_type_metadata() {
     let mut env = naturals();
     let statement = Statement::parse_str(
         r#"
@@ -169,12 +169,9 @@ fn generic_recursion_is_guarded_until_type_metadata_is_consistent() {
     "#,
     )
     .unwrap();
-    let error = env
-        .add_statement(&mut Project::new_mock(), &statement)
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("generic recursive definitions are not supported yet"));
-    assert!(!env.bindings.has_identifier("repeat"));
+    env.add_statement(&mut Project::new_mock(), &statement)
+        .unwrap();
+    assert!(env.bindings.has_identifier("repeat"));
+    env.get_definition("repeat").unwrap().validate().unwrap();
     assert!(!env.bindings.has_type_name("T"));
 }

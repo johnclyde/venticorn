@@ -1544,10 +1544,15 @@ impl BindingMap {
             Some(e) => self.evaluate_type(project, e)?,
             None => AcornType::Bool,
         };
+        let generic_value_type = specific_value_type.parametrize(self.module, &type_param_names);
+        let generic_arg_types: Vec<_> = specific_arg_types
+            .iter()
+            .map(|t| t.parametrize(self.module, &type_param_names))
+            .collect();
         if let Some(name) = function_name {
             let function_type =
-                AcornType::new_functional(specific_arg_types.clone(), specific_value_type.clone());
-            self.add_constant(name, vec![], function_type, None, None);
+                AcornType::new_functional(generic_arg_types.clone(), generic_value_type.clone());
+            self.add_constant(name, type_param_names.clone(), function_type, None, None);
         }
         let generic_value = if value_expr.token().token_type == TokenType::Axiom {
             None
@@ -1570,23 +1575,10 @@ impl BindingMap {
                         "the termination checker could not prove that this terminates",
                     ));
                 }
-                if checker.is_recursive() && !type_param_names.is_empty() {
-                    return Err(Error::new(
-                        value_expr.token(),
-                        "generic recursive definitions are not supported yet",
-                    ));
-                }
             }
             let generic_value = specific_value.parametrize(self.module, &type_param_names);
             Some(generic_value)
         };
-
-        // Parametrize everything before returning it
-        let generic_value_type = specific_value_type.parametrize(self.module, &type_param_names);
-        let generic_arg_types = specific_arg_types
-            .into_iter()
-            .map(|t| t.parametrize(self.module, &type_param_names))
-            .collect();
 
         Ok((
             type_param_names,

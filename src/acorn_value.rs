@@ -92,14 +92,9 @@ pub enum AcornValue {
     Variable(AtomId, AcornType),
 
     // A constant, defined in a particular module.
-    // (module, constant name, type, type parameters)
-    // The type parameters can be empty.
-    //
-    // The name can have a dot in it, indicating this value is <typename>.<constantname>.
-    //
-    // When the type parameters are not empty, this indicates a polymorphic constant
-    // whose type can still be inferred.
-    // This sort of pre-type-inference value should only exist during parsing.
+    // (module, constant name, type, canonical type parameter names)
+    // The name can include a member, such as "Type.method".
+    // Each canonical type parameter must occur in the constant type so it can be inferred.
     Constant(ModuleId, String, AcornType, Vec<String>),
 
     Application(FunctionApplication),
