@@ -1237,6 +1237,16 @@ mod tests {
     }
 
     #[test]
+    fn anonymous_theorem_syntax_is_rejected_until_it_has_an_ast() {
+        for source in [
+            "theorem { true }",
+            "theorem(a: Bool, b: Bool) { a = b or a or b }",
+        ] {
+            assert!(Statement::parse_str(source).is_err());
+        }
+    }
+
+    #[test]
     fn test_definition_statements() {
         ok("let a: int = x + 2");
         ok("let f: int -> bool = compose(g, h)");
