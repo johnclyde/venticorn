@@ -95,3 +95,58 @@ fn anonymous_goal_names_have_a_source_location_fallback() {
     let context = env.iter_goals().last().unwrap().goal_context().unwrap();
     assert_eq!(context.name, "claim at line 5");
 }
+
+#[test]
+fn anonymous_axioms_are_explicit_assumptions_with_scoped_parameters() {
+    let mut env = Environment::new_test();
+    for (i, source) in [
+        "axiom { not false }",
+        "axiom(value: Bool) { value or not value }",
+        "axiom<T>(value: T) { value = value }",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let statement = Statement::parse_str(source).unwrap();
+        env.add_statement(&mut Project::new_mock(), &statement)
+            .unwrap();
+        assert_eq!(env.nodes.len(), i + 1);
+        assert_eq!(env.iter_goals().count(), 0);
+        let node = env.nodes.last().unwrap();
+        assert!(node.structural);
+        assert!(node.claim.name().is_none());
+        assert!(node.claim.source.is_axiom());
+        assert_eq!(node.claim.source.description(), "an anonymous axiom");
+        assert!(!env.bindings.has_identifier("value"));
+        assert!(!env.bindings.has_type_name("T"));
+    }
+}
+
+#[test]
+fn axiom_proof_blocks_are_rejected_without_discarding_their_content() {
+    for source in [
+        "axiom assumption { true } by { false }",
+        "axiom { true } by { false }",
+    ] {
+        let mut env = Environment::new_test();
+        let statement = Statement::parse_str(source).unwrap();
+        let error = env
+            .add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert_eq!(error.message, "axioms cannot have proof blocks");
+        assert!(env.nodes.is_empty());
+        assert!(!env.bindings.has_identifier("assumption"));
+    }
+}
+
+#[test]
+fn theorem_citations_preserve_theorem_rather_than_axiom_provenance() {
+    let mut env = Environment::new_test();
+    env.add("axiom foundation(value: Bool) { value or not value }\ntheorem cited(value: Bool) { foundation(value) }\ntheorem(value: Bool) { cited(value) }");
+    assert_eq!(env.iter_goals().count(), 0);
+    assert!(env.nodes[0].claim.source.is_axiom());
+    assert!(!env.nodes[1].claim.source.is_axiom());
+    assert!(!env.nodes[2].claim.source.is_axiom());
+    assert_eq!(env.nodes[1].claim.name(), Some("cited"));
+    assert_eq!(env.nodes[2].claim.name(), None);
+}
