@@ -75,7 +75,6 @@
     }
   },
   "scripts": {
-    "watch": "tsc -watch -p ./",
     "compile": "tsc -p ./",
     "test": "npm run compile && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs"
   },
