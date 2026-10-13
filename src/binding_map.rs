@@ -1,3 +1,4 @@
+// Modified for Venticorn: staged match binding and constructor metadata.
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::acorn_type::AcornType;
@@ -113,6 +114,12 @@ struct ConstantInfo {
 
     // The definition of this constant, if it has one.
     definition: Option<AcornValue>,
+
+    // If this constant is a constructor, store:
+    //   the type it constructs
+    //   an index of which constructor it is
+    //   how many total constructors there are
+    constructor: Option<(AcornType, usize, usize)>,
 }
 
 // Return an error if the types don't match.
@@ -323,6 +330,7 @@ impl BindingMap {
         params: Vec<String>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
+        constructor: Option<(AcornType, usize, usize)>,
     ) -> bool {
         if self.name_in_use(name) {
             panic!("constant name {} already bound", name);
@@ -332,6 +340,7 @@ impl BindingMap {
 
         // Check if we are aliasing some other constant.
         if let Some(AcornValue::Constant(module, external_name, _, _)) = &definition {
+            assert!(constructor.is_none());
             let canonical = (*module, external_name.clone());
             if *module != self.module {
                 // Prefer this alias locally to using the qualified, canonical name
@@ -344,7 +353,11 @@ impl BindingMap {
         }
 
         // We're defining a new constant.
-        let info = ConstantInfo { params, definition };
+        let info = ConstantInfo {
+            params,
+            definition,
+            constructor,
+        };
         self.constants.insert(name.to_string(), info);
         true
     }
@@ -955,7 +968,14 @@ impl BindingMap {
         let entity = bindings.evaluate_name(name_token, project, &Stack::new(), None)?;
         match entity {
             NamedEntity::Value(value) => {
-                if self.add_constant(&name_token.text(), vec![], value.get_type(), Some(value)) {
+                // Add a local alias that mirrors this constant's name in the imported module.
+                if self.add_constant(
+                    &name_token.text(),
+                    vec![],
+                    value.get_type(),
+                    Some(value),
+                    None,
+                ) {
                     return Err(Error::new(name_token, "alias failed mysteriously"));
                 }
                 Ok(())
@@ -1879,6 +1899,27 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("unknown"));
         assert_eq!(stack.names(), vec!["value"]);
+    }
+
+    #[test]
+    fn constructors_record_type_index_and_exhaustive_count() {
+        let mut env = crate::environment::Environment::new_test();
+        env.add("inductive Foo {\n bar(Bool)\n baz\n }\n");
+        env.add("structure Pair {\n first: Bool\n second: Bool\n }\n");
+        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
+        assert_eq!(
+            env.bindings.constants["Foo.bar"].constructor,
+            Some((foo.clone(), 0, 2))
+        );
+        assert_eq!(
+            env.bindings.constants["Foo.baz"].constructor,
+            Some((foo, 1, 2))
+        );
+        assert_eq!(
+            env.bindings.constants["Pair.new"].constructor,
+            Some((AcornType::Data(FIRST_NORMAL, "Pair".to_string()), 0, 1))
+        );
+        assert!(env.bindings.constants["Pair.first"].constructor.is_none());
     }
 
     #[test]
