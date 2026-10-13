@@ -188,6 +188,7 @@ impl SearchTask {
     }
 }
 
+// One backend per selected library.
 struct Backend {
     client: Client,
 
@@ -757,6 +758,40 @@ impl LanguageServer for Backend {
             data: semantic_tokens,
         });
         Ok(Some(result))
+    }
+}
+
+// Connection state can be prepared before the client selects its workspace.
+// Request forwarding is introduced separately before this wrapper is activated.
+#[allow(dead_code)]
+struct LazyBackend {
+    client: Client,
+    backend: tokio::sync::OnceCell<Backend>,
+}
+
+#[allow(dead_code)]
+impl LazyBackend {
+    fn new(client: Client) -> Self {
+        Self {
+            client,
+            backend: tokio::sync::OnceCell::new(),
+        }
+    }
+
+    async fn initialize(&self, params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
+        let backend = self
+            .backend
+            .get_or_try_init(|| async {
+                let project = Project::from_library().map_err(|error| {
+                    jsonrpc::Error::invalid_params(format!(
+                        "cannot initialize language server: {}",
+                        error
+                    ))
+                })?;
+                Ok::<_, jsonrpc::Error>(Backend::new(self.client.clone(), project))
+            })
+            .await?;
+        backend.initialize(params).await
     }
 }
 
