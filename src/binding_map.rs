@@ -1215,10 +1215,33 @@ impl BindingMap {
                     Box::new(else_value),
                 ))
             }
-            Expression::Match(token, ..) => Err(Error::new(
-                token,
-                "match expression evaluation is not supported yet",
-            )),
+            Expression::Match(_, scrutinee_exp, case_exps, _) => {
+                let scrutinee =
+                    self.evaluate_value_with_stack(stack, project, scrutinee_exp, None)?;
+                let scrutinee_type = scrutinee.get_type();
+                for (pattern_exp, _) in case_exps {
+                    let fn_exp = match pattern_exp {
+                        Expression::Apply(function, _) => function,
+                        _ => return Err(Error::new(pattern_exp.token(), "invalid match pattern")),
+                    };
+                    let fn_value = self.evaluate_value_with_stack(stack, project, fn_exp, None)?;
+                    match fn_value.get_type() {
+                        AcornType::Function(function) => {
+                            if *function.return_type != scrutinee_type {
+                                return Err(Error::new(
+                                    pattern_exp.token(),
+                                    "pattern type does not match scrutinee",
+                                ));
+                            }
+                        }
+                        _ => return Err(Error::new(fn_exp.token(), "expected a function")),
+                    }
+                }
+                Err(Error::new(
+                    expression.token(),
+                    "match expression evaluation is not supported yet",
+                ))
+            }
         }
     }
 
