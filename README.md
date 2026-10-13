@@ -64,6 +64,30 @@ Match expressions also work in `define` bodies. Include every constructor exactl
 
 Proof normalization supports nested matches, surrounding quantifiers, comparisons, and function applications. Applying a lambda that contains a match is supported; passing an unapplied lambda containing a match as a higher-order value still reports an unsupported-normalization error. Generating match syntax in proof output is not yet implemented. Some quantified Boolean equalities remain beyond the current proof search. Standalone match statements split a proof into exhaustive constructor cases. Every case is verified, and only the disjunction of the case conclusions is available outside the statement. Select a claim inside any case to inspect its proof in the editor. Expression matches, such as the let binding above, are supported.
 
+## Recursive definitions
+
+A function may call itself when every recursive call uses a strict substructure of the same original argument. Matching a constructor exposes those smaller values. For example, this complete module defines addition and verifies its base equation:
+
+```acorn
+inductive Nat {
+    zero
+    suc(Nat)
+}
+define add(a: Nat, b: Nat) -> Nat {
+    match a {
+        Nat.zero { b }
+        Nat.suc(pred) { add(pred, b).suc }
+    }
+}
+theorem goal(n: Nat) { add(Nat.zero, n) = n }
+```
+
+The decreasing argument can be any argument, including a member function's receiver or a later member argument. Generic recursive functions are also supported. One fixed argument position must decrease on every call; alternating which argument decreases can form a loop and is rejected. Passing the recursive function itself as a value is rejected when its descent cannot be checked.
+
+Recursive constructor fields must use the inductive type directly, such as `suc(Nat)`. A nested occurrence such as `Nat -> Bool` or `Bool -> Nat` is unsupported. Unrelated function fields remain allowed.
+
+Passing the termination and type checks does not guarantee that proof search will establish every true theorem about the function. The base equation above and concrete recursive unfoldings are supported; some Boolean and higher-order claims remain beyond current proof search. A rejected termination check means the checker could not establish structural descent, not necessarily that the function loops.
+
 ## Choose a library and use the CLI
 
 The library is a separate directory containing `.ac` files. Set `VENTICORN_LIBRARY` to choose it explicitly; an absolute path is recommended. Relative values resolve from the process working directory. An empty value or a path that is not a directory is an error.

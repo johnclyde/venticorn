@@ -232,10 +232,9 @@ fn member_recursion_can_decrease_the_receiver() {
 }
 
 #[test]
-fn member_recursion_on_a_later_argument_is_guarded() {
+fn member_recursion_can_decrease_a_later_argument() {
     let mut env = naturals();
-    reject_termination(
-        &mut env,
+    env.add(
         r#"
         class Nat {
             define add(self, other: Nat) -> Nat {
@@ -247,5 +246,43 @@ fn member_recursion_on_a_later_argument_is_guarded() {
         }
     "#,
     );
-    assert!(!env.bindings.has_identifier("Nat.add"));
+    assert!(env.bindings.has_identifier("Nat.add"));
+}
+
+#[test]
+fn nested_patterns_preserve_the_original_decreasing_argument() {
+    let mut env = naturals();
+    env.add(
+        r#"
+        define every_other(n: Nat) -> Nat {
+            match n {
+                Nat.zero { Nat.zero }
+                Nat.suc(pred) {
+                    match pred {
+                        Nat.zero { Nat.zero }
+                        Nat.suc(previous) { every_other(previous) }
+                    }
+                }
+            }
+        }
+    "#,
+    );
+}
+
+#[test]
+fn curried_recursive_calls_still_require_a_decreasing_argument() {
+    let mut env = naturals();
+    reject_termination(
+        &mut env,
+        r#"
+        class Nat {
+            define bad(self, other: Nat) -> Nat {
+                match other {
+                    Nat.zero { self }
+                    Nat.suc(pred) { self.bad(other) }
+                }
+            }
+        }
+    "#,
+    );
 }
