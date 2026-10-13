@@ -23,6 +23,7 @@
     {#if clause.id !== null}
       clause {clause.id} as
     {/if}
-    {desc}:</span>
+    {desc}:</span
+  >
   <Clause {clause} onClick={clauseClick} />
 {/each}

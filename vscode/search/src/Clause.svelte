@@ -6,13 +6,14 @@
 
 {#if clause.id !== null && onClick !== null}
   <button
-      class="indent clause-link"
-      type="button"
-      on:click={() => {
-        if (clause.id !== null && onClick !== null) {
-          onClick(clause.id);
-        }
-      }}>{clause.text}</button>
+    class="indent clause-link"
+    type="button"
+    on:click={() => {
+      if (clause.id !== null && onClick !== null) {
+        onClick(clause.id);
+      }
+    }}>{clause.text}</button
+  >
 {:else}
   <span class="indent">{clause.text}</span>
 {/if}
