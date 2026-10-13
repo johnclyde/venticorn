@@ -100,7 +100,10 @@
     "images/**",
     "LICENSE",
     "NOTICE",
-    "README.md"
+    "README.md",
+    "acornlib/*.ac",
+    "acornlib/LICENSE",
+    "acornlib/NOTICE"
   ],
   "publisher": "johnclyde"
 }

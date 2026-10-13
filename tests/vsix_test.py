@@ -17,10 +17,14 @@ def check_vsix(filename):
             "extension/LICENSE.txt", "extension/NOTICE", "extension/readme.md",
             "extension/build/info/index.html",
             "extension/build/extension/THIRD_PARTY_NOTICES.txt",
+            "extension/acornlib/nat.ac", "extension/acornlib/int.ac",
+            "extension/acornlib/nat_gcd.ac", "extension/acornlib/LICENSE",
+            "extension/acornlib/NOTICE",
         ]:
             assert required in names, f"VSIX is missing {required}"
         excluded = [
             "extension/src/", "extension/node_modules/",
+            "extension/acornlib/problems/", "extension/acornlib/.git/",
             "extension/target/", "extension/files/", "extension/build/old/", "extension/build/test/",
         ]
         for name in names:

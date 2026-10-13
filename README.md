@@ -92,7 +92,7 @@ Passing the termination and type checks does not guarantee that proof search wil
 
 ## Choose a library and use the CLI
 
-The library is a separate directory containing `.ac` files. Set `VENTICORN_LIBRARY` to choose it explicitly; an absolute path is recommended. Relative values resolve from the process working directory. An empty value or a path that is not a directory is an error.
+A library is a directory containing `.ac` files. A compatible mathematical library is included at `vscode/extension/acornlib` and packaged with the editor, including its license and attribution. Select that path with `VENTICORN_LIBRARY` to try the bundled modules, or use your own library directory. Set `VENTICORN_LIBRARY` to choose it explicitly; an absolute path is recommended. Relative values resolve from the process working directory. An empty value or a path that is not a directory is an error.
 
 Without that variable, Venticorn searches the working directory and each ancestor. At each level it accepts the directory itself if its name is `venticorn-library`, `acornlib`, or `acorn-library`; otherwise it checks children with those names in that order. For example, a `venticorn-library` beside this checkout is discovered when commands run from the checkout. Discovery does not use the directory in which the binary was built.
 
