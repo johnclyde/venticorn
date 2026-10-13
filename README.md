@@ -210,14 +210,14 @@ Publish and verify the server assets before publishing the extension that reques
 
 ## Prepare release artifacts locally
 
-Build all three server targets first. The upload helper checks the complete set before doing anything, and uses the exact versioned asset names expected by the extension:
+Build all three server targets and the local VSIX with `package.sh` first. The upload helper checks the complete set before doing anything, and uses the exact versioned asset names expected by the extension:
 
 ```sh
 ./publish.sh --dry-run   # Default: validate paths and print the upload plan.
-./publish.sh --stage     # Copy only those binaries into files/release/vVERSION.
+./publish.sh --stage     # Copy the servers and VSIX into files/release/vVERSION.
 ```
 
-After deliberately creating a release with the matching tag, `./publish.sh --upload` uploads the staged assets to `johnclyde/venticorn` using authenticated GitHub CLI access. It does not create releases or replace existing assets. Version checks and missing or empty target binaries stop the command before any upload. These commands do not publish the editor extension.
+After deliberately creating a release with the matching tag, `./publish.sh --upload` uploads the staged assets to `johnclyde/venticorn` using authenticated GitHub CLI access. It does not create releases or replace existing assets. Version checks, missing or empty artifacts, corrupt VSIX archives, and mismatched extension identities stop the command before any upload. The VSIX is included as a GitHub release asset; these commands do not publish it to the VS Code Marketplace.
 
 Build a local VSIX with Node.js 22 and the pinned packaging tool:
 

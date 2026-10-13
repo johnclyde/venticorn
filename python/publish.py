@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Stage or explicitly upload already-built language servers to a GitHub release."""
+"""Stage or explicitly upload already-built language servers and their extension to a GitHub release."""
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import zipfile
+from xml.etree import ElementTree
 
 from version import update_version
 
@@ -17,6 +20,33 @@ PLATFORMS = (
 )
 
 
+def extension_asset(root, version):
+    source = root / "files/release" / f"venticorn-extension-{version}.vsix"
+    if not source.is_file() or source.stat().st_size == 0:
+        raise ValueError(f"Missing or empty extension: {source}. Build it with package.sh first.")
+    expected = json.loads((root / "vscode/extension/package.json").read_text())
+    try:
+        with zipfile.ZipFile(source) as archive:
+            package = json.loads(archive.read("extension/package.json"))
+            manifest = ElementTree.fromstring(archive.read("extension.vsixmanifest"))
+            identities = [element for element in manifest.iter() if element.tag.rsplit("}", 1)[-1] == "Identity"]
+            if len(identities) != 1:
+                raise ValueError("VSIX must contain exactly one extension identity")
+            identity = identities[0]
+            for key, attribute in (("name", "Id"), ("publisher", "Publisher"), ("version", "Version")):
+                if not expected.get(key) or package.get(key) != expected[key] or identity.get(attribute) != expected[key]:
+                    raise ValueError(f"VSIX {key} differs from the current extension manifest; rebuild with package.sh")
+            if package["version"] != version:
+                raise ValueError("VSIX version differs from the release version")
+            # Validate the entire archive before staging or making a network request.
+            bad_member = archive.testzip()
+            if bad_member:
+                raise ValueError(f"Corrupt VSIX member: {bad_member}")
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError) as error:
+        raise ValueError(f"Invalid extension package: {error}") from error
+    return source, source.name
+
+
 def release_plan(root):
     version = update_version(root)
     tag = "v" + version
@@ -26,6 +56,7 @@ def release_plan(root):
         if not source.is_file() or source.stat().st_size == 0:
             raise ValueError(f"Missing or empty server: {source}. Build this target with crossbuild.sh first.")
         artifacts.append((source, f"venticornserver-{tag}-{platform}{suffix}"))
+    artifacts.append(extension_asset(root, version))
     return tag, artifacts
 
 
@@ -56,7 +87,7 @@ def publish(root, mode):
     if mode == "upload":
         subprocess.run(["gh", "release", "upload", tag, "--repo", REPOSITORY, *map(str, paths)], check=True)
     else:
-        print(f"Staged {len(paths)} servers in {staging}")
+        print(f"Staged {len(paths)} release assets in {staging}")
 
 
 def main():
