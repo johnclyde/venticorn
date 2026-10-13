@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const vm = require("node:vm");
+const { loadEditorModule } = require("./editor_modules.cjs");
 
 function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform } = {}) {
   const state = {
@@ -77,20 +77,25 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
     CloseAction: { DoNotRestart: 1 },
     ErrorAction: { Shutdown: 2 },
   };
-  const exported = {};
-  const extensionRoot = path.join(__dirname, "../vscode/extension");
-  const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8"));
-  const source = fs.readFileSync(path.join(extensionRoot, manifest.main), "utf8");
-  vm.runInNewContext(source, {
-    exports: exported,
-    require: (name) => name === "vscode" ? vscode
-      : name === "vscode-languageclient/node" ? clientApi : require(name),
+  const exported = loadEditorModule("extension", {
+    vscode,
+    "vscode-languageclient/node": clientApi,
+    os: { platform: () => platform, arch: () => platform === "darwin" ? "arm64" : "x64" },
+    fs: { ...fs, promises: {
+      ...fs.promises,
+      lstat: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); },
+      mkdir: async () => {}, rm: async () => {},
+    } },
+    https: { get() { throw new Error("offline test"); } },
+  }, {
     process: { env: serverPath ? { SERVER_PATH: serverPath } : {}, platform },
-    __dirname: path.dirname(path.join(extensionRoot, manifest.main)),
     console: { log() {}, warn() {}, error() {} },
-    setTimeout,
   });
-  const context = { subscriptions: [], asAbsolutePath: (value) => value };
+  const context = {
+    subscriptions: [], asAbsolutePath: (value) => value,
+    extension: { packageJSON: { version: "0.1.0" } },
+    globalStorageUri: { fsPath: "/extension-storage" },
+  };
   return { state, context, ...exported };
 }
 
@@ -144,12 +149,13 @@ test("deactivation stops a running client and disposes an unopened search panel"
   for (const subscription of extension.context.subscriptions) subscription.dispose();
 });
 
-test("a missing executable setting does not register proof-search commands", async () => {
+test("an unavailable server reports one error and registers no proof-search commands", async () => {
   const extension = loadExtension({ serverPath: null });
   await extension.activate(extension.context);
   assert.equal(extension.state.starts, 0);
   assert.deepEqual(extension.state.commands, []);
-  assert.deepEqual(extension.state.notifications, ["The SERVER_PATH environment variable is not defined."]);
+  assert.equal(extension.state.notifications.length, 1);
+  assert.match(extension.state.notifications[0], /SERVER_PATH/);
   await extension.deactivate();
 });
 
