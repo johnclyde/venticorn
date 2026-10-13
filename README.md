@@ -173,9 +173,20 @@ Install a missing Rust standard library explicitly with `rustup target add TARGE
 
 ### Windows x64 builds
 
-On Windows, run `python python/crossbuild.py x86_64-pc-windows-msvc` in an MSVC developer shell with the Windows SDK available. The Python entrypoint does not require Bash.
+On Windows, run `python python/crossbuild.py x86_64-pc-windows-msvc` in an MSVC developer shell with the Windows SDK and `dumpbin` available. The Python entrypoint does not require Bash. ONNX builds also require an explicit `ORT_LIB_LOCATION` pointing to a static ONNX Runtime 1.19.2 build compatible with the pinned `ort` and `ort-sys` crates. Build that runtime with its `--enable_msvc_static_runtime` option and keep its dependency archives available; do not mix `/MD` runtime objects into a `/MT` build. See the [ONNX Runtime build instructions](https://onnxruntime.ai/docs/build/inferencing.html) and [Microsoft CRT library reference](https://learn.microsoft.com/en-us/cpp/c-runtime-library/crt-library-features).
 
-For a cross-build, first provision an xwin-compatible SDK yourself and review its licensing. Set `XWIN_ROOT` to its absolute path; the script requires `crt/lib/x86_64`, `sdk/lib/um/x86_64`, and `sdk/lib/ucrt/x86_64` under that directory. It uses `lld-link`, or the executable named by `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER`. No user-specific linker paths are stored in the repository.
+For example, in PowerShell after preparing that runtime:
+
+```powershell
+$env:ORT_LIB_LOCATION = "C:\build\onnxruntime\build\Windows"
+python python/crossbuild.py x86_64-pc-windows-msvc
+# A heuristic-only build does not require ONNX Runtime:
+python python/crossbuild.py --no-default-features x86_64-pc-windows-msvc
+```
+
+The helper uses static-runtime flags only for this explicit target, preserves the configured SDK paths, and rejects a request to prefer dynamic ONNX linking.
+
+For a cross-build, first provision an xwin-compatible SDK yourself and review its licensing. Set `XWIN_ROOT` to its absolute path; the script requires `crt/lib/x86_64`, `sdk/lib/um/x86_64`, and `sdk/lib/ucrt/x86_64` under that directory. It uses `lld-link`, or the executable named by `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER`. `dumpbin` or `llvm-readobj` must also be available to inspect imported libraries. ONNX cross-builds require the same explicit target-compatible static runtime. No user-specific linker paths are stored in the repository.
 
 ```sh
 export XWIN_ROOT=/absolute/path/to/your/windows-sdk
@@ -183,7 +194,7 @@ export XWIN_ROOT=/absolute/path/to/your/windows-sdk
 ./crossbuild.sh x86_64-pc-windows-msvc
 ```
 
-The output is `target/x86_64-pc-windows-msvc/release/venticornserver.exe`. The build requests a static C runtime and verifies the output is x64 PE; it does not claim the file has no Windows system-library dependencies. Test the resulting server on Windows before release. Cross SDKs and ONNX runtime compatibility require platform validation and are not installed or repaired by this script.
+The output is `target/x86_64-pc-windows-msvc/release/venticornserver.exe`. The build requests a static C runtime, verifies x64 PE format, and inspects normal and delay-load imports. It rejects ONNX Runtime and C/C++ runtime DLL dependencies, while allowing Windows system DLLs. Missing dependency inspection is an error. This checks direct imports, not DLLs loaded indirectly at runtime. Test the resulting server on Windows before release. Cross SDKs and ONNX runtime compatibility require platform validation and are not installed or repaired by this script.
 
 ### macOS Apple silicon builds
 
