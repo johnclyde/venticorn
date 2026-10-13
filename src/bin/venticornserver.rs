@@ -21,7 +21,7 @@ use venticorn::project::Project;
 use venticorn::prover::{Outcome, Prover};
 use venticorn::token::Token;
 
-// During development, this will show up in the "Output" tab in the extension development host.
+// Messages appear in the "Venticorn Language Server" output channel.
 fn log(message: &str) {
     let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
     let stamped = format!("[{}] {}", timestamp, message);

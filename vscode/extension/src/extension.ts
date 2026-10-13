@@ -108,8 +108,6 @@ export async function activate(context: ExtensionContext) {
     `activating Venticorn-${os.platform()}-${os.arch()} extension at`,
     timestamp
   );
-  let traceOutputChannel = window.createOutputChannel("Venticorn Language Server");
-  context.subscriptions.push(traceOutputChannel);
 
   let command: string;
   try {
@@ -163,7 +161,6 @@ export async function activate(context: ExtensionContext) {
       // Notify the server about file changes to '.clientrc files contained in the workspace
       fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
     },
-    traceOutputChannel,
     initializationFailedHandler: (error) => {
       if (!client.initializationFailed) {
         client.initializationFailed = true;
@@ -186,8 +183,8 @@ export async function activate(context: ExtensionContext) {
 
   // Create the language client and start the client.
   client = new VenticornLanguageClient(
-    "acornClient",
-    "Venticorn Client",
+    "acornLanguageServer",
+    "Venticorn Language Server",
     serverOptions,
     clientOptions
   );
