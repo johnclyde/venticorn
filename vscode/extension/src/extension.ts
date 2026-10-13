@@ -223,16 +223,18 @@ export async function activate(context: ExtensionContext) {
     await showProgressBar();
   };
 
-  let hasAcornDocs = false;
-  for (let doc of workspace.textDocuments) {
-    if (doc.languageId === "acorn" && doc.uri.scheme === "file") {
-      hasAcornDocs = true;
-      break;
-    }
-  }
-
-  if (hasAcornDocs) {
+  if (workspace.textDocuments.some((document) =>
+    document.languageId === "acorn" && document.uri.scheme === "file")) {
     showProgressBar();
+  }
+  // Prefer the active document, then other visible editors. A hidden document
+  // must not prevent a visible Acorn file from opening the Assistant.
+  const active = window.activeTextEditor;
+  if (active) {
+    assistant.autoDisplay(active.document);
+  }
+  for (const editor of window.visibleTextEditors) {
+    assistant.autoDisplay(editor.document);
   }
 
   // Opening a document can precede its editor becoming visible.
