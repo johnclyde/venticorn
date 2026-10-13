@@ -154,7 +154,7 @@ test("a missing executable setting does not register proof-search commands", asy
 });
 
 test("the configured executable is used without copying it into the extension", async () => {
-  const command = path.join("/local checkout", "language_server");
+  const command = path.join("/local checkout", "venticornserver");
   const extension = loadExtension({ serverPath: command });
   await extension.activate(extension.context);
   assert.equal(extension.state.serverOptions.run.command, command);
