@@ -501,10 +501,16 @@ impl Environment {
             }
 
             StatementInfo::Theorem(ts) => {
-                if self.bindings.name_in_use(&ts.name) {
+                let name = ts.name.as_ref().ok_or_else(|| {
+                    Error::new(
+                        &statement.first_token,
+                        "anonymous theorem and axiom declarations are not supported yet",
+                    )
+                })?;
+                if self.bindings.name_in_use(&name) {
                     return Err(Error::new(
                         &statement.first_token,
-                        &format!("theorem name '{}' already defined in this scope", ts.name),
+                        &format!("theorem name '{}' already defined in this scope", name),
                     ));
                 }
 
@@ -515,7 +521,7 @@ impl Environment {
                     start: statement.first_token.start_pos(),
                     end: ts.claim_right_brace.end_pos(),
                 };
-                self.definition_ranges.insert(ts.name.to_string(), range);
+                self.definition_ranges.insert(name.to_string(), range);
 
                 let (type_params, arg_names, arg_types, value, _) =
                     self.bindings.evaluate_subvalue(
@@ -570,7 +576,7 @@ impl Environment {
                 let lambda_claim = AcornValue::new_lambda(arg_types, unbound_claim);
                 let theorem_type = lambda_claim.get_type();
                 self.bindings.add_constant(
-                    &ts.name,
+                    &name,
                     type_params.clone(),
                     theorem_type.clone(),
                     Some(lambda_claim.clone()),
@@ -587,7 +593,7 @@ impl Environment {
                         &self,
                         type_params,
                         block_args,
-                        BlockParams::Theorem(&ts.name, premise, goal),
+                        BlockParams::Theorem(&name, premise, goal),
                         statement.first_line(),
                         statement.last_line(),
                         ts.body.as_ref(),
@@ -602,12 +608,12 @@ impl Environment {
                         external_claim,
                         self.module_id,
                         range,
-                        ts.name.to_string(),
+                        name.to_string(),
                     ),
                     block,
                 );
                 self.add_node_lines(index, &statement.range());
-                self.bindings.mark_as_theorem(&ts.name);
+                self.bindings.mark_as_theorem(&name);
 
                 Ok(())
             }
