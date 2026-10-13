@@ -497,16 +497,18 @@ impl Environment {
             }
 
             StatementInfo::Theorem(ts) => {
-                let name = ts.name.as_ref().ok_or_else(|| {
-                    Error::new(
-                        &statement.first_token,
-                        "anonymous theorem and axiom declarations are not supported yet",
-                    )
-                })?;
-                if self.bindings.name_in_use(&name) {
+                if let Some(name) = &ts.name {
+                    if self.bindings.name_in_use(name) {
+                        return Err(Error::new(
+                            &statement.first_token,
+                            &format!("theorem name '{}' already defined in this scope", name),
+                        ));
+                    }
+                }
+                if ts.axiomatic && ts.body.is_some() {
                     return Err(Error::new(
                         &statement.first_token,
-                        &format!("theorem name '{}' already defined in this scope", name),
+                        "axioms cannot have proof blocks",
                     ));
                 }
 
@@ -517,8 +519,6 @@ impl Environment {
                     start: statement.first_token.start_pos(),
                     end: ts.claim_right_brace.end_pos(),
                 };
-                self.definition_ranges
-                    .insert(name.to_string(), range.clone());
 
                 let (type_params, arg_names, arg_types, value, _) =
                     self.bindings.evaluate_subvalue(
@@ -567,18 +567,26 @@ impl Environment {
                     c => (None, c.clone()),
                 };
 
-                // We define the theorem using "lambda" form.
-                // The definition happens here, in the outside environment, because the
-                // theorem is usable by name in this environment.
-                let lambda_claim = AcornValue::new_lambda(arg_types, unbound_claim);
-                let theorem_type = lambda_claim.get_type();
-                self.bindings.add_constant(
-                    &name,
-                    type_params.clone(),
-                    theorem_type.clone(),
-                    Some(lambda_claim.clone()),
-                    None,
-                );
+                // Stage only the new binding and range. Existing proof nodes are not cloned.
+                // A malformed body must not leave an axiom-like theorem name behind.
+                let mut staged = self.child(statement.first_line(), true);
+                if let Some(name) = &ts.name {
+                    if arg_names.contains(name) || type_params.contains(name) {
+                        return Err(Error::new(
+                            &statement.first_token,
+                            "theorem name conflicts with a parameter",
+                        ));
+                    }
+                    let lambda_claim = AcornValue::new_lambda(arg_types, unbound_claim);
+                    staged.bindings.add_constant(
+                        name,
+                        type_params.clone(),
+                        lambda_claim.get_type(),
+                        Some(lambda_claim),
+                        None,
+                    );
+                    staged.definition_ranges.insert(name.clone(), range);
+                }
 
                 let already_proven = ts.axiomatic || is_citation;
 
@@ -587,30 +595,37 @@ impl Environment {
                 } else {
                     Some(Block::new(
                         project,
-                        &self,
+                        &staged,
                         type_params,
                         block_args,
-                        BlockParams::Theorem(&name, range, premise, goal),
+                        BlockParams::Theorem(ts.name.as_deref(), range, premise, goal),
                         statement.first_line(),
                         statement.last_line(),
                         ts.body.as_ref(),
                     )?)
                 };
 
+                if let Some(name) = &ts.name {
+                    self.bindings = staged.bindings;
+                    self.definition_ranges.insert(name.clone(), range);
+                }
+
                 let index = self.add_node(
                     project,
                     already_proven,
                     Proposition::theorem(
-                        already_proven,
+                        ts.axiomatic,
                         external_claim,
                         self.module_id,
                         range,
-                        name.to_string(),
+                        ts.name.clone(),
                     ),
                     block,
                 );
                 self.add_node_lines(index, &statement.range());
-                self.bindings.mark_as_theorem(&name);
+                if let Some(name) = &ts.name {
+                    self.bindings.mark_as_theorem(name);
+                }
 
                 Ok(())
             }
@@ -1238,7 +1253,7 @@ impl Environment {
                 self.add_node(
                     project,
                     true,
-                    Proposition::theorem(true, forall_claim, self.module_id, range, name),
+                    Proposition::theorem(true, forall_claim, self.module_id, range, Some(name)),
                     None,
                 );
 
