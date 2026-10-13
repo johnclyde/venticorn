@@ -1405,7 +1405,31 @@ impl Environment {
             }
 
             StatementInfo::Match(ms) => {
-                self.bindings.evaluate_value(project, &ms.scrutinee, None)?;
+                let scrutinee = self.bindings.evaluate_value(project, &ms.scrutinee, None)?;
+                let scrutinee_type = scrutinee.get_type();
+                let mut indices = vec![];
+                let mut all_cases = false;
+                for (pattern, _) in &ms.cases {
+                    let (_, index, total) =
+                        self.bindings
+                            .evaluate_pattern(project, &scrutinee_type, pattern)?;
+                    if indices.contains(&index) {
+                        return Err(Error::new(
+                            pattern.token(),
+                            "duplicate pattern in match statement",
+                        ));
+                    }
+                    indices.push(index);
+                    if total == indices.len() {
+                        all_cases = true;
+                    }
+                }
+                if !all_cases {
+                    return Err(Error::new(
+                        ms.scrutinee.token(),
+                        "not all cases are covered in match statement",
+                    ));
+                }
                 Err(Error::new(
                     &statement.first_token,
                     "match statements are not supported yet",
