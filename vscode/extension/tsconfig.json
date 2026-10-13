@@ -1,9 +1,10 @@
+// Modified for Venticorn: generated extension output.
 {
   "compilerOptions": {
     "module": "commonjs",
     "target": "es2020",
     "lib": ["es2020"],
-    "outDir": "out",
+    "outDir": "build/extension",
     "rootDir": "src",
     "sourceMap": true
   },

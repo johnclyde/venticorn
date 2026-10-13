@@ -1,3 +1,4 @@
+// Modified for Venticorn.
 // Exercise the compiled extension's startup callbacks without launching VS Code.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -76,9 +77,9 @@ function loadExtension({ failInitialization = false, serverPath = "/server" } = 
     ErrorAction: { Shutdown: 2 },
   };
   const exported = {};
-  const source = fs.readFileSync(
-    path.join(__dirname, "../vscode/extension/out/extension.js"), "utf8",
-  );
+  const extensionRoot = path.join(__dirname, "../vscode/extension");
+  const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8"));
+  const source = fs.readFileSync(path.join(extensionRoot, manifest.main), "utf8");
   vm.runInNewContext(source, {
     exports: exported,
     require: (name) => name === "vscode" ? vscode

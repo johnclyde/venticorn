@@ -75,7 +75,7 @@ export VENTICORN_LIBRARY=/absolute/path/to/your/library
 code .
 ```
 
-If an existing VS Code process does not inherit that environment, close it and launch it again from this terminal. Open this repository as the workspace and press F5 with **Launch Extension Host** selected. The prelaunch task builds the Rust release binaries, compiles the extension, and builds the proof-search UI. The launch configuration sets `SERVER_PATH` to this checkout's `target/release/language_server`; the extension host inherits `VENTICORN_LIBRARY` from VS Code.
+If an existing VS Code process does not inherit that environment, close it and launch it again from this terminal. Open this repository as the workspace and press F5 with **Launch Extension Host** selected. The prelaunch task builds the Rust release binaries, compiles the extension into `vscode/extension/build/extension`, and builds the proof-search UI. The launch configuration sets `SERVER_PATH` to this checkout's `target/release/language_server`; the extension host inherits `VENTICORN_LIBRARY` from VS Code.
 
 In the new Extension Development Host window, open your library directory and an `.ac` file. Saving a document runs verification. Place the cursor on a proposition and use **Venticorn: Search Panel: Display** from the command palette to inspect proof search. The `.ac` extension and existing language and command identifiers remain compatible.
 
