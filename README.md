@@ -5,7 +5,7 @@ Venticorn is an automated theorem prover with `.ac` source files, command-line v
 
 ## Build and check locally
 
-Install Rust with Cargo, Node.js with npm, and Python 3 for the protocol smoke tests. VS Code 1.82 or newer is needed only for the editor integration. Development checks have been run with Rust 1.86 and Node.js 22.
+Install Rust with Cargo, Node.js with npm, and Python 3.11 or newer for local tooling and protocol smoke tests. VS Code 1.82 or newer is needed only for the editor integration. Development checks have been run with Rust 1.86 and Node.js 22.
 
 ```sh
 git clone https://github.com/johnclyde/venticorn.git
@@ -90,6 +90,17 @@ The F5 build uses ONNX by default. For a heuristic-only editor session, add `--n
 ## Release platforms
 
 The extension logs the Node.js platform and architecture when it activates, so a server build can be matched to the editor host. Release targets are Linux x64 (`linux-x64`), Windows x64 (`win32-x64`), and macOS Apple silicon (`darwin-arm64`). Source builds remain available for local development; a platform label alone does not mean a release artifact has been built or tested.
+
+## Release versions
+
+The server and extension share one `major.minor.patch` version. Check that the Rust and extension manifests and lockfiles agree, or update them together, using the dependency-free Python tool:
+
+```sh
+python3 python/version.py
+python3 python/version.py 0.1.1
+```
+
+The update command changes local files only. Review its diff and run `bash scripts/check.sh` before committing a version change. A mismatched manifest or lockfile causes the command to fail before writing anything; repair the inconsistency deliberately before retrying. The private webview and optional training package are not separately released through this tool.
 
 ## Optional model training
 

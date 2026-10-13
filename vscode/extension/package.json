@@ -2,7 +2,7 @@
   "name": "venticorn-extension",
   "displayName": "Venticorn",
   "_venticornNotice": "Modified for Venticorn: product naming, repository metadata, and supported VS Code version.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "The Venticorn theorem prover for VS Code.",
   "repository": {
     "type": "git",
