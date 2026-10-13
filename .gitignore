@@ -1,6 +1,5 @@
 # Modified for Venticorn.
 /target
-math/foo*
 /files/datasets/*
 !/files/datasets/README.md
 /files/models/*
