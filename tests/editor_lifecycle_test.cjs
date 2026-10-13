@@ -6,10 +6,10 @@ const path = require("node:path");
 const test = require("node:test");
 const { loadEditorModule } = require("./editor_modules.cjs");
 
-function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports, workspaceFolders, textDocuments = [] } = {}) {
+function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports, workspaceFolders, textDocuments = [], visibleEditors = [] } = {}) {
   const state = {
     notifications: [], logs: [], output: [], channels: [], commands: [], save: [], open: [], fileCommands: new Map(), newDocuments: [], shownDocuments: [],
-    starts: 0, stops: 0, requests: 0, client: undefined, downloadWindows: [], reports: [],
+    starts: 0, stops: 0, requests: 0, requestCalls: [], activeEditorChanges: [], panels: [], client: undefined, downloadWindows: [], reports: [],
   };
   const disposable = () => ({ dispose() {} });
   const listen = (handlers) => (handler) => {
@@ -28,7 +28,28 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
         return disposable();
       },
     },
+    ViewColumn: { Two: 2, Three: 3 },
+    Uri: { file: (fsPath) => ({ fsPath }) },
     window: {
+      visibleTextEditors: visibleEditors,
+      activeTextEditor: visibleEditors[0],
+      onDidChangeActiveTextEditor: listen(state.activeEditorChanges),
+      createWebviewPanel: (...args) => {
+        const handlers = [];
+        const panel = {
+          args,
+          webview: {
+            cspSource: "https://host.vscode-cdn.net",
+            asWebviewUri: () => ({ toString: () => "https://host.vscode-cdn.net/assistant" }),
+            onDidReceiveMessage: disposable,
+            postMessage() {},
+          },
+          onDidDispose: (handler) => { handlers.push(handler); return disposable(); },
+          dispose: () => { for (const handler of handlers) handler(); },
+        };
+        state.panels.push(panel);
+        return panel;
+      },
       showTextDocument: async (document) => { state.shownDocuments.push(document); },
       withProgress: async (options, task) => {
         state.downloadWindows.push(options);
@@ -82,9 +103,11 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
       state.stops++;
       this.running = false;
     }
-    async sendRequest() {
+    async sendRequest(method, params) {
       state.requests++;
-      return { done: 0, total: 0 };
+      state.requestCalls.push({ method, params });
+      if (method === "acorn/search") return { loading: false, status: { outcome: "Success" } };
+      return undefined;
     }
     error(message, data, showNotification = true) {
       state.logs.push({ message, data, showNotification });
@@ -108,7 +131,9 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
     vscode,
     "vscode-languageclient/node": clientApi,
     os: { platform: () => platform, arch: () => platform === "darwin" ? "arm64" : "x64" },
-    fs: { ...fs, promises: {
+    fs: { ...fs,
+      readFileSync: (filename, encoding) => filename.endsWith("index.html") ? "<html><head></head></html>" : fs.readFileSync(filename, encoding),
+      promises: {
       ...fs.promises,
       lstat: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); },
       mkdir: async () => {}, rm: async () => {},
@@ -124,7 +149,7 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
     extension: { packageJSON: { version: "0.1.0" } },
     globalStorageUri: { fsPath: "/extension-storage" },
   };
-  return { state, context, ...exported };
+  return { state, context, vscode, ...exported };
 }
 
 test("failed initialization shows one specific error and installs no UI listeners", async () => {
@@ -267,4 +292,49 @@ test("untitled Acorn documents do not request verification before saving", async
   assert.equal(extension.state.requests, 0);
   assert.equal(extension.state.notifications.length, 0);
   assert.equal(extension.state.client.options.documentSelector[0].scheme, "file");
+});
+
+function acornEditor(scheme = "file", name = "proof.ac") {
+  return {
+    document: { languageId: "acorn", version: 1, uri: { scheme, toString: () => `${scheme}:///${name}` } },
+    selection: { start: { line: 0 } }, viewColumn: 1, setDecorations() {},
+  };
+}
+
+test("untitled documents stay quiet until saved and the Assistant opens only once", async () => {
+  const untitled = acornEditor("untitled");
+  const extension = loadExtension();
+  await extension.activate(extension.context);
+  extension.vscode.window.visibleTextEditors = [untitled];
+  extension.vscode.window.activeTextEditor = untitled;
+  for (const handler of extension.state.open) await handler(untitled.document);
+  for (const handler of extension.state.activeEditorChanges) handler(untitled);
+  const assistant = extension.context.subscriptions.find((value) => typeof value.autoDisplay === "function");
+  await assistant.searchOnSelection(true);
+  assert.equal(extension.state.requests, 0);
+  assert.equal(extension.state.panels.length, 0);
+  const saved = acornEditor();
+  extension.vscode.window.visibleTextEditors = [saved];
+  extension.vscode.window.activeTextEditor = saved;
+  for (const handler of extension.state.save) await handler(saved.document);
+  assert.equal(extension.state.panels.length, 1);
+  assert.equal(extension.state.panels[0].args[2].preserveFocus, true);
+  assert.ok(extension.state.requestCalls.some((call) => call.method === "acorn/progress"));
+  assert.ok(extension.state.requestCalls.some((call) => call.method === "acorn/search" && call.params.uri === "file:///proof.ac"));
+  extension.state.panels[0].dispose();
+  for (const handler of extension.state.activeEditorChanges) handler(saved);
+  for (const handler of extension.state.save) await handler(saved.document);
+  assert.equal(extension.state.panels.length, 1);
+});
+
+test("a file opened before it becomes visible opens the Assistant when activated", async () => {
+  const extension = loadExtension();
+  await extension.activate(extension.context);
+  const editor = acornEditor();
+  for (const handler of extension.state.open) await handler(editor.document);
+  assert.equal(extension.state.panels.length, 0);
+  extension.vscode.window.visibleTextEditors = [editor];
+  extension.vscode.window.activeTextEditor = editor;
+  for (const handler of extension.state.activeEditorChanges) handler(editor);
+  assert.equal(extension.state.panels.length, 1);
 });
