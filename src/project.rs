@@ -43,8 +43,8 @@ pub struct Project {
     // module_map maps from a module ref to its id
     module_map: HashMap<ModuleRef, ModuleId>,
 
-    // The module names that we want to build.
-    targets: HashSet<String>,
+    // The module references that we want to build.
+    targets: HashSet<ModuleRef>,
 
     // Used as a flag to stop a build in progress.
     pub build_stopped: Arc<AtomicBool>,
@@ -210,15 +210,19 @@ impl Project {
 
     // Returns whether it loaded okay.
     // Either way, it's still added as a target.
-    pub fn add_target_by_name(&mut self, module_name: &str) -> bool {
-        let answer = self.load_module_by_name(module_name).is_ok();
-        self.targets.insert(module_name.to_string());
+    fn add_target_by_ref(&mut self, module_ref: &ModuleRef) -> bool {
+        let answer = self.load_module_by_ref(module_ref).is_ok();
+        self.targets.insert(module_ref.clone());
         answer
     }
 
+    pub fn add_target_by_name(&mut self, module_name: &str) -> bool {
+        self.add_target_by_ref(&ModuleRef::from_name(module_name))
+    }
+
     fn add_target_by_path(&mut self, path: &Path) -> Result<(), LoadError> {
-        let module_name = self.module_name_from_path(path)?;
-        self.add_target_by_name(&module_name);
+        let module_ref = self.module_ref_from_path(path)?;
+        self.add_target_by_ref(&module_ref);
         Ok(())
     }
 
@@ -271,22 +275,19 @@ impl Project {
             // No need to do anything
             return Ok(());
         }
-        // TODO: handle files that are opened outside of the project
-        let module_name = self.module_name_from_path(&path)?;
-        let mut reload_modules = vec![module_name];
-        if self.open_files.contains_key(&path) {
-            // We're changing the value of an existing file. This could invalidate
-            // current modules.
-            // For now, we just drop everything and reload the targets.
-            // TODO: figure out precisely which ones are invalidated.
-            self.drop_modules();
-            for target in &self.targets {
-                reload_modules.push(target.clone());
-            }
+        let module_ref = self.module_ref_from_path(&path)?;
+        let mut reload_modules = vec![module_ref.clone()];
+        // Cached modules may depend on this file, even if its earlier load failed
+        // or it is being opened in the editor for the first time.
+        // For now, drop everything and reload the targets.
+        // TODO: figure out precisely which ones are invalidated.
+        self.drop_modules();
+        for target in &self.targets {
+            reload_modules.push(target.clone());
         }
         self.open_files.insert(path, (content.to_string(), version));
-        for module_name in &reload_modules {
-            self.add_target_by_name(module_name);
+        for module_ref in &reload_modules {
+            self.add_target_by_ref(module_ref);
         }
         Ok(())
     }
@@ -296,13 +297,13 @@ impl Project {
             // No need to do anything
             return Ok(());
         }
+        let module_ref = self.module_ref_from_path(&path)?;
         self.open_files.remove(&path);
-        let module_name = self.module_name_from_path(&path)?;
         self.drop_modules();
-        self.targets.remove(&module_name);
+        self.targets.remove(&module_ref);
         let targets = self.targets.clone();
         for target in targets {
-            self.add_target_by_name(&target);
+            self.add_target_by_ref(&target);
         }
         Ok(())
     }
@@ -320,7 +321,7 @@ impl Project {
         // If there are errors, we won't try to do proving.
         let mut envs = vec![];
         for target in &targets {
-            let module = self.get_module_by_name(target);
+            let module = self.get_module_by_ref(target);
             match module {
                 Module::Ok(env) => {
                     builder.module_loaded(&env);
@@ -358,8 +359,7 @@ impl Project {
 
         // The second pass is the "proving phase".
         for (target, env) in envs {
-            let target_ref = ModuleRef::from_name(target);
-            self.verify_target(&target_ref, env, builder);
+            self.verify_target(target, env, builder);
             if builder.status.is_error() {
                 return;
             }
@@ -1175,16 +1175,20 @@ mod tests {
     }
 
     #[test]
-    fn test_external_update_is_rejected_without_changing_state() {
+    fn test_external_target_imports_library_and_builds() {
         let mut project = Project::new_mock();
-        project.mock("/mock/main.ac", "theorem identity { true }");
-        let module_id = project.load_module_by_name("main").unwrap();
-        let outside_path = PathBuf::from("/outside/foo.ac");
-        assert!(project
-            .update_file(outside_path.clone(), FOO_AC, 1)
-            .is_err());
-        assert!(!project.open_files.contains_key(&outside_path));
-        assert_eq!(project.load_module_by_name("main").unwrap(), module_id);
+        project.mock("/mock/foo.ac", FOO_AC);
+        let outside_path = PathBuf::from("/outside/proof.ac");
+        project
+            .update_file(
+                outside_path.clone(),
+                "import foo\ntheorem identity { foo.foo = foo.foo }",
+                1,
+            )
+            .unwrap();
+        let reference = ModuleRef::File(outside_path.clone());
+        assert!(project.open_files.contains_key(&outside_path));
+        assert!(project.get_env_by_ref(&reference).is_some());
         project.expect_build_ok();
     }
 

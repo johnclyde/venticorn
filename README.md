@@ -81,6 +81,8 @@ In the new Extension Development Host window, open your library directory and an
 
 The language server selects its library when the editor initializes the connection. `VENTICORN_LIBRARY` takes precedence, including when no workspace is open. Without that override, discovery starts from the first workspace folder supplied by the editor, or its legacy root URI. A supplied workspace never falls back to the server process's working directory. Open a local workspace containing or neighboring a supported library directory, or set the override; missing libraries and unsupported workspace URIs produce an initialization error.
 
+With a library selected, the editor also supports standalone `.ac` files outside that library. Unsaved editor content takes precedence over disk content. Their imports resolve from the selected library. Opening or saving changed content refreshes dependent modules; closing a buffer discards its editor version and restores disk content for any remaining importers. Command-line verification still enumerates the selected library.
+
 An initialization failure is shown once with its cause. The extension does not retry initialization or automatically restart a stopped server; correct the configuration and reload the editor window to try again. Error details remain in the language-client output channel.
 
 The F5 build uses ONNX by default. For a heuristic-only editor session, add `--no-default-features` to the local `cargo build` task in `.vscode/tasks.json` before launching.
