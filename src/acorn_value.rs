@@ -1,3 +1,4 @@
+// Modified for Venticorn: preserve Boolean-literal polarity during normalization.
 use std::collections::HashMap;
 use std::fmt;
 
@@ -380,7 +381,7 @@ impl AcornValue {
         match self {
             AcornValue::Not(x) => Some((true, *x.clone())),
             AcornValue::Binary(..) | AcornValue::ForAll(..) | AcornValue::Exists(..) => None,
-            AcornValue::Bool(b) => Some((*b, AcornValue::Bool(true))),
+            AcornValue::Bool(b) => Some((!*b, AcornValue::Bool(true))),
             _ => Some((false, self.clone())),
         }
     }
