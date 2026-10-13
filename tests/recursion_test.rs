@@ -191,3 +191,24 @@ fn higher_order_wrappers_do_not_hide_recursive_calls() {
     assert!(!env.bindings.has_identifier("generic"));
     assert!(!env.bindings.has_type_name("T"));
 }
+
+#[test]
+fn reserved_todo_syntax_never_discharges_proof_obligations() {
+    for (i, source) in [
+        "todo\ntheorem goal { false }",
+        "theorem goal { false } by { todo }",
+        "define unfinished(b: Bool) -> Bool { todo }\ntheorem goal { false }",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let mut project = Project::new_mock();
+        let name = format!("todo_case_{}", i);
+        project.mock(&format!("/mock/{}.ac", name), source);
+        let id = project.load_module_by_name(&name).unwrap();
+        assert!(matches!(
+            project.get_module_by_id(id),
+            venticorn::module::Module::Error(_)
+        ));
+    }
+}

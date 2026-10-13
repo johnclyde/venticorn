@@ -59,6 +59,7 @@ pub enum TokenType {
     SelfToken,
     Inductive,
     Match,
+    Todo,
 }
 
 // The token types that we export via the language server protocol
@@ -283,6 +284,7 @@ impl TokenType {
             TokenType::SelfToken => "self",
             TokenType::Inductive => "inductive",
             TokenType::Match => "match",
+            TokenType::Todo => "todo",
         }
     }
 
@@ -444,7 +446,8 @@ impl Token {
             | TokenType::And
             | TokenType::SelfToken
             | TokenType::Inductive
-            | TokenType::Match => Some(SemanticTokenType::KEYWORD),
+            | TokenType::Match
+            | TokenType::Todo => Some(SemanticTokenType::KEYWORD),
 
             TokenType::NewLine => {
                 // Comments are encoded as newlines because syntactically they act like newlines.
@@ -585,6 +588,7 @@ impl Token {
                             "self" => TokenType::SelfToken,
                             "inductive" => TokenType::Inductive,
                             "match" => TokenType::Match,
+                            "todo" => TokenType::Todo,
                             _ => TokenType::Identifier,
                         }
                     }
@@ -779,6 +783,17 @@ impl TokenIter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn todo_has_keyword_metadata_and_preserves_identifier_boundaries() {
+        let token = TokenType::Todo.generate();
+        assert_eq!(token.text(), "todo");
+        assert_eq!(token.lsp_type(), Some(SemanticTokenType::KEYWORD));
+        let tokens = Token::scan("todo todos todo_value");
+        assert_eq!(tokens[0].token_type, TokenType::Todo);
+        assert_eq!(tokens[1].token_type, TokenType::Identifier);
+        assert_eq!(tokens[2].token_type, TokenType::Identifier);
+    }
 
     #[test]
     fn match_token_has_keyword_metadata() {
