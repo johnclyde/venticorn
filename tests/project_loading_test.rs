@@ -4,7 +4,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use venticorn::builder::BuildStatus;
-use venticorn::project::{ModuleRef, Project};
+use venticorn::module::ModuleRef;
+use venticorn::project::Project;
 
 static NEXT_DIRECTORY: AtomicUsize = AtomicUsize::new(0);
 
