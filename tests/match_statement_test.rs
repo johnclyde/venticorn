@@ -236,3 +236,34 @@ fn ordinary_methods_cannot_be_quantified_match_patterns() {
     assert!(!env.bindings.has_identifier("value"));
     assert!(!env.bindings.has_identifier("bit"));
 }
+
+#[test]
+fn quantified_match_patterns_reject_repeated_variable_names() {
+    let mut env = Environment::new_test();
+    env.add("inductive Pair {\n both(Bool, Bool)\n }\n");
+    let node_count = env.nodes.len();
+    let error = statement_error(
+        &mut env,
+        "forall(value: Pair) { match value { Pair.both(bit, bit) { bit } } }",
+    );
+    assert!(
+        error.contains("cannot use a name twice in one pattern"),
+        "{error}"
+    );
+    assert_eq!(env.nodes.len(), node_count);
+    assert!(!env.bindings.has_identifier("bit"));
+}
+
+#[test]
+fn quantified_match_patterns_reject_cases_after_complete_coverage() {
+    let mut env = fixture();
+    let node_count = env.nodes.len();
+    let error = statement_error(&mut env,
+        "forall(value: Foo) { match value { Foo.bar(first) { first } Foo.baz { false } Foo.bar(last) { last } } }",
+    );
+    assert!(error.contains("duplicate pattern"), "{error}");
+    assert_eq!(env.nodes.len(), node_count);
+    for name in ["value", "first", "last"] {
+        assert!(!env.bindings.has_identifier(name));
+    }
+}
