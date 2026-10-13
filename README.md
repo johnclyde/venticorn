@@ -17,7 +17,7 @@ npm --prefix vscode/search ci
 bash scripts/check.sh
 ```
 
-The check script checks Rust formatting, runs the Rust tests with both scorers, builds the command-line tools, exercises the language-server protocol, and compiles and checks the editor components. All validation runs locally; this repository has no GitHub Actions workflows. Initial dependency installation needs network access.
+The check script checks Rust formatting, runs the Rust tests with both scorers, builds the command-line tools, exercises the language-server protocol, and checks the editor startup lifecycle and UI build. All validation runs locally; this repository has no GitHub Actions workflows. Initial dependency installation needs network access.
 
 ONNX proof scoring is enabled by default. The pinned native runtime and the included model support local inference without a Python installation. To build and test with the built-in heuristic scorer instead:
 
@@ -80,6 +80,8 @@ If an existing VS Code process does not inherit that environment, close it and l
 In the new Extension Development Host window, open your library directory and an `.ac` file. Saving a document runs verification. Place the cursor on a proposition and use **Venticorn: Search Panel: Display** from the command palette to inspect proof search. The `.ac` extension and existing language and command identifiers remain compatible.
 
 The language server selects its library when the editor initializes the connection. `VENTICORN_LIBRARY` takes precedence, including when no workspace is open. Without that override, discovery starts from the first workspace folder supplied by the editor, or its legacy root URI. A supplied workspace never falls back to the server process's working directory. Open a local workspace containing or neighboring a supported library directory, or set the override; missing libraries and unsupported workspace URIs produce an initialization error.
+
+An initialization failure is shown once with its cause. The extension does not retry initialization or automatically restart a stopped server; correct the configuration and reload the editor window to try again. Error details remain in the language-client output channel.
 
 The F5 build uses ONNX by default. For a heuristic-only editor session, add `--no-default-features` to the local `cargo build` task in `.vscode/tasks.json` before launching.
 

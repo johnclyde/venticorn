@@ -27,7 +27,18 @@ import {
   ServerOptions,
 } from "vscode-languageclient/node";
 
-let client: LanguageClient;
+class VenticornLanguageClient extends LanguageClient {
+  initializationFailed = false;
+
+  error(message: string, data?: unknown, showNotification: boolean | "force" = true) {
+    // The client library force-reports a rejected start even after our specific
+    // initialization message. Keep that report in the output channel only.
+    const alreadyReported = this.initializationFailed && showNotification === "force";
+    super.error(message, data, alreadyReported ? false : showNotification);
+  }
+}
+
+let client: VenticornLanguageClient;
 
 const showLocationDecoration = window.createTextEditorDecorationType({
   backgroundColor: "rgba(246, 185, 77, 0.3)",
@@ -72,6 +83,9 @@ class SearchPanel implements Disposable {
   // If 'force' is true, we always do it.
   // Otherwise, we only do it if the selection has changed.
   async searchOnSelection(force: Boolean) {
+    if (!client?.isRunning()) {
+      return;
+    }
     try {
       let editor = window.activeTextEditor;
       if (!editor) {
@@ -123,6 +137,9 @@ class SearchPanel implements Disposable {
     this.currentParams = params;
 
     while (true) {
+      if (!client?.isRunning()) {
+        return;
+      }
       let response: SearchResponse = await client.sendRequest(
         "acorn/search",
         params
@@ -169,6 +186,9 @@ class SearchPanel implements Disposable {
       }
 
       if (message.command === "infoRequest") {
+        if (!client?.isRunning()) {
+          return;
+        }
         console.log(`info request for clause ${message.params.clauseId}`);
         let response: InfoResponse = await client.sendRequest(
           "acorn/info",
@@ -414,14 +434,20 @@ class SearchPanel implements Disposable {
     for (let subscription of this.disposables) {
       subscription.dispose();
     }
-    this.panel.dispose();
+    this.panel?.dispose();
   }
 }
 
 async function getProgress() {
+  if (!client?.isRunning()) {
+    return undefined;
+  }
   try {
     return await client.sendRequest("acorn/progress", {});
   } catch (e) {
+    if (!client?.isRunning()) {
+      return undefined;
+    }
     console.error("error in getProgress:", e);
     throw e;
   }
@@ -433,12 +459,18 @@ async function showProgressBar() {
 
   try {
     let response: any = await getProgress();
+    if (!response) {
+      return;
+    }
 
     while (response.done === response.total) {
       // Maybe progress just hasn't started yet.
       // Let's wait a bit and try again.
       await new Promise((resolve) => setTimeout(resolve, 100));
       response = await getProgress();
+      if (!response) {
+        return;
+      }
 
       let elapsed = Date.now() - startTime;
       if (elapsed > 2000) {
@@ -449,7 +481,7 @@ async function showProgressBar() {
     }
 
     let previousPercent = 0;
-    window.withProgress(
+    await window.withProgress(
       {
         location: ProgressLocation.Notification,
         title: "Venticorn Validation",
@@ -469,6 +501,9 @@ async function showProgressBar() {
           // We have something to show, so we can wait a bit before updating.
           await new Promise((resolve) => setTimeout(resolve, 100));
           response = await getProgress();
+          if (!response) {
+            return;
+          }
         }
       }
     );
@@ -480,10 +515,8 @@ async function showProgressBar() {
 export async function activate(context: ExtensionContext) {
   let timestamp = new Date().toLocaleTimeString();
   console.log("activating Venticorn language extension at", timestamp);
-  let searchPath = context.asAbsolutePath("../search/dist");
-  context.subscriptions.push(new SearchPanel(searchPath));
-
   let traceOutputChannel = window.createOutputChannel("Venticorn Language Server");
+  context.subscriptions.push(traceOutputChannel);
 
   let command = process.env.SERVER_PATH;
   if (!command) {
@@ -519,24 +552,27 @@ export async function activate(context: ExtensionContext) {
     },
     traceOutputChannel,
     initializationFailedHandler: (error) => {
-      window.showErrorMessage("Venticorn: " + error.message);
+      if (!client.initializationFailed) {
+        client.initializationFailed = true;
+        window.showErrorMessage("Venticorn: " + error.message);
+      }
       // Let the user fix the configuration before explicitly trying again.
       return false;
     },
     errorHandler: {
       error: (error) => {
         console.error("language server error:", error);
-        return { action: ErrorAction.Shutdown };
+        return { action: ErrorAction.Shutdown, handled: client.initializationFailed };
       },
       closed: () => {
         console.warn("language server process closed");
-        return { action: CloseAction.DoNotRestart };
+        return { action: CloseAction.DoNotRestart, handled: client.initializationFailed };
       },
     },
   };
 
   // Create the language client and start the client.
-  client = new LanguageClient(
+  client = new VenticornLanguageClient(
     "acornClient",
     "Venticorn Client",
     serverOptions,
@@ -550,6 +586,9 @@ export async function activate(context: ExtensionContext) {
     console.error("client failed to start:", error);
     return;
   }
+
+  let searchPath = context.asAbsolutePath("../search/dist");
+  context.subscriptions.push(new SearchPanel(searchPath));
 
   let onDocumentChange = async (document: TextDocument) => {
     if (document.languageId !== "acorn") {
