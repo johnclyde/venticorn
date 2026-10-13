@@ -606,8 +606,7 @@ impl BindingMap {
     // Evaluates a pattern match. Infers their types from the pattern.
     // Returns an error if the pattern is not a constructor of the expected type.
     // Returns:
-    //   the list of names
-    //   a parallel list of their types
+    //   a list of (name, type) pairs
     //   the index of which constructor this is
     //   the total number of constructors
     fn evaluate_pattern(
@@ -615,7 +614,7 @@ impl BindingMap {
         project: &Project,
         expected_type: &AcornType,
         pattern: &Expression,
-    ) -> token::Result<(Vec<String>, Vec<AcornType>, usize, usize)> {
+    ) -> token::Result<(Vec<(String, AcornType)>, usize, usize)> {
         let token = pattern.token();
         let (fn_exp, args) = match pattern {
             Expression::Apply(function, args) => (function, args),
@@ -629,7 +628,7 @@ impl BindingMap {
                     return Err(Error::new(token, "constructor requires arguments"));
                 }
                 check_type(token, Some(expected_type), &pattern_type)?;
-                return Ok((vec![], vec![], i, total));
+                return Ok((vec![], i, total));
             }
         };
         let fn_value = self.evaluate_value(project, fn_exp, None)?;
@@ -658,8 +657,8 @@ impl BindingMap {
                 ),
             ));
         }
-        let mut names = vec![];
-        for name_exp in name_exps {
+        let mut args = vec![];
+        for (name_exp, arg_type) in name_exps.into_iter().zip(arg_types) {
             let name = match name_exp {
                 Expression::Singleton(token) if token.token_type == TokenType::Identifier => {
                     token.text().to_string()
@@ -677,15 +676,15 @@ impl BindingMap {
                     &format!("name {} already bound", name),
                 ));
             }
-            if names.contains(&name) {
+            if args.iter().any(|(existing, _)| existing == &name) {
                 return Err(Error::new(
                     name_exp.token(),
                     "cannot use a name twice in one pattern",
                 ));
             }
-            names.push(name);
+            args.push((name, arg_type));
         }
-        Ok((names, arg_types, i, total))
+        Ok((args, i, total))
     }
 
     // This function evaluates numbers when we already know what type they are.
@@ -1363,10 +1362,10 @@ impl BindingMap {
                 let mut indices = vec![];
                 let mut all_cases = false;
                 for (pattern_exp, result_exp) in case_exps {
-                    let (arg_names, arg_types, i, total) =
+                    let (args, i, total) =
                         self.evaluate_pattern(project, &scrutinee_type, pattern_exp)?;
                     // Check every outer-scope conflict before binding any case locals.
-                    for name in &arg_names {
+                    for (name, _) in &args {
                         if stack.get(name).is_some() {
                             return Err(Error::new(
                                 pattern_exp.token(),
@@ -1384,7 +1383,7 @@ impl BindingMap {
                     if total == indices.len() {
                         all_cases = true;
                     }
-                    for (name, arg_type) in arg_names.iter().zip(&arg_types) {
+                    for (name, arg_type) in &args {
                         stack.insert(name.clone(), arg_type.clone());
                     }
                     let evaluated = (|| {
@@ -1398,7 +1397,11 @@ impl BindingMap {
                         )?;
                         Ok::<_, Error>((pattern, result))
                     })();
-                    stack.remove_all(&arg_names);
+                    let mut arg_types = Vec::with_capacity(args.len());
+                    for (name, arg_type) in args {
+                        stack.remove(&name);
+                        arg_types.push(arg_type);
+                    }
                     let (pattern, result) = evaluated?;
                     if result_type.is_none() {
                         result_type = Some(result.get_type());
@@ -2046,12 +2049,17 @@ mod tests {
         env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
         let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
         let expression = Expression::expect_value("Foo.pair(left, right)");
-        let (names, types, index, total) = env
+        let (args, index, total) = env
             .bindings
             .evaluate_pattern(&Project::new_mock(), &foo, &expression)
             .unwrap();
-        assert_eq!(names, vec!["left", "right"]);
-        assert_eq!(types, vec![AcornType::Bool, foo]);
+        assert_eq!(
+            args,
+            vec![
+                ("left".to_string(), AcornType::Bool),
+                ("right".to_string(), foo)
+            ]
+        );
         assert_eq!((index, total), (1, 2));
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
@@ -2091,12 +2099,17 @@ mod tests {
         let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string());
         let project = Project::new_mock();
         let pattern = Expression::expect_value("Foo.pair(left, right)");
-        let (names, types, index, total) = env
+        let (args, index, total) = env
             .bindings
             .evaluate_pattern(&project, &foo, &pattern)
             .unwrap();
-        assert_eq!(names, vec!["left", "right"]);
-        assert_eq!(types, vec![AcornType::Bool, foo.clone()]);
+        assert_eq!(
+            args,
+            vec![
+                ("left".to_string(), AcornType::Bool),
+                ("right".to_string(), foo.clone())
+            ]
+        );
         assert_eq!((index, total), (1, 2));
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
