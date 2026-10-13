@@ -25,10 +25,12 @@ class LanguageServerTest(unittest.TestCase):
         (self.library / "example.ac").write_text("theorem identity { true }\n")
         self.environment = dict(os.environ, VENTICORN_LIBRARY=str(self.library))
 
-    def initialize_and_shutdown(self, root_uri):
+    def initialize_and_shutdown(
+        self, root_uri, *, expected_error=None, cwd=None, initialize_params=None,
+    ):
         with subprocess.Popen(
             [str(BINARY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, env=self.environment,
+            stderr=subprocess.PIPE, env=self.environment, cwd=cwd,
         ) as process:
             responses = queue.Queue()
             errors = []
@@ -79,15 +81,33 @@ class LanguageServerTest(unittest.TestCase):
                         return message
 
             try:
-                send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                params = {
                     "processId": None, "rootUri": root_uri, "capabilities": {},
-                }})
-                self.assertIn("capabilities", receive(1)["result"])
-                send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
-                send({"jsonrpc": "2.0", "id": 2, "method": "shutdown"})
-                shutdown = receive(2)
-                self.assertIn("result", shutdown, shutdown)
-                self.assertIsNone(shutdown["result"])
+                }
+                params.update(initialize_params or {})
+                send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params})
+                initialized = receive(1)
+                if expected_error is None:
+                    self.assertIn("capabilities", initialized["result"])
+                    send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
+                else:
+                    self.assertIn("error", initialized, initialized)
+                    self.assertEqual(initialized["error"]["code"], -32602)
+                    self.assertIn(expected_error, initialized["error"]["message"])
+
+                send({"jsonrpc": "2.0", "id": 2, "method": "acorn/progress", "params": {}})
+                progress = receive(2)
+                if expected_error is None:
+                    self.assertEqual(progress["result"], {"done": 0, "total": 0})
+                    send({"jsonrpc": "2.0", "id": 3, "method": "shutdown"})
+                    shutdown = receive(3)
+                    self.assertIn("result", shutdown, shutdown)
+                    self.assertIsNone(shutdown["result"])
+                else:
+                    self.assertEqual(progress["error"]["code"], -32002)
+
+                # An unsuccessful initialize leaves the server uninitialized, so
+                # it must exit without a shutdown request in that case.
                 send({"jsonrpc": "2.0", "method": "exit"})
                 process.stdin.close()
                 self.assertEqual(process.wait(timeout=10), 0)
@@ -108,15 +128,22 @@ class LanguageServerTest(unittest.TestCase):
         stderr = self.initialize_and_shutdown(None)
         self.assertIn("initializing with no root", stderr)
 
-    def test_missing_library_reports_error_without_protocol_output(self):
+    def test_missing_library_returns_initialize_error(self):
+        self.environment["VENTICORN_LIBRARY"] = str(self.library / "missing")
+        stderr = self.initialize_and_shutdown(
+            self.library.as_uri(),
+            expected_error="VENTICORN_LIBRARY is not a directory",
+        )
+        self.assertNotIn("panicked", stderr)
+
+    def test_startup_does_not_require_a_library_before_initialize(self):
         self.environment["VENTICORN_LIBRARY"] = str(self.library / "missing")
         result = subprocess.run(
             [str(BINARY)], env=self.environment, input=b"", capture_output=True,
             timeout=10,
         )
-        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b"")
-        self.assertIn(b"VENTICORN_LIBRARY is not a directory", result.stderr)
         self.assertNotIn(b"panicked", result.stderr)
 
 
