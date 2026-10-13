@@ -31,7 +31,7 @@ def replace_toml_version(text, section, version):
 def release_files(root):
     return [root / p for p in (
         "Cargo.toml", "Cargo.lock", "vscode/extension/package.json",
-        "vscode/extension/package-lock.json",
+        "vscode/extension/package-lock.json", "VERSION",
     )]
 
 
@@ -48,7 +48,7 @@ def read_release(root):
     if extension["name"] != lock["name"] or extension["name"] != lock["packages"][""]["name"]:
         raise ValueError("extension manifest and lockfile package names differ")
     versions = [cargo["version"], packages[0]["version"], extension["version"],
-                lock["version"], lock["packages"][""]["version"]]
+                lock["version"], lock["packages"][""]["version"], contents[4].strip()]
     if any(not VERSION_PATTERN.fullmatch(v) for v in versions):
         raise ValueError("release versions must be major.minor.patch without leading zeros")
     if len(set(versions)) != 1:
@@ -84,6 +84,7 @@ def update_version(root, new_version=None):
     extension["version"] = new_version
     lock["version"] = lock["packages"][""]["version"] = new_version
     replacements.extend(json.dumps(value, indent=2) + "\n" for value in (extension, lock))
+    replacements.append(new_version + "\n")
     # Stage complete new files and rollback copies before changing any originals.
     staged = []
     backups = []

@@ -93,7 +93,7 @@ The extension logs the Node.js platform and architecture when it activates, so a
 
 ## Release versions
 
-The server and extension share one `major.minor.patch` version. Check that the Rust and extension manifests and lockfiles agree, or update them together, using the dependency-free Python tool:
+The server and extension share one `major.minor.patch` version, recorded in the root `VERSION` file. Check that `VERSION`, the Rust and extension manifests, and their lockfiles agree, or update them together, using the dependency-free Python tool:
 
 ```sh
 python3 python/version.py
