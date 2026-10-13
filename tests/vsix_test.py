@@ -15,7 +15,7 @@ def check_vsix(filename):
         names = set(archive.namelist())
         for required in [
             "extension/LICENSE.txt", "extension/NOTICE", "extension/readme.md",
-            "extension/build/search/index.html",
+            "extension/build/info/index.html",
             "extension/build/extension/THIRD_PARTY_NOTICES.txt",
         ]:
             assert required in names, f"VSIX is missing {required}"

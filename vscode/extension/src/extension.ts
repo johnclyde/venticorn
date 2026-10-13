@@ -13,7 +13,7 @@ import {
 } from "vscode-languageclient/node";
 
 import { getServerPath } from "./server";
-import { SearchPanel } from "./search-panel";
+import { InfoView } from "./info-view";
 
 class VenticornLanguageClient extends LanguageClient {
   initializationFailed = false;
@@ -200,8 +200,8 @@ export async function activate(context: ExtensionContext) {
     return;
   }
 
-  let searchPath = context.asAbsolutePath("build/search");
-  context.subscriptions.push(new SearchPanel(client, searchPath));
+  let infoViewPath = context.asAbsolutePath("build/info");
+  context.subscriptions.push(new InfoView(client, infoViewPath));
 
   let onDocumentChange = async (document: TextDocument) => {
     if (document.languageId !== "acorn") {
