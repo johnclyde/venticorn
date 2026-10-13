@@ -1076,12 +1076,37 @@ impl AcornValue {
         }
     }
 
-    // A fallible boundary for match lowering; unsupported values cannot reach CNF.
-    pub fn replace_match(self, _stack_size: AtomId) -> Result<AcornValue, String> {
-        if self.contains_match() {
-            Err("match expressions are not supported by proof normalization yet".to_string())
-        } else {
-            Ok(self)
+    // Keep unsupported matches explicit while traversing Boolean scopes safely.
+    pub fn replace_match(self, stack_size: AtomId) -> Result<AcornValue, String> {
+        match self {
+            AcornValue::Binary(op, left, right) if left.get_type() == AcornType::Bool => {
+                Ok(AcornValue::Binary(
+                    op,
+                    Box::new(left.replace_match(stack_size)?),
+                    Box::new(right.replace_match(stack_size)?),
+                ))
+            }
+            AcornValue::Not(value) => {
+                Ok(AcornValue::Not(Box::new(value.replace_match(stack_size)?)))
+            }
+            AcornValue::ForAll(vars, value) => {
+                let new_stack_size = stack_size + vars.len() as AtomId;
+                Ok(AcornValue::ForAll(
+                    vars,
+                    Box::new(value.replace_match(new_stack_size)?),
+                ))
+            }
+            AcornValue::Exists(vars, value) => {
+                let new_stack_size = stack_size + vars.len() as AtomId;
+                Ok(AcornValue::Exists(
+                    vars,
+                    Box::new(value.replace_match(new_stack_size)?),
+                ))
+            }
+            value if value.contains_match() => {
+                Err("match expressions are not supported by proof normalization yet".to_string())
+            }
+            value => Ok(value),
         }
     }
 

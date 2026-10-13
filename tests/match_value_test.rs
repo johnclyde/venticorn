@@ -86,3 +86,22 @@ fn malformed_matches_fail_normalization_before_type_access() {
             Normalization::Error(message) if message.contains("at least one case")));
     }
 }
+
+#[test]
+fn match_lowering_checks_nested_boolean_scopes_without_panicking() {
+    let value = bound_match(AcornType::Bool).bind_values(0, 0, &[AcornValue::Bool(true)]);
+    let expressions = [
+        AcornValue::new_and(AcornValue::Bool(true), value.clone()),
+        AcornValue::new_forall(vec![AcornType::Bool], value.clone().insert_stack(0, 1)),
+        AcornValue::new_exists(vec![AcornType::Bool], value.insert_stack(0, 1).negate()),
+    ];
+    for expression in expressions {
+        expression.validate().unwrap();
+        assert!(expression
+            .replace_match(0)
+            .unwrap_err()
+            .contains("match expressions"));
+    }
+    let plain = AcornValue::new_and(AcornValue::Bool(true), AcornValue::Bool(false));
+    assert_eq!(plain.clone().replace_match(0).unwrap(), plain);
+}
