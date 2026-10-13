@@ -9,7 +9,7 @@ repository = "https://github.com/johnclyde/venticorn"
 description = "An automated theorem prover and mathematical programming language"
 
 [features]
-default = []
+default = ["onnx"]
 onnx = ["dep:ort"]
 
 [dependencies]
