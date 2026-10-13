@@ -556,6 +556,30 @@ impl BindingMap {
         Ok((names, types))
     }
 
+    // Checks the number of pattern names against the constructor's argument types.
+    fn bind_names(
+        &self,
+        _stack: &mut Stack,
+        names: &Expression,
+        types: &[AcornType],
+    ) -> token::Result<Vec<String>> {
+        let name_exps = names.flatten_list(false)?;
+        if name_exps.len() != types.len() {
+            return Err(Error::new(
+                names.token(),
+                &format!(
+                    "expected {} arguments but got {}",
+                    types.len(),
+                    name_exps.len()
+                ),
+            ));
+        }
+        Err(Error::new(
+            names.token(),
+            "match expression evaluation is not supported yet",
+        ))
+    }
+
     // This function evaluates numbers when we already know what type they are.
     // token is the token to report errors with.
     // s is the string to parse.
@@ -1219,13 +1243,14 @@ impl BindingMap {
                 let scrutinee =
                     self.evaluate_value_with_stack(stack, project, scrutinee_exp, None)?;
                 let scrutinee_type = scrutinee.get_type();
-                for (pattern_exp, _) in case_exps {
-                    let fn_exp = match pattern_exp {
-                        Expression::Apply(function, _) => function,
+                let mut cases = vec![];
+                for (pattern_exp, result_exp) in case_exps {
+                    let (fn_exp, args) = match pattern_exp {
+                        Expression::Apply(function, args) => (function, args),
                         _ => return Err(Error::new(pattern_exp.token(), "invalid match pattern")),
                     };
                     let fn_value = self.evaluate_value_with_stack(stack, project, fn_exp, None)?;
-                    match fn_value.get_type() {
+                    let arg_types = match fn_value.get_type() {
                         AcornType::Function(function) => {
                             if *function.return_type != scrutinee_type {
                                 return Err(Error::new(
@@ -1233,9 +1258,21 @@ impl BindingMap {
                                     "pattern type does not match scrutinee",
                                 ));
                             }
+                            function.arg_types
                         }
                         _ => return Err(Error::new(fn_exp.token(), "expected a function")),
-                    }
+                    };
+                    let arg_names = self.bind_names(stack, args, &arg_types)?;
+                    let evaluated = (|| {
+                        let pattern =
+                            self.evaluate_value_with_stack(stack, project, pattern_exp, None)?;
+                        let result =
+                            self.evaluate_value_with_stack(stack, project, result_exp, None)?;
+                        Ok::<_, Error>((pattern, result))
+                    })();
+                    stack.remove_all(&arg_names);
+                    let (pattern, result) = evaluated?;
+                    cases.push((arg_types, pattern, result));
                 }
                 Err(Error::new(
                     expression.token(),

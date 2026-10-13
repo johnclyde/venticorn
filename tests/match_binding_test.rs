@@ -38,3 +38,13 @@ fn match_requires_function_patterns_until_nullary_binding_is_available() {
     );
     assert!(error.contains("invalid match pattern"), "{error}");
 }
+
+#[test]
+fn match_constructor_arity_is_checked_before_names_are_bound() {
+    let mut env = environment();
+    let error = error_for(
+        &mut env,
+        "define f(v: Foo) -> Bool { match v { Foo.bar(x, y) { x } } }",
+    );
+    assert!(error.contains("expected 1 arguments but got 2"), "{error}");
+}
