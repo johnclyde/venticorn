@@ -1289,4 +1289,38 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
             .to_string()
             .contains("not all constructors are covered in this match"));
     }
+
+    #[test]
+    fn test_match_pattern_must_be_constructor() {
+        let mut env = Environment::new_test();
+        env.add(
+            r#"
+            inductive Foo {
+                bar(Bool)
+                baz
+            }
+            class Foo {
+                define qux(self, b: Bool) -> Foo {
+                    Foo.baz
+                }
+            }
+            "#,
+        );
+        let error = env
+            .add_tokens(
+                &mut Project::new_mock(),
+                venticorn::token::Token::scan(
+                    r#"
+                define foo(f: Foo) -> Bool {
+                    match f {
+                        Foo.bar(b) { b }
+                        Foo.qux { false }
+                    }
+                }
+                "#,
+                ),
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("expected a constructor"));
+    }
 }
