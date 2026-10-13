@@ -16,6 +16,6 @@ mkdir -p files/release
 output="$PWD/files/release/venticorn-extension-$version.vsix"
 (
   cd vscode/extension
-  "$vsce_command" package --out "$output" --no-gitHubIssueLinking --no-gitLabIssueLinking
+  "$vsce_command" package --no-dependencies --out "$output" --no-gitHubIssueLinking --no-gitLabIssueLinking
 )
 python3 tests/vsix_test.py "$output"

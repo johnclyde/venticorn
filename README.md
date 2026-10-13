@@ -183,7 +183,7 @@ npm install --prefix "$VSCE_TOOLS" @vscode/vsce@4.0.0 --no-audit --no-fund
 VSCE="$VSCE_TOOLS/node_modules/.bin/vsce" ./package.sh
 ```
 
-`package.sh` checks synchronized versions, rebuilds the extension and search UI, and creates `files/release/venticorn-extension-VERSION.vsix`. It then unpacks that archive, verifies runtime dependencies and license notices, excludes development tools and server binaries, and loads the compiled extension with a VS Code host stub. The command does not publish to a marketplace. Install the two project npm dependency sets before running it, as described above. Generated release files are ignored by Git.
+`package.sh` checks synchronized versions, rebuilds the extension and search UI, and creates `files/release/venticorn-extension-VERSION.vsix`. It then unpacks that archive, verifies runtime dependencies and license notices, excludes node_modules, test modules, development tools, and server binaries, and loads the compiled extension with a VS Code host stub. The command does not publish to a marketplace. Install the two project npm dependency sets before running it, as described above. Generated release files are ignored by Git.
 
 ## Optional model training
 
@@ -193,7 +193,7 @@ See [the Python tooling instructions](python/README.md). Training requires separ
 
 The default ONNX model is embedded in the executables at compile time, so inference does not need a model file or the original checkout at runtime. See [the model notes](files/models/README.md) before replacing the bundled model. If the embedded model cannot be initialized, the default scorer reports the error and uses the built-in heuristic. Dataset export still writes into the compilation checkout's `files/datasets` directory; keep that directory available when exporting training data.
 
-The extension package includes generated build assets, production Node.js dependencies, language definitions, artwork, and license notices. Validate the actual VSIX with `package.sh`; an npm package listing alone does not verify an installed VS Code extension.
+The extension package includes generated build assets, bundled JavaScript dependencies, language definitions, artwork, and license notices. Validate the actual VSIX with `package.sh`; an npm package listing alone does not verify an installed VS Code extension.
 
 The extension uses esbuild to bundle its code and runtime JavaScript dependencies. TypeScript still checks the source before bundling; lifecycle tests compile isolated modules into `build/test`, which is excluded from the package. The bundle preserves dependency license comments and includes `THIRD_PARTY_NOTICES.txt`.
 

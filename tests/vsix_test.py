@@ -14,17 +14,13 @@ def check_vsix(filename):
     with zipfile.ZipFile(filename) as archive:
         names = set(archive.namelist())
         for required in [
-            "extension/node_modules/vscode-languageclient/package.json",
-            "extension/node_modules/vscode-languageserver-protocol/package.json",
-            "extension/node_modules/vscode-jsonrpc/package.json",
             "extension/LICENSE.txt", "extension/NOTICE", "extension/readme.md",
             "extension/build/search/index.html",
             "extension/build/extension/THIRD_PARTY_NOTICES.txt",
         ]:
             assert required in names, f"VSIX is missing {required}"
         excluded = [
-            "extension/src/", "extension/node_modules/typescript/",
-            "extension/node_modules/prettier/", "extension/node_modules/@types/",
+            "extension/src/", "extension/node_modules/",
             "extension/target/", "extension/files/", "extension/build/old/", "extension/build/test/",
         ]
         for name in names:
@@ -45,8 +41,7 @@ def check_vsix(filename):
             archive.extractall(directory)
             extension = Path(directory) / "extension"
             # The VS Code host is the only dependency deliberately absent outside VS Code.
-            # The bundled entry point must need no external packages, even if this VSIX
-            # still contains the former runtime dependency directories.
+            # All JavaScript runtime dependencies must already be in the bundle.
             javascript = r'''
 const Module = require("node:module");
 const path = require("node:path");
