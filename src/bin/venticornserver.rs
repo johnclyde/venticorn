@@ -769,23 +769,35 @@ impl LanguageServer for LazyBackend {
             .or(params.root_uri.as_ref());
         self.backend
             .get_or_try_init(|| async {
-                let project = if std::env::var_os("VENTICORN_LIBRARY").is_some() {
-                    Project::new_local()
-                } else {
-                    let root = root_uri.ok_or_else(|| {
-                        jsonrpc::Error::invalid_params(
-                            "open a workspace folder or set VENTICORN_LIBRARY to its directory",
-                        )
-                    })?;
-                    let path = root.to_file_path().map_err(|_| {
-                        jsonrpc::Error::invalid_params(format!(
-                            "workspace root is not a local file URI: {}",
-                            root
-                        ))
-                    })?;
-                    Project::new_from_directory_search(&path)
-                }
-                .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?;
+                let library_root = match Project::library_override()
+                    .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
+                {
+                    Some(path) => path,
+                    None => {
+                        let root = root_uri.ok_or_else(|| {
+                            jsonrpc::Error::invalid_params(
+                                "open a workspace folder or set VENTICORN_LIBRARY to its directory",
+                            )
+                        })?;
+                        let path = root.to_file_path().map_err(|_| {
+                            jsonrpc::Error::invalid_params(format!(
+                                "workspace root is not a local file URI: {}",
+                                root
+                            ))
+                        })?;
+                        Project::find_local_library(&path)
+                            .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
+                            .ok_or_else(|| {
+                                jsonrpc::Error::invalid_params(format!(
+                                "no library found from {}; set VENTICORN_LIBRARY to its directory",
+                                path.display()
+                            ))
+                            })?
+                    }
+                };
+                log(&format!("using library at {}", library_root.display()));
+                let project = Project::from_library_root(library_root)
+                    .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?;
                 Ok::<_, jsonrpc::Error>(Backend::new(self.client.clone(), project))
             })
             .await?;
