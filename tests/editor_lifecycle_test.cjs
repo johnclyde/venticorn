@@ -109,6 +109,7 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
     console: { log() {}, warn() {}, error() {} },
   });
   const context = {
+    extensionPath: "/installed extension",
     subscriptions: [], asAbsolutePath: (value) => value,
     extension: { packageJSON: { version: "0.1.0" } },
     globalStorageUri: { fsPath: "/extension-storage" },
@@ -231,8 +232,8 @@ test("local workspace roots are passed as one literal server argument", async ()
   const root = "/workspace with spaces/proofs";
   const extension = loadExtension({ workspaceFolders: [{ uri: { scheme: "file", fsPath: root } }] });
   await extension.activate(extension.context);
-  assert.deepEqual(Array.from(extension.state.serverOptions.run.args), ["--workspace-root", root]);
+  assert.deepEqual(Array.from(extension.state.serverOptions.run.args), ["--extension-root", "/installed extension", "--workspace-root", root]);
   const remote = loadExtension({ workspaceFolders: [{ uri: { scheme: "vscode-remote", fsPath: "/remote" } }] });
   await remote.activate(remote.context);
-  assert.deepEqual(Array.from(remote.state.serverOptions.run.args), []);
+  assert.deepEqual(Array.from(remote.state.serverOptions.run.args), ["--extension-root", "/installed extension"]);
 });

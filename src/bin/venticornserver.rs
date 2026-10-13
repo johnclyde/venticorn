@@ -29,6 +29,64 @@ struct Args {
     /// Workspace directory used for local library discovery.
     #[arg(long)]
     workspace_root: Option<PathBuf>,
+
+    /// Installed extension directory containing the bundled acornlib library.
+    #[arg(long)]
+    extension_root: Option<PathBuf>,
+}
+
+// Keep selection independent of the server process working directory.
+fn select_library(args: &Args, workspace_uri: Option<&Url>) -> jsonrpc::Result<PathBuf> {
+    if let Some(root) = Project::library_override()
+        .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
+    {
+        return Ok(root);
+    }
+    let workspace_root = match &args.workspace_root {
+        Some(path) => Some(path.clone()),
+        None => workspace_uri
+            .map(|uri| {
+                uri.to_file_path().map_err(|_| {
+                    jsonrpc::Error::invalid_params(format!(
+                        "workspace root is not a local file URI: {}",
+                        uri
+                    ))
+                })
+            })
+            .transpose()?,
+    };
+    if let Some(path) = &workspace_root {
+        if let Some(root) = Project::find_local_library(path)
+            .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
+        {
+            return Ok(root);
+        }
+    }
+    if let Some(extension_root) = &args.extension_root {
+        if !extension_root.is_dir() {
+            return Err(jsonrpc::Error::invalid_params(format!(
+                "extension root is not a directory: {}",
+                extension_root.display()
+            )));
+        }
+        let bundled = extension_root.join("acornlib");
+        if !bundled.is_dir() {
+            return Err(jsonrpc::Error::invalid_params(format!(
+                "bundled library is not a directory: {}",
+                bundled.display()
+            )));
+        }
+        return bundled
+            .canonicalize()
+            .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()));
+    }
+    Err(jsonrpc::Error::invalid_params(match workspace_root {
+        Some(path) => format!(
+            "no library found from {}; set VENTICORN_LIBRARY to its directory",
+            path.display()
+        ),
+        None => "open a workspace folder or set VENTICORN_LIBRARY to its directory".to_string(),
+    }))
 }
 
 // Messages appear in the "Venticorn Language Server" output channel.
@@ -781,36 +839,7 @@ impl LanguageServer for LazyBackend {
             .or(params.root_uri.as_ref());
         self.backend
             .get_or_try_init(|| async {
-                let library_root = match Project::library_override()
-                    .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
-                {
-                    Some(path) => path,
-                    None => {
-                        let path = match &self.args.workspace_root {
-                            Some(path) => path.clone(),
-                            None => {
-                                let root = root_uri.ok_or_else(|| {
-                                    jsonrpc::Error::invalid_params(
-                                        "open a workspace folder or set VENTICORN_LIBRARY to its directory",
-                                    )
-                                })?;
-                                root.to_file_path().map_err(|_| {
-                                    jsonrpc::Error::invalid_params(format!(
-                                        "workspace root is not a local file URI: {}", root
-                                    ))
-                                })?
-                            }
-                        };
-                        Project::find_local_library(&path)
-                            .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
-                            .ok_or_else(|| {
-                                jsonrpc::Error::invalid_params(format!(
-                                "no library found from {}; set VENTICORN_LIBRARY to its directory",
-                                path.display()
-                            ))
-                            })?
-                    }
-                };
+                let library_root = select_library(&self.args, root_uri)?;
                 log(&format!("using library at {}", library_root.display()));
                 let project = Project::from_library_root(library_root)
                     .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?;

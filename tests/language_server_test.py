@@ -201,6 +201,67 @@ class LanguageServerTest(unittest.TestCase):
         stderr = self.initialize_and_shutdown(None, expected_error="not a directory")
         self.assertNotIn("panicked", stderr)
 
+    def bundle(self):
+        extension = self.library / "installed extension"
+        bundled = extension / "acornlib"
+        bundled.mkdir(parents=True)
+        (bundled / "example.ac").write_text("theorem bundled { true }\n")
+        self.server_args = ["--extension-root", str(extension)]
+        return bundled
+
+    def test_bundled_library_supports_a_window_without_a_workspace(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        bundled = self.bundle()
+        stderr = self.initialize_and_shutdown(None)
+        self.assertIn(f"using library at {bundled.resolve()}", stderr)
+
+    def test_bundled_library_is_used_after_unsuccessful_workspace_discovery(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        bundled = self.bundle()
+        workspace = self.library / "proofs"
+        workspace.mkdir()
+        working = self.library / "unrelated"
+        (working / "acornlib").mkdir(parents=True)
+        stderr = self.initialize_and_shutdown(workspace.as_uri(), cwd=working)
+        self.assertIn(f"using library at {bundled.resolve()}", stderr)
+
+    def test_workspace_library_takes_precedence_over_the_bundle(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        self.bundle()
+        workspace = self.library / "project" / "venticorn-library"
+        workspace.mkdir(parents=True)
+        stderr = self.initialize_and_shutdown(workspace.as_uri())
+        self.assertIn(f"using library at {workspace.resolve()}", stderr)
+
+    def test_explicit_library_takes_precedence_over_workspace_and_bundle(self):
+        self.bundle()
+        workspace = self.library / "project" / "acornlib"
+        workspace.mkdir(parents=True)
+        stderr = self.initialize_and_shutdown(workspace.as_uri())
+        self.assertIn(f"using library at {self.library.resolve()}", stderr)
+
+    def test_invalid_override_does_not_fall_back_to_bundle(self):
+        self.bundle()
+        self.environment["VENTICORN_LIBRARY"] = ""
+        stderr = self.initialize_and_shutdown(None, expected_error="VENTICORN_LIBRARY must not be empty")
+        self.assertNotIn("panicked", stderr)
+
+    def test_missing_or_non_directory_bundle_reports_initialization_error(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        extension = self.library / "empty extension"
+        extension.mkdir()
+        self.server_args = ["--extension-root", str(extension)]
+        for create_file in [False, True]:
+            if create_file:
+                (extension / "acornlib").write_text("not a directory")
+            stderr = self.initialize_and_shutdown(None, expected_error="bundled library is not a directory")
+            self.assertNotIn("panicked", stderr)
+
+    def test_remote_workspace_remains_an_error_even_with_a_bundle(self):
+        self.environment.pop("VENTICORN_LIBRARY")
+        self.bundle()
+        self.initialize_and_shutdown("https://example.invalid/workspace", expected_error="workspace root is not a local file URI")
+
     def test_startup_does_not_require_a_library_before_initialize(self):
         self.environment["VENTICORN_LIBRARY"] = str(self.library / "missing")
         result = subprocess.run(

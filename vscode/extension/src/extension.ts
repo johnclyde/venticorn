@@ -140,7 +140,7 @@ export async function activate(context: ExtensionContext) {
     return;
   }
 
-  const args: string[] = [];
+  const args: string[] = ["--extension-root", context.extensionPath];
   const workspaceRoot = workspace.workspaceFolders?.[0]?.uri;
   if (workspaceRoot?.scheme === "file") {
     args.push("--workspace-root", workspaceRoot.fsPath);
