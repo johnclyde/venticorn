@@ -11,21 +11,17 @@
 </script>
 
 {#if searchResponse.goalName === null}
-  <h1 class="mono">There is no goal.</h1>
+  <h1 class="header">There is no goal.</h1>
 {:else if searchResponse.goalRange === null}
-  <h1 class="mono">{searchResponse.goalName}</h1>
+  <h1 class="header">{searchResponse.goalName}</h1>
 {:else}
-  <h1 class="mono">
+  <h1 class="header">
     <button class="goal-link" type="button" on:click={callback}
       >{searchResponse.goalName}</button>
   </h1>
 {/if}
 
 <style>
-  h1 {
-    overflow-wrap: anywhere;
-  }
-
   .goal-link {
     display: block;
     width: 100%;
