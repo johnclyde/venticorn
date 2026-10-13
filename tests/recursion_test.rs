@@ -230,3 +230,22 @@ fn member_recursion_can_decrease_the_receiver() {
     );
     assert!(env.bindings.has_identifier("Nat.add"));
 }
+
+#[test]
+fn member_recursion_on_a_later_argument_is_guarded() {
+    let mut env = naturals();
+    reject_termination(
+        &mut env,
+        r#"
+        class Nat {
+            define add(self, other: Nat) -> Nat {
+                match other {
+                    Nat.zero { self }
+                    Nat.suc(pred) { self.add(pred).suc }
+                }
+            }
+        }
+    "#,
+    );
+    assert!(!env.bindings.has_identifier("Nat.add"));
+}
