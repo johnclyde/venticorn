@@ -22,11 +22,11 @@
       ]
     },
     {
-      "label": "search: npm build",
+      "label": "info view: npm build",
       "type": "npm",
       "script": "build",
       "options": {
-        "cwd": "${workspaceFolder}/vscode/search"
+        "cwd": "${workspaceFolder}/vscode/info"
       },
       "group": {
         "kind": "build",
@@ -63,7 +63,7 @@
       "label": "build all",
       "dependsOn": [
         "extension: npm build",
-        "search: npm build",
+        "info view: npm build",
         "language server: cargo build"
       ],
       "dependsOrder": "parallel"
