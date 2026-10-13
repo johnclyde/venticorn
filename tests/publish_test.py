@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
@@ -23,7 +24,7 @@ class ReleaseAssetsTest(unittest.TestCase):
         (self.root / "VERSION").write_text("0.1.0\n")
         package = self.root / "vscode/extension/package.json"
         package.parent.mkdir(parents=True)
-        manifest = {"name": "venticorn-extension", "version": "0.1.0"}
+        manifest = {"name": "venticorn-extension", "version": "0.1.0", "publisher": "johnclyde"}
         package.write_text(json.dumps(manifest))
         package.with_name("package-lock.json").write_text(json.dumps({**manifest, "packages": {"": manifest}}))
         (self.root / "Cargo.toml").write_text('[package]\nname = "venticorn"\nversion = "0.1.0"\n')
@@ -33,11 +34,20 @@ class ReleaseAssetsTest(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             binary.write_bytes(platform.encode())
 
+        self.vsix = self.root / "files/release/venticorn-extension-0.1.0.vsix"
+        self.write_vsix()
+
+    def write_vsix(self, version="0.1.0", publisher="johnclyde", identity_version=None):
+        self.vsix.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(self.vsix, "w") as archive:
+            archive.writestr("extension/package.json", json.dumps({"name": "venticorn-extension", "version": version, "publisher": publisher}))
+            archive.writestr("extension.vsixmanifest", f'<PackageManifest><Metadata><Identity Id="venticorn-extension" Version="{identity_version or version}" Publisher="{publisher}"/></Metadata></PackageManifest>')
+
     def test_dry_run_has_no_writes_or_network(self):
         with patch.object(publish.subprocess, "run") as run:
             publish.publish(self.root, "dry-run")
         run.assert_not_called()
-        self.assertFalse((self.root / "files").exists())
+        self.assertFalse((self.root / "files/release/v0.1.0").exists())
 
     def test_staged_names_match_download_platforms(self):
         with patch.object(publish.subprocess, "run") as run:
@@ -45,6 +55,7 @@ class ReleaseAssetsTest(unittest.TestCase):
         run.assert_not_called()
         staging = self.root / "files/release/v0.1.0"
         self.assertEqual(sorted(p.name for p in staging.iterdir()), [
+            "venticorn-extension-0.1.0.vsix",
             "venticornserver-v0.1.0-darwin-arm64",
             "venticornserver-v0.1.0-linux-x64",
             "venticornserver-v0.1.0-win32-x64.exe",
@@ -58,7 +69,7 @@ class ReleaseAssetsTest(unittest.TestCase):
         with patch.object(publish.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "Missing or empty"):
             publish.publish(self.root, "upload")
         run.assert_not_called()
-        self.assertFalse((self.root / "files").exists())
+        self.assertFalse((self.root / "files/release/v0.1.0").exists())
 
     def test_upload_uses_explicit_repository_without_clobber(self):
         with patch.object(publish.subprocess, "run") as run:
@@ -66,13 +77,13 @@ class ReleaseAssetsTest(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].args[0], ["gh", "release", "view", "v0.1.0", "--repo", "johnclyde/venticorn"])
         upload = run.call_args_list[1].args[0]
         self.assertEqual(upload[:6], ["gh", "release", "upload", "v0.1.0", "--repo", "johnclyde/venticorn"])
-        self.assertEqual(len(upload[6:]), 3)
+        self.assertEqual(len(upload[6:]), 4)
         self.assertNotIn("--clobber", upload)
 
     def test_missing_release_stops_before_staging(self):
         with patch.object(publish.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "gh")), self.assertRaises(subprocess.CalledProcessError):
             publish.publish(self.root, "upload")
-        self.assertFalse((self.root / "files").exists())
+        self.assertFalse((self.root / "files/release/v0.1.0").exists())
 
     def test_cargo_and_npm_lock_mismatches_stop_direct_entry_before_network(self):
         for relative in ["Cargo.toml", "Cargo.lock", "vscode/extension/package-lock.json"]:
@@ -83,8 +94,31 @@ class ReleaseAssetsTest(unittest.TestCase):
                 with patch.object(publish.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "disagree"):
                     publish.publish(self.root, "upload")
                 run.assert_not_called()
-                self.assertFalse((self.root / "files").exists())
+                self.assertFalse((self.root / "files/release/v0.1.0").exists())
                 file.write_text(original)
+
+    def test_missing_extension_stops_before_network_or_staging(self):
+        self.vsix.unlink()
+        with patch.object(publish.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "Missing or empty extension"):
+            publish.publish(self.root, "upload")
+        run.assert_not_called()
+        self.assertFalse((self.root / "files/release/v0.1.0").exists())
+
+    def test_extension_identity_and_version_must_match_release(self):
+        for overrides in ({"version": "0.0.9"}, {"publisher": "unexpected"}, {"identity_version": "0.0.9"}):
+            with self.subTest(overrides=overrides):
+                self.write_vsix(**overrides)
+                with patch.object(publish.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "VSIX .* differs"):
+                    publish.publish(self.root, "upload")
+                run.assert_not_called()
+        self.assertFalse((self.root / "files/release/v0.1.0").exists())
+
+    def test_invalid_archive_stops_before_network_or_staging(self):
+        self.vsix.write_bytes(b"not an archive")
+        with patch.object(publish.subprocess, "run") as run, self.assertRaisesRegex(ValueError, "Invalid extension package"):
+            publish.publish(self.root, "upload")
+        run.assert_not_called()
+        self.assertFalse((self.root / "files/release/v0.1.0").exists())
 
     def test_invalid_or_mismatched_version_is_rejected(self):
         for value in ["../bad", "0.1.1", "00.1.0"]:
