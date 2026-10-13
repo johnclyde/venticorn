@@ -1315,4 +1315,28 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
             .unwrap_err();
         assert!(error.to_string().contains("expected a constructor"));
     }
+    #[test]
+    fn test_match_expression_in_let_binding() {
+        let mut env = Environment::new_test();
+        env.add(
+            r#"
+            inductive Foo {
+                bar(Bool)
+                baz
+            }
+            let f: Foo = Foo.bar(true)
+            let b: Bool = match f {
+                Foo.bar(bit) { bit }
+                Foo.baz { false }
+            }
+        "#,
+        );
+        env.expect_type("b", "Bool");
+        env.bindings
+            .get_definition("b")
+            .unwrap()
+            .validate()
+            .unwrap();
+        assert!(!env.bindings.has_identifier("bit"));
+    }
 }
