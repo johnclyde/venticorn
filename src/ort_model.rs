@@ -1,3 +1,4 @@
+// Modified for Venticorn: embed the default scorer model in the executable.
 use std::error::Error;
 use std::path::Path;
 use std::sync::Once;
@@ -5,7 +6,6 @@ use std::sync::Once;
 use ndarray::{Axis, IxDyn};
 use ort::{CPUExecutionProvider, GraphOptimizationLevel, Session};
 
-use crate::common;
 use crate::features::Features;
 use crate::scorer::Scorer;
 
@@ -17,9 +17,10 @@ pub struct OrtModel {
 
 static ORT_INIT: Once = Once::new();
 
+const MODEL_BYTES: &[u8] = include_bytes!("../files/models/model-2024-09-25-15-33-10.onnx");
+
 impl OrtModel {
-    // Loads a model from a specific file.
-    pub fn load_file(p: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+    fn initialize_runtime() {
         ORT_INIT.call_once(|| {
             ort::init()
                 .with_execution_providers([CPUExecutionProvider::default()
@@ -28,20 +29,24 @@ impl OrtModel {
                 .commit()
                 .unwrap();
         });
+    }
 
+    // Loads a model from a specific file, for scorer experiments.
+    pub fn load_file(p: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+        Self::initialize_runtime();
         let session = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .commit_from_file(p)?;
         Ok(OrtModel { session })
     }
 
-    // Loads the most recent model.
-    pub fn load(verbose: bool) -> Result<Self, Box<dyn Error>> {
-        let filename = common::most_recent_onnx_model()?;
-        if verbose {
-            println!("Loading model from {}", filename.display());
-        }
-        OrtModel::load_file(filename)
+    // Loads the bundled model without depending on the original checkout location.
+    pub fn load() -> Result<Self, Box<dyn Error>> {
+        Self::initialize_runtime();
+        let session = Session::builder()?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .commit_from_memory(MODEL_BYTES)?;
+        Ok(OrtModel { session })
     }
 }
 
@@ -84,9 +89,24 @@ mod tests {
         let features = Features::new(&step);
 
         // First ort
-        let ort_model = OrtModel::load(true).unwrap();
+        let ort_model = OrtModel::load().unwrap();
         let ort_score = ort_model.score(&features).unwrap();
         assert!(ort_score.is_finite());
+    }
+
+    #[test]
+    fn bundled_model_matches_file_model() {
+        let features = Features::new(&ProofStep::mock("c0(c3) = c2"));
+        let bundled = OrtModel::load().unwrap();
+        let file = OrtModel::load_file(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/files/models/model-2024-09-25-15-33-10.onnx"
+        ))
+        .unwrap();
+        assert_eq!(
+            bundled.score(&features).unwrap(),
+            file.score(&features).unwrap()
+        );
     }
 
     #[test]
@@ -95,7 +115,7 @@ mod tests {
         let features1 = Features::new(&step1);
         let step2 = ProofStep::mock("c4(c1, c1) = c4(c2, c2)");
         let features2 = Features::new(&step2);
-        let ort_model = OrtModel::load(true).unwrap();
+        let ort_model = OrtModel::load().unwrap();
 
         let score1 = ort_model.score(&features1).unwrap();
         let score2 = ort_model.score(&features2).unwrap();
