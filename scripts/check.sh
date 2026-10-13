@@ -10,6 +10,8 @@ fi
 
 python3 python/version.py
 python3 tests/version_test.py
+python3 tests/crossbuild_test.py
+bash -n crossbuild.sh
 
 cargo fmt --all -- --check
 cargo test --locked --all-targets
