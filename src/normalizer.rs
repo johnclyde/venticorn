@@ -1,3 +1,4 @@
+// Modified for Venticorn: Boolean-literal normalization soundness regressions.
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::{Atom, AtomId};
@@ -553,6 +554,80 @@ impl Normalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn evaluate_boolean(value: &AcornValue, variable: bool) -> bool {
+        match value {
+            AcornValue::Bool(value) => *value,
+            AcornValue::Constant(_, name, _, _) if name == "p" => variable,
+            AcornValue::Not(inner) => !evaluate_boolean(inner, variable),
+            AcornValue::Binary(operator, left, right) => {
+                let left = evaluate_boolean(left, variable);
+                let right = evaluate_boolean(right, variable);
+                match operator {
+                    BinaryOp::And => left && right,
+                    BinaryOp::Or => left || right,
+                    BinaryOp::Implies => !left || right,
+                    BinaryOp::Equals => left == right,
+                    BinaryOp::NotEquals => left != right,
+                }
+            }
+            _ => panic!("unexpected truth-table expression: {}", value),
+        }
+    }
+
+    fn assert_boolean_normalization(value: &AcornValue) {
+        let mut normalizer = Normalizer::new();
+        let normalized = normalizer.normalize(value, true);
+        for assignment in [false, true] {
+            let actual = match &normalized {
+                Normalization::Clauses(clauses) => clauses
+                    .iter()
+                    .all(|clause| evaluate_boolean(&normalizer.denormalize(clause), assignment)),
+                Normalization::Impossible => false,
+                Normalization::Error(error) => panic!("normalizing {}: {}", value, error),
+            };
+            assert_eq!(
+                actual,
+                evaluate_boolean(value, assignment),
+                "normalizing {} must preserve its truth when p = {}",
+                value,
+                assignment,
+            );
+        }
+    }
+
+    #[test]
+    fn boolean_literal_comparisons_preserve_truth() {
+        let variable = AcornValue::Constant(
+            crate::module::FIRST_NORMAL,
+            "p".to_string(),
+            AcornType::Bool,
+            vec![],
+        );
+        let operands = [
+            variable.clone(),
+            variable.negate(),
+            AcornValue::Bool(false),
+            AcornValue::Bool(true),
+        ];
+        for operand in operands {
+            for literal in [false, true] {
+                for reverse in [false, true] {
+                    for operator in [BinaryOp::Equals, BinaryOp::NotEquals] {
+                        let (left, right) = if reverse {
+                            (AcornValue::Bool(literal), operand.clone())
+                        } else {
+                            (operand.clone(), AcornValue::Bool(literal))
+                        };
+                        let comparison =
+                            AcornValue::Binary(operator, Box::new(left), Box::new(right));
+                        assert_boolean_normalization(&comparison);
+                        assert_boolean_normalization(&AcornValue::Not(Box::new(comparison)));
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_nat_normalization() {
