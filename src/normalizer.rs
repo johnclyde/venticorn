@@ -358,6 +358,12 @@ impl Normalizer {
 
     // Converts a value to CNF.
     pub fn normalize(&mut self, value: &AcornValue, local: bool) -> Normalization {
+        // Keep incomplete match lowering out of all proof transformations.
+        if value.contains_match() {
+            return Normalization::Error(
+                "match expressions are not supported by proof normalization yet".to_string(),
+            );
+        }
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             // Check for defining one constant to equal another constant.
             if let AcornValue::Constant(left_module, left_name, _, _) = left.as_ref() {
