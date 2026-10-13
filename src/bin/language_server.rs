@@ -749,9 +749,31 @@ impl LazyBackend {
 #[tower_lsp::async_trait]
 impl LanguageServer for LazyBackend {
     async fn initialize(&self, params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
+        let root_uri = params
+            .workspace_folders
+            .as_ref()
+            .and_then(|folders| folders.first())
+            .map(|folder| &folder.uri)
+            .or(params.root_uri.as_ref());
         self.backend
             .get_or_try_init(|| async {
-                let project = Project::from_library().map_err(|error| {
+                let project = if std::env::var_os("VENTICORN_LIBRARY").is_some() {
+                    Project::new_local()
+                } else {
+                    let root = root_uri.ok_or_else(|| {
+                        jsonrpc::Error::invalid_params(
+                            "open a workspace folder or set VENTICORN_LIBRARY to its directory",
+                        )
+                    })?;
+                    let path = root.to_file_path().map_err(|_| {
+                        jsonrpc::Error::invalid_params(format!(
+                            "workspace root is not a local file URI: {}",
+                            root
+                        ))
+                    })?;
+                    Project::new_from_directory_search(&path)
+                }
+                .map_err(|error| {
                     jsonrpc::Error::invalid_params(format!(
                         "cannot initialize language server: {}",
                         error
@@ -760,7 +782,7 @@ impl LanguageServer for LazyBackend {
                 Ok::<_, jsonrpc::Error>(Backend::new(self.client.clone(), project))
             })
             .await?;
-        match params.root_uri {
+        match root_uri {
             Some(root) => log(&format!("initializing with root {}", root)),
             None => log("initializing with no root"),
         }
