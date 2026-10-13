@@ -412,6 +412,7 @@ impl Environment {
                 Some(&ds.return_type),
                 &ds.return_value,
                 class_name,
+                Some(&name),
             )?;
 
         if let Some(class_name) = class_name {
@@ -516,9 +517,16 @@ impl Environment {
                 };
                 self.definition_ranges.insert(ts.name.to_string(), range);
 
-                let (type_params, arg_names, arg_types, value, _) = self
-                    .bindings
-                    .evaluate_subvalue(project, &ts.type_params, &ts.args, None, &ts.claim, None)?;
+                let (type_params, arg_names, arg_types, value, _) =
+                    self.bindings.evaluate_subvalue(
+                        project,
+                        &ts.type_params,
+                        &ts.args,
+                        None,
+                        &ts.claim,
+                        None,
+                        None,
+                    )?;
 
                 let unbound_claim = value.ok_or_else(|| {
                     Error::new(&statement.first_token, "theorems must have values")
@@ -772,6 +780,7 @@ impl Environment {
                         None,
                         &fss.condition,
                         None,
+                        None,
                     )?;
 
                 let unbound_condition = condition
@@ -994,6 +1003,15 @@ impl Environment {
                         }
                         None => vec![],
                     };
+                    if type_list.iter().any(|field| {
+                        field != &inductive_type && field.refers_to(self.module_id, &is.name)
+                    }) {
+                        self.bindings.remove_data_type(&is.name);
+                        return Err(Error::new(
+                            name_token,
+                            "recursive constructor fields must use the inductive type directly",
+                        ));
+                    }
                     if !type_list.contains(&inductive_type) {
                         // This provides a base case
                         has_base = true;

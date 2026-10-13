@@ -1,4 +1,4 @@
-// Modified for Venticorn: recursion must be rejected until its safety checks are available.
+// Modified for Venticorn: recursive definitions require a structural termination proof.
 use venticorn::environment::Environment;
 use venticorn::project::Project;
 use venticorn::statement::Statement;
@@ -17,10 +17,9 @@ fn reject(env: &mut Environment, text: &str) {
 }
 
 #[test]
-fn left_recursive_definition_is_guarded() {
+fn left_recursive_definition_terminates() {
     let mut env = naturals();
-    reject(
-        &mut env,
+    env.add(
         r#"
         define add(a: Nat, b: Nat) -> Nat {
             match a {
@@ -30,14 +29,13 @@ fn left_recursive_definition_is_guarded() {
         }
     "#,
     );
-    assert!(!env.bindings.has_identifier("add"));
+    assert!(env.bindings.has_identifier("add"));
 }
 
 #[test]
-fn right_recursive_definition_is_guarded() {
+fn right_recursive_definition_terminates() {
     let mut env = naturals();
-    reject(
-        &mut env,
+    env.add(
         r#"
         define add(a: Nat, b: Nat) -> Nat {
             match b {
@@ -47,7 +45,7 @@ fn right_recursive_definition_is_guarded() {
         }
     "#,
     );
-    assert!(!env.bindings.has_identifier("add"));
+    assert!(env.bindings.has_identifier("add"));
 }
 
 #[test]
@@ -95,4 +93,64 @@ fn contradictory_self_recursion_is_rejected() {
     let mut env = Environment::new_test();
     reject(&mut env, "define loop(a: Bool) -> Bool { not loop(a) }");
     assert!(!env.bindings.has_identifier("loop"));
+}
+
+#[test]
+fn recursive_function_name_cannot_collide_with_a_type_parameter() {
+    let mut env = Environment::new_test();
+    let statement = Statement::parse_str("define f<f>(x: f) -> f { x }").unwrap();
+    let error = env
+        .add_statement(&mut Project::new_mock(), &statement)
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("function name conflicts with a type parameter"));
+    assert!(!env.bindings.has_identifier("f"));
+    assert!(!env.bindings.has_type_name("f"));
+    env.add("define f(x: Bool) -> Bool { x }");
+}
+
+#[test]
+fn failed_generic_declarations_do_not_leak_temporary_bindings() {
+    let mut env = Environment::new_test();
+    reject(
+        &mut env,
+        "define bad<T>(value: T) -> Bool { missing(value) }",
+    );
+    assert!(!env.bindings.has_identifier("bad"));
+    assert!(!env.bindings.has_type_name("T"));
+    env.add("define good<T>(value: T) -> T { value }");
+    assert!(!env.bindings.has_type_name("T"));
+}
+
+#[test]
+fn recursive_constructor_types_must_be_direct_fields() {
+    for text in [
+        "inductive Bad {\n node(Bad -> Bool)\n}",
+        "inductive Bad {\n zero\n node(Bool -> Bad)\n}",
+        "inductive Bad {\n zero\n node((Bad -> Bool) -> Bool)\n}",
+    ] {
+        let mut env = Environment::new_test();
+        let statement = Statement::parse_str(text).unwrap();
+        let error = env
+            .add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("recursive constructor fields must use the inductive type directly"));
+        assert!(!env.bindings.has_type_name("Bad"));
+    }
+    let mut env = naturals();
+    env.add("inductive Safe {\n terminal(Bool -> Bool)\n next(Safe)\n}");
+}
+
+#[test]
+fn recursive_function_cannot_escape_as_a_value() {
+    let mut env = naturals();
+    env.add("define apply(f: Nat -> Bool, n: Nat) -> Bool { f(n) }");
+    reject(
+        &mut env,
+        "define cheat(n: Nat) -> Bool { not apply(cheat, n) }",
+    );
+    assert!(!env.bindings.has_identifier("cheat"));
 }
