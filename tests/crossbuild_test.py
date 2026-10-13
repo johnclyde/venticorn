@@ -49,9 +49,9 @@ class CrossbuildTest(unittest.TestCase):
         self.assertIn('-Lnative=/sdk with spaces/crt/lib/x86_64', env['CARGO_ENCODED_RUSTFLAGS'].split('\x1f'))
 
     def test_windows_crossbuild_rejects_unconfigured_sdk(self):
-        with patch.dict(os.environ, {}, clear=True), patch.object(build, 'require_tool'):
+        with patch.dict(os.environ, {}, clear=True), patch.object(build, 'require_tool'), patch.object(build, 'windows_inspector'):
             with self.assertRaisesRegex(ValueError, 'XWIN_ROOT'):
-                build.preflight('x86_64-pc-windows-msvc', LINUX)
+                build.preflight('x86_64-pc-windows-msvc', LINUX, True)
 
     def test_windows_artifact_must_be_x64_pe(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -61,11 +61,49 @@ class CrossbuildTest(unittest.TestCase):
             struct.pack_into('<I', data, 60, 64)
             data[64:] = b'PE\0\0\x64\x86'
             executable.write_bytes(data)
-            build.validate_artifact('x86_64-pc-windows-msvc', executable)
+            with patch.object(build, 'validate_windows_imports') as imports:
+                build.validate_artifact('x86_64-pc-windows-msvc', executable)
+                imports.assert_called_once_with(executable)
             data[68:70] = b'\x64\xaa'
             executable.write_bytes(data)
             with self.assertRaisesRegex(ValueError, 'x64 PE'):
                 build.validate_artifact('x86_64-pc-windows-msvc', executable)
+
+    def test_windows_onnx_requires_an_explicit_static_runtime(self):
+        target = "x86_64-pc-windows-msvc"
+        with patch.dict(os.environ, {}, clear=True), patch.object(build, "require_tool"), patch.object(build, "windows_inspector"):
+            with self.assertRaisesRegex(ValueError, "ORT_LIB_LOCATION"):
+                build.preflight(target, target)
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"ORT_LIB_LOCATION": folder, "ORT_PREFER_DYNAMIC_LINK": "true"}, clear=True), patch.object(build, "require_tool"), patch.object(build, "windows_inspector"):
+            with self.assertRaisesRegex(ValueError, "static ONNX Runtime"):
+                build.preflight(target, target)
+
+    def test_windows_onnx_plan_preserves_explicit_location_and_static_choice(self):
+        target = "x86_64-pc-windows-msvc"
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"ORT_LIB_LOCATION": folder}, clear=True):
+            _, env, _ = build.build_plan(target, target)
+        self.assertEqual(env["ORT_LIB_LOCATION"], str(Path(folder).resolve()))
+        self.assertEqual(env["ORT_PREFER_DYNAMIC_LINK"], "0")
+        self.assertIn("target-feature=+crt-static", env["CARGO_ENCODED_RUSTFLAGS"])
+
+    def test_windows_import_check_accepts_system_dlls_and_rejects_runtime_dlls(self):
+        for output in ["  KERNEL32.dll\n  ADVAPI32.dll\n", "Import {\n  Name: KERNEL32.dll\n}\n"]:
+            with patch.object(build, "windows_inspector", return_value=["inspector"]), patch.object(build, "run", return_value=type("Result", (), {"stdout": output})()):
+                build.validate_windows_imports(Path("server.exe"))
+        for dll in ["onnxruntime.dll", "VCRUNTIME140.dll", "MSVCP140.dll", "ucrtbase.dll", "api-ms-win-crt-runtime-l1-1-0.dll"]:
+            # Delay-load imports are checked too, rather than ignored after ordinary imports.
+            output = f"Import {{\n  Name: KERNEL32.dll\n}}\nDelayImport {{\n  Name: {dll}\n}}\n"
+            with self.subTest(dll=dll), patch.object(build, "windows_inspector", return_value=["inspector"]), patch.object(build, "run", return_value=type("Result", (), {"stdout": output})()):
+                with self.assertRaisesRegex(ValueError, "dynamic runtime libraries"):
+                    build.validate_windows_imports(Path("server.exe"))
+
+    def test_windows_import_check_fails_if_inspection_is_unavailable_or_empty(self):
+        with patch.object(build.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(ValueError, "dumpbin or llvm-readobj"):
+                build.windows_inspector()
+        with patch.object(build, "windows_inspector", return_value=["inspector"]), patch.object(build, "run", return_value=type("Result", (), {"stdout": "unexpected output"})()):
+            with self.assertRaisesRegex(ValueError, "no DLL names"):
+                build.validate_windows_imports(Path("server.exe"))
 
     def test_macos_build_preserves_flags_without_static_crt(self):
         with patch.dict(os.environ, {"CARGO_ENCODED_RUSTFLAGS": "-C\x1fdebuginfo=1"}, clear=True):

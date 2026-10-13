@@ -810,9 +810,9 @@ dependencies = [
 
 [[package]]
 name = "ort"
-version = "2.0.0-rc.6"
+version = "2.0.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5f95fe501e1cb81dec2f66ee3129025759b602817aa2c77ff421390c418cc34"
+checksum = "9debd1000b0a14b171b2c4d285b7ecf0489791070667582f17a439daf61fa83a"
 dependencies = [
  "half",
  "ndarray",
@@ -822,9 +822,9 @@ dependencies = [
 
 [[package]]
 name = "ort-sys"
-version = "2.0.0-rc.6"
+version = "2.0.0-rc.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4174960a7b93a17564a05b26e05889f0dea9ee70e68db5841f27b40c0c9804e"
+checksum = "c4780a8b8681e653b2bed85c7f0e2c6e8547224c3e983e5ad27bf0457e012407"
 dependencies = [
  "flate2",
  "pkg-config",

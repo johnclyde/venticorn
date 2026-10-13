@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -51,6 +52,11 @@ def build_plan(target, host, no_default_features=False):
         rustflags += ('\x1f' if rustflags else '') + "-C\x1ftarget-feature=+crt-static"
     env["CARGO_ENCODED_RUSTFLAGS"] = rustflags
     env.pop("RUSTFLAGS", None)
+    if target == "x86_64-pc-windows-msvc" and not no_default_features:
+        # The Windows release must use a matching static ONNX Runtime build.
+        env["ORT_PREFER_DYNAMIC_LINK"] = "0"
+        if env.get("ORT_LIB_LOCATION"):
+            env["ORT_LIB_LOCATION"] = str(Path(env["ORT_LIB_LOCATION"]).expanduser().resolve())
     if target == "x86_64-pc-windows-msvc" and target != host:
         env["CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER"] = env.get(
             "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER", "lld-link")
@@ -66,7 +72,7 @@ def build_plan(target, host, no_default_features=False):
     return command, env, output
 
 
-def preflight(target, host):
+def preflight(target, host, no_default_features=False):
     require_tool("cargo")
     require_tool("rustc")
     if target == "x86_64-unknown-linux-gnu":
@@ -74,6 +80,13 @@ def preflight(target, host):
             raise ValueError(f"{target} requires a native build host; current Rust host is {host}")
         require_tool("readelf")
     elif target == "x86_64-pc-windows-msvc":
+        windows_inspector()
+        if not no_default_features:
+            location = os.environ.get("ORT_LIB_LOCATION")
+            if not location or not Path(location).expanduser().is_dir():
+                raise ValueError("Windows ONNX builds require ORT_LIB_LOCATION pointing to an ONNX Runtime 1.19.2 static build; use --no-default-features for the heuristic scorer")
+            if os.environ.get("ORT_PREFER_DYNAMIC_LINK", "0").lower() in ("1", "true"):
+                raise ValueError("Windows releases require a static ONNX Runtime; remove ORT_PREFER_DYNAMIC_LINK")
         if target == host:
             require_tool(os.environ.get("CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER", "link.exe"))
             if not os.environ.get("LIB"):
@@ -118,6 +131,7 @@ def validate_artifact(target, path):
             signature = executable.read(6)
             if signature != b"PE\0\0\x64\x86":
                 raise ValueError("Windows release server must be an x64 PE executable")
+        validate_windows_imports(path)
         return
     if target == "aarch64-apple-darwin":
         validate_macho(path)
@@ -127,6 +141,29 @@ def validate_artifact(target, path):
     dynamic = run(["readelf", "-d", str(path)]).stdout
     if "INTERP" in headers or "(NEEDED)" in dynamic:
         raise ValueError("Linux release server must be statically linked (ELF interpreter/dependencies found)")
+
+
+def windows_inspector():
+    if shutil.which("dumpbin"):
+        return ["dumpbin", "/DEPENDENTS"]
+    if shutil.which("llvm-readobj"):
+        # Includes ordinary and delay-load imports.
+        return ["llvm-readobj", "--coff-imports"]
+    raise ValueError("Windows artifact checks require dumpbin or llvm-readobj")
+
+
+def validate_windows_imports(path):
+    output = run([*windows_inspector(), str(path)]).stdout
+    # Parse dependency-name lines only, not imported symbol names or file paths.
+    imports = {match.lower() for match in re.findall(
+        r"^\s*(?:Name:\s*)?([A-Za-z0-9_.-]+\.dll)\s*$", output, re.MULTILINE | re.IGNORECASE)}
+    if not imports:
+        raise ValueError("Windows dependency inspector reported no DLL names; cannot validate runtime linkage")
+    forbidden = sorted(name for name in imports if name.startswith(
+        ("onnxruntime", "vcruntime", "msvcp", "msvcr", "concrt", "ucrtbase", "ucrtbased", "api-ms-win-crt-")))
+    if forbidden:
+        raise ValueError("Windows release server requires dynamic runtime libraries: " + ", ".join(forbidden))
+    print("Windows imported libraries: " + ", ".join(sorted(imports)))
 
 
 def validate_macho(path):
@@ -176,7 +213,7 @@ def main():
         plans = [(target, build_plan(target, host, args.no_default_features)) for target in targets]
         if not args.plan:
             for target, _ in plans:
-                preflight(target, host)
+                preflight(target, host, args.no_default_features)
         for target, (command, env, output) in plans:
             print(f"{TARGETS[target][0]}: {' '.join(command)}", flush=True)
             print(f"output: {output}", flush=True)
