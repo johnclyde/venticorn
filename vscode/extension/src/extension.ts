@@ -1,6 +1,6 @@
 // Modified for Venticorn: editor-facing names and language-server lifecycle.
 import {
-  ExtensionContext, OutputChannel, ProgressLocation, TextDocument, window, workspace,
+  commands, ExtensionContext, OutputChannel, ProgressLocation, TextDocument, window, workspace,
 } from "vscode";
 import * as os from "os";
 import {
@@ -108,6 +108,11 @@ async function showProgressBar() {
 }
 
 export async function activate(context: ExtensionContext) {
+  // Creating a document is useful even when the language server cannot start.
+  context.subscriptions.push(commands.registerCommand("acorn.newFile", async () => {
+    const document = await workspace.openTextDocument({ language: "acorn" });
+    await window.showTextDocument(document);
+  }));
   outputChannel = window.createOutputChannel("Venticorn Extension");
   context.subscriptions.push(outputChannel);
   log(`Activating Venticorn ${context.extension.packageJSON.version} on ${os.platform()}-${os.arch()}`);
@@ -210,7 +215,7 @@ export async function activate(context: ExtensionContext) {
   context.subscriptions.push(new InfoView(client, infoViewPath));
 
   let onDocumentChange = async (document: TextDocument) => {
-    if (document.languageId !== "acorn") {
+    if (!client?.isRunning() || document.languageId !== "acorn" || document.uri.scheme !== "file") {
       return;
     }
     await showProgressBar();
@@ -218,7 +223,7 @@ export async function activate(context: ExtensionContext) {
 
   let hasAcornDocs = false;
   for (let doc of workspace.textDocuments) {
-    if (doc.languageId === "acorn") {
+    if (doc.languageId === "acorn" && doc.uri.scheme === "file") {
       hasAcornDocs = true;
       break;
     }

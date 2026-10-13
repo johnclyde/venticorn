@@ -65,7 +65,7 @@ export class InfoView implements Disposable {
       if (!editor) {
         return;
       }
-      if (editor.document.languageId != "acorn") {
+      if (editor.document.languageId !== "acorn" || editor.document.uri.scheme !== "file") {
         return;
       }
       if (!this.panel) {

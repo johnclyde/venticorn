@@ -6,9 +6,9 @@ const path = require("node:path");
 const test = require("node:test");
 const { loadEditorModule } = require("./editor_modules.cjs");
 
-function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports, workspaceFolders } = {}) {
+function loadExtension({ failInitialization = false, serverPath = "/server", platform = process.platform, downloadReports, workspaceFolders, textDocuments = [] } = {}) {
   const state = {
-    notifications: [], logs: [], output: [], channels: [], commands: [], save: [], open: [],
+    notifications: [], logs: [], output: [], channels: [], commands: [], save: [], open: [], fileCommands: new Map(), newDocuments: [], shownDocuments: [],
     starts: 0, stops: 0, requests: 0, client: undefined, downloadWindows: [], reports: [],
   };
   const disposable = () => ({ dispose() {} });
@@ -19,12 +19,17 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
   const vscode = {
     ProgressLocation: { Notification: 15 },
     commands: {
+      registerCommand: (name, callback) => {
+        state.fileCommands.set(name, callback);
+        return { dispose: () => state.fileCommands.delete(name) };
+      },
       registerTextEditorCommand: (name) => {
         state.commands.push(name);
         return disposable();
       },
     },
     window: {
+      showTextDocument: async (document) => { state.shownDocuments.push(document); },
       withProgress: async (options, task) => {
         state.downloadWindows.push(options);
         return task({ report: (report) => state.reports.push(report) }, { onCancellationRequested() {} });
@@ -41,8 +46,13 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
       },
     },
     workspace: {
+      openTextDocument: async (options) => {
+        const document = { ...options, uri: "untitled:new-file" };
+        state.newDocuments.push(document);
+        return document;
+      },
       workspaceFolders,
-      textDocuments: [],
+      textDocuments,
       createFileSystemWatcher: disposable,
       onDidSaveTextDocument: listen(state.save),
       onDidOpenTextDocument: listen(state.open),
@@ -236,4 +246,25 @@ test("local workspace roots are passed as one literal server argument", async ()
   const remote = loadExtension({ workspaceFolders: [{ uri: { scheme: "vscode-remote", fsPath: "/remote" } }] });
   await remote.activate(remote.context);
   assert.deepEqual(Array.from(remote.state.serverOptions.run.args), ["--extension-root", "/installed extension"]);
+});
+
+test("New Venticorn File opens the language mode even when the server is unavailable", async () => {
+  const extension = loadExtension({ serverPath: null });
+  await extension.activate(extension.context);
+  await extension.state.fileCommands.get("acorn.newFile")();
+  assert.equal(extension.state.newDocuments.length, 1);
+  assert.equal(extension.state.newDocuments[0].language, "acorn");
+  assert.equal(extension.state.shownDocuments[0], extension.state.newDocuments[0]);
+  for (const subscription of extension.context.subscriptions) subscription.dispose();
+  assert.equal(extension.state.fileCommands.size, 0);
+});
+
+test("untitled Acorn documents do not request verification before saving", async () => {
+  const document = { languageId: "acorn", uri: { scheme: "untitled" } };
+  const extension = loadExtension({ textDocuments: [document] });
+  await extension.activate(extension.context);
+  for (const handler of [...extension.state.open, ...extension.state.save]) await handler(document);
+  assert.equal(extension.state.requests, 0);
+  assert.equal(extension.state.notifications.length, 0);
+  assert.equal(extension.state.client.options.documentSelector[0].scheme, "file");
 });
