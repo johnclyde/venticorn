@@ -17,7 +17,8 @@
 {:else}
   <h1 class="header">
     <button class="goal-link" type="button" on:click={callback}
-      >{searchResponse.goalName}</button>
+      >{searchResponse.goalName}</button
+    >
   </h1>
 {/if}
 

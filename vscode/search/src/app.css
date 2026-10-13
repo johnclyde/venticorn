@@ -19,6 +19,7 @@ body {
   margin-inline-start: 0;
   margin-inline-end: 0;
   overflow-wrap: anywhere;
+
   /* Indent continuation lines by two monospace characters. */
   white-space: pre-wrap;
   text-indent: -2ch;
