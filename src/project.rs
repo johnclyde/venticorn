@@ -549,13 +549,17 @@ impl Project {
         }
     }
 
-    pub fn get_env_by_name(&self, module_name: &str) -> Option<&Environment> {
-        let module_ref = ModuleRef::Name(module_name.to_string());
+    pub fn get_env_by_ref(&self, module_ref: &ModuleRef) -> Option<&Environment> {
         if let Some(module_id) = self.module_map.get(&module_ref) {
             self.get_env(*module_id)
         } else {
             None
         }
+    }
+
+    pub fn get_env_by_name(&self, module_name: &str) -> Option<&Environment> {
+        let module_ref = ModuleRef::Name(module_name.to_string());
+        self.get_env_by_ref(&module_ref)
     }
 
     pub fn errors(&self) -> Vec<(ModuleId, &token::Error)> {
@@ -599,7 +603,7 @@ impl Project {
     }
 
     // Returns a load error if this isn't a valid path for an acorn file.
-    fn module_ref_from_path(&self, path: &Path) -> Result<ModuleRef, LoadError> {
+    pub fn module_ref_from_path(&self, path: &Path) -> Result<ModuleRef, LoadError> {
         if path.extension() != Some(std::ffi::OsStr::new("ac")) {
             return Err(LoadError(format!(
                 "path {} does not end with .ac",
