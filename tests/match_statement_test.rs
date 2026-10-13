@@ -27,3 +27,44 @@ fn match_statements_report_unsupported_semantics_without_adding_nodes() {
     assert_eq!(env.nodes.len(), node_count);
     assert!(!env.bindings.has_identifier("b"));
 }
+
+#[test]
+fn match_case_block_construction_reports_unsupported_semantics() {
+    use tower_lsp::lsp_types::Range;
+    use venticorn::block::{Block, BlockParams};
+
+    let env = fixture();
+    let params = BlockParams::MatchCase(
+        env.bindings.get_constant_value("f").unwrap(),
+        env.bindings.get_constant_value("Foo.baz").unwrap(),
+        Range::default(),
+    );
+    let result = Block::new(
+        &mut Project::new_mock(),
+        &env,
+        vec![],
+        vec![],
+        params,
+        0,
+        0,
+        None,
+    );
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => panic!("expected an explicit unsupported error"),
+    };
+    assert!(error
+        .message
+        .contains("match case blocks are not supported yet"));
+}
+
+#[test]
+fn match_statement_checks_its_scrutinee() {
+    let mut env = fixture();
+    let statement = Statement::parse_str("match missing { Foo.baz { true } }").unwrap();
+    let error = env
+        .add_statement(&mut Project::new_mock(), &statement)
+        .unwrap_err();
+    assert!(error.message.contains("missing"), "{}", error.message);
+    assert!(!error.message.contains("not supported yet"));
+}

@@ -1404,10 +1404,13 @@ impl Environment {
                 Ok(())
             }
 
-            StatementInfo::Match(_) => Err(Error::new(
-                &statement.first_token,
-                "match statements are not supported yet",
-            )),
+            StatementInfo::Match(ms) => {
+                self.bindings.evaluate_value(project, &ms.scrutinee, None)?;
+                Err(Error::new(
+                    &statement.first_token,
+                    "match statements are not supported yet",
+                ))
+            }
         }
     }
 
