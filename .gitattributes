@@ -1,0 +1,2 @@
+# Preserve verbatim vendored mathematical sources, including their whitespace.
+vscode/extension/acornlib/*.ac -whitespace
