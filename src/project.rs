@@ -797,6 +797,13 @@ impl Project {
     }
 
     #[cfg(test)]
+    fn expect_build_ok(&mut self) {
+        let (status, events) = self.sync_build();
+        assert_eq!(status, BuildStatus::Good);
+        assert!(!events.is_empty());
+    }
+
+    #[cfg(test)]
     fn expect_build_fails(&mut self) {
         let (status, _) = self.sync_build();
         assert_ne!(status, BuildStatus::Good, "expected build to fail");
@@ -992,9 +999,7 @@ mod tests {
         p.load_module("main").expect("loading main failed");
         p.add_target("foo");
         p.add_target("main");
-        let (status, events) = p.sync_build();
-        assert_eq!(status, BuildStatus::Good);
-        assert!(events.len() > 0);
+        p.expect_build_ok();
     }
 
     #[test]
@@ -1078,6 +1083,20 @@ mod tests {
         p.mock("/mock/main.ac", "solve false by {\n}");
         p.expect_ok("main");
         p.expect_build_fails();
+    }
+
+    #[test]
+    fn test_external_update_is_rejected_without_changing_state() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem identity { true }");
+        let module_id = project.load_module("main").unwrap();
+        let outside_path = PathBuf::from("/outside/foo.ac");
+        assert!(project
+            .update_file(outside_path.clone(), FOO_AC, 1)
+            .is_err());
+        assert!(!project.open_files.contains_key(&outside_path));
+        assert_eq!(project.load_module("main").unwrap(), module_id);
+        project.expect_build_ok();
     }
 
     #[test]
