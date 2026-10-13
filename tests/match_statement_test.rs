@@ -12,18 +12,36 @@ fn fixture() -> Environment {
 }
 
 #[test]
-fn match_statements_report_unsupported_semantics_without_adding_nodes() {
+fn match_statements_retain_every_case_proof_obligation() {
     let mut env = fixture();
     let node_count = env.nodes.len();
     let statement =
         Statement::parse_str("match f {\n    Foo.bar(b) { b or not b }\n    Foo.baz { true }\n}")
             .unwrap();
-    let error = env
-        .add_statement(&mut Project::new_mock(), &statement)
-        .unwrap_err();
-    assert!(error
-        .message
-        .contains("match statements are not supported yet"));
+    env.add_statement(&mut Project::new_mock(), &statement)
+        .unwrap();
+    assert_eq!(env.nodes.len(), node_count + 2);
+    for node in &env.nodes[node_count..] {
+        let block = node.block.as_ref().expect("case keeps its proof block");
+        assert!(block.env.nodes.iter().any(|node| node.has_goal()));
+    }
+    assert_eq!(
+        env.nodes[node_count].claim.value,
+        venticorn::acorn_value::AcornValue::Bool(true)
+    );
+    env.nodes.last().unwrap().claim.value.validate().unwrap();
+    assert!(!env.bindings.has_identifier("b"));
+}
+
+#[test]
+fn errors_in_later_match_bodies_leave_the_parent_unchanged() {
+    let mut env = fixture();
+    let node_count = env.nodes.len();
+    let error = statement_error(
+        &mut env,
+        "match f { Foo.bar(b) { true } Foo.baz { unknown } }",
+    );
+    assert!(error.contains("unknown"), "{error}");
     assert_eq!(env.nodes.len(), node_count);
     assert!(!env.bindings.has_identifier("b"));
 }
@@ -180,7 +198,7 @@ fn match_case_blocks_keep_variables_local_and_retain_body_goals() {
 }
 
 #[test]
-fn match_statement_case_body_errors_are_reported_before_the_support_guard() {
+fn match_statement_case_body_errors_are_reported_without_binding_leaks() {
     let mut env = fixture();
     let error = statement_error(
         &mut env,

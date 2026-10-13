@@ -1432,7 +1432,10 @@ impl Environment {
                         "not all cases are covered in match statement",
                     ));
                 }
-                // Validate all coverage before constructing any child environments.
+                // Build every case before changing the parent. A rejected body must not
+                // leave earlier case claims or partial proof obligations behind.
+                let mut blocks = vec![];
+                let mut disjuncts = vec![];
                 for (constructor, args, pattern, body) in cases {
                     let params = BlockParams::MatchCase(
                         scrutinee.clone(),
@@ -1440,7 +1443,7 @@ impl Environment {
                         args,
                         pattern.range(),
                     );
-                    let _block = Block::new(
+                    let block = Block::new(
                         project,
                         self,
                         vec![],
@@ -1450,12 +1453,27 @@ impl Environment {
                         body.right_brace.line_number,
                         Some(body),
                     )?;
+                    let (claim, _) = block.export_last_claim(self, &body.right_brace)?;
+                    disjuncts.push(claim);
+                    blocks.push(block);
                 }
-                // Case proof obligations must be attached before accepting this statement.
-                Err(Error::new(
-                    &statement.first_token,
-                    "match statements are not supported yet",
-                ))
+
+                // All branches are exhaustive and retain their own proof obligations.
+                // Only their disjunction is usable after the complete case split.
+                let mut exported = Some(AcornValue::reduce(BinaryOp::Or, disjuncts));
+                let last = blocks.len() - 1;
+                for (index, block) in blocks.into_iter().enumerate() {
+                    let claim = if index == last {
+                        exported.take().unwrap()
+                    } else {
+                        AcornValue::Bool(true)
+                    };
+                    let prop = Proposition::anonymous(claim, self.module_id, statement.range());
+                    self.add_node(project, false, prop, Some(block));
+                }
+                // Per-case source selection requires mapping each body separately.
+                self.add_other_lines(statement);
+                Ok(())
             }
         }
     }
