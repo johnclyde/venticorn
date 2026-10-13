@@ -115,6 +115,20 @@ The local build script currently supports `x86_64-unknown-linux-gnu` on a native
 
 `--plan` prints commands and paths without building. A real build requires Cargo, the target's Rust standard library, native development/linker tools, and `readelf` from binutils. Dependencies must already be cached for an offline build; otherwise Cargo and the ONNX runtime build may need network access. Set `CARGO_NET_OFFLINE=true` to require cached dependencies. The script never installs toolchains, downloads SDKs, or publishes. Other host/target combinations fail with a configuration error.
 
+### Toolchains and target names
+
+Use these complete Rust triples when preparing release hosts:
+
+| Release platform | Rust target | Host prerequisites |
+| --- | --- | --- |
+| Linux x64 | `x86_64-unknown-linux-gnu` | Native x64 Linux compiler, static C/C++ runtime archives, binutils |
+| Windows x64 | `x86_64-pc-windows-msvc` | MSVC linker and Windows SDK, or an explicitly configured cross-toolchain |
+| macOS Apple silicon | `aarch64-apple-darwin` | Xcode Command Line Tools and macOS SDK, or an explicitly configured cross-toolchain |
+
+Install a missing Rust standard library explicitly with `rustup target add TARGET`, substituting the chosen triple. Rust's target standard library does not install the platform linker, C/C++ libraries, or SDK. Keep SDK locations in your local environment; repository configuration must not assume a particular home directory or silently accept SDK licenses. Windows and macOS build paths are being added separately; the target table describes the release contract, not completed platform validation.
+
+Before creating a release, merge and review the version change, run the local checks, then build and validate each platform artifact. A successful `--plan` is only a command preview. It is not evidence that a cross-toolchain can link or that a foreign executable runs.
+
 ## Coordinated releases
 
 Every release pairs a language server and an extension at the same version, even when only one component changed. Prepare them from the same reviewed, merged revision. Run local checks, build each supported server target, and inspect the extension package before publishing anything.
