@@ -1,6 +1,6 @@
 // Modified for Venticorn: isolate proof-search UI and preserve stopped-client guards.
 import {
-  commands, Disposable, Position, Range, TextEditor, TextEditorRevealType,
+  commands, Disposable, Position, Range, TextDocument, TextEditor, TextEditorRevealType,
   TextEditorSelectionChangeKind, Uri, ViewColumn, WebviewPanel, window, workspace,
 } from "vscode";
 import * as fs from "fs";
@@ -19,6 +19,7 @@ export class Assistant implements Disposable {
   distPath: string;
   currentSearchId: number;
   requestViewColumn: number;
+  wasDisplayed = false;
 
   constructor(private readonly client: LanguageClient, distPath: string) {
     this.distPath = distPath;
@@ -348,8 +349,21 @@ export class Assistant implements Disposable {
     editor.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
   }
 
+  // Open once per activation, after a saved Acorn document becomes visible.
+  autoDisplay(document: TextDocument) {
+    if (this.wasDisplayed || !this.client?.isRunning() ||
+        document.languageId !== "acorn" || document.uri.scheme !== "file") {
+      return;
+    }
+    const editor = window.visibleTextEditors.find((value) => value.document === document);
+    if (editor) {
+      this.display(editor);
+    }
+  }
+
   // Show the assistant itself.
   display(editor: TextEditor) {
+    this.wasDisplayed = true;
     let column =
       editor && editor.viewColumn ? editor.viewColumn + 1 : ViewColumn.Two;
     if (column === 4) {

@@ -212,12 +212,14 @@ export async function activate(context: ExtensionContext) {
   }
 
   let assistantPath = context.asAbsolutePath("build/assistant");
-  context.subscriptions.push(new Assistant(client, assistantPath));
+  const assistant = new Assistant(client, assistantPath);
+  context.subscriptions.push(assistant);
 
   let onDocumentChange = async (document: TextDocument) => {
     if (!client?.isRunning() || document.languageId !== "acorn" || document.uri.scheme !== "file") {
       return;
     }
+    assistant.autoDisplay(document);
     await showProgressBar();
   };
 
@@ -233,6 +235,12 @@ export async function activate(context: ExtensionContext) {
     showProgressBar();
   }
 
+  // Opening a document can precede its editor becoming visible.
+  context.subscriptions.push(window.onDidChangeActiveTextEditor((editor) => {
+    if (editor) {
+      assistant.autoDisplay(editor.document);
+    }
+  }));
   context.subscriptions.push(workspace.onDidSaveTextDocument(onDocumentChange));
   context.subscriptions.push(workspace.onDidOpenTextDocument(onDocumentChange));
 }
