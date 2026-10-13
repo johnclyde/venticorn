@@ -19,6 +19,8 @@ import {
 import * as path from "path";
 import * as fs from "fs";
 import {
+  CloseAction,
+  ErrorAction,
   Executable,
   LanguageClient,
   LanguageClientOptions,
@@ -520,6 +522,16 @@ export async function activate(context: ExtensionContext) {
       window.showErrorMessage("Venticorn: " + error.message);
       // Let the user fix the configuration before explicitly trying again.
       return false;
+    },
+    errorHandler: {
+      error: (error) => {
+        console.error("language server error:", error);
+        return { action: ErrorAction.Shutdown };
+      },
+      closed: () => {
+        console.warn("language server process closed");
+        return { action: CloseAction.DoNotRestart };
+      },
     },
   };
 
