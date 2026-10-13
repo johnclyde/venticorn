@@ -129,7 +129,7 @@
     <ProofStatus status={searchResponse.status} on:click={insertProof} />
 
     {#if searchResponse.status.steps !== null}
-      <div class="mono">
+      <div class="block">
         <br />
         The full proof has {pluralize(
           searchResponse.status.steps.length,
@@ -144,7 +144,7 @@
     {/if}
     <br />
     <hr />
-    <div class="mono">
+    <div class="block">
       <br />
       <button
         on:click={() => {

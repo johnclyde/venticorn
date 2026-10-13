@@ -1,16 +1,22 @@
 /* Modified for Venticorn: wrapping headings and CSS-based proof indentation. */
 body {
-  font-size: 14px;
-  line-height: 1.25;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--vscode-editor-font-size, 14px);
+  line-height: var(--vscode-editor-line-height, 1.4);
+  padding-block-end: 1em;
 }
 
-.mono {
-  font-family: monospace;
+pre {
+  font-family: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.block {
   display: block;
 }
 
 .header {
-  font-family: monospace;
   display: block;
   font-size: 1.5em;
   font-weight: 550;
@@ -28,7 +34,6 @@ body {
 
 /* Indent four characters, plus two more on continuation lines. */
 .indent {
-  font-family: monospace;
   display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
