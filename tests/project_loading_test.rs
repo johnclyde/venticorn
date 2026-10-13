@@ -172,9 +172,9 @@ theorem apparent_success { true } by {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stdout.contains("match statements are not supported yet"),
+        stdout.contains("false could not be verified"),
         "{stdout}\n{stderr}"
     );
-    assert!(stdout.contains("Build failed."), "{stdout}");
+    assert!(stdout.contains("2/3 OK"), "{stdout}");
     assert!(!stderr.contains("panicked"), "{stderr}");
 }

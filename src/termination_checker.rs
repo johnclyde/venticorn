@@ -55,10 +55,20 @@ impl TerminationChecker {
                 self.traverse(right);
             }
             AcornValue::Application(app) => {
-                if app.function.as_name() == Some((self.module, self.function_name.as_str())) {
+                // Borrow arguments from every curried layer in their original order.
+                // Rebuilding the application would clone entire argument subtrees.
+                let mut function = app.function.as_ref();
+                let mut layers = vec![app.args.as_slice()];
+                while let AcornValue::Application(inner) = function {
+                    layers.push(inner.args.as_slice());
+                    function = inner.function.as_ref();
+                }
+                let args: Vec<_> = layers.into_iter().rev().flatten().collect();
+
+                if function.as_name() == Some((self.module, self.function_name.as_str())) {
                     self.recursive = true;
                     for (i, decreasing) in self.always_strict_sub.iter_mut().enumerate() {
-                        let strict = match app.args.get(i) {
+                        let strict = match args.get(i) {
                             Some(AcornValue::Variable(j, _)) => {
                                 let j = *j as usize;
                                 i != j && self.substructure_map.get(j) == Some(&Some(i as AtomId))
@@ -68,9 +78,9 @@ impl TerminationChecker {
                         *decreasing &= strict;
                     }
                 } else {
-                    self.traverse(&app.function);
+                    self.traverse(function);
                 }
-                for arg in &app.args {
+                for arg in args {
                     self.traverse(arg);
                 }
             }
