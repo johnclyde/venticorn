@@ -12,7 +12,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BINARY = ROOT / "target" / "debug" / (
+BINARY = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target")) / "debug" / (
     "venticornserver.exe" if os.name == "nt" else "venticornserver"
 )
 

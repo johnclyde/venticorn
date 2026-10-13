@@ -142,31 +142,58 @@ impl Project {
         }
     }
 
-    // An explicit library path takes precedence over discovery. Relative paths
-    // are resolved from the process working directory, not the build checkout.
+    // Resolve a configured library without searching any workspace or working directory.
+    pub fn library_override() -> Result<Option<PathBuf>, LoadError> {
+        let Some(path) = std::env::var_os("VENTICORN_LIBRARY") else {
+            return Ok(None);
+        };
+        if path.is_empty() {
+            return Err(LoadError("VENTICORN_LIBRARY must not be empty".to_string()));
+        }
+        let path = PathBuf::from(path);
+        if !path.is_dir() {
+            return Err(LoadError(format!(
+                "VENTICORN_LIBRARY is not a directory: {}",
+                path.display()
+            )));
+        }
+        Ok(Some(path.canonicalize()?))
+    }
+
+    // Discover a library near a real directory without considering process environment.
+    pub fn find_local_library(start: &Path) -> Result<Option<PathBuf>, LoadError> {
+        let start = start.canonicalize()?;
+        if !start.is_dir() {
+            return Err(LoadError(format!("not a directory: {}", start.display())));
+        }
+        find_library(&start)
+            .map(|path| path.canonicalize().map_err(LoadError::from))
+            .transpose()
+    }
+
+    // Construct a filesystem project from an independently selected library root.
+    pub fn from_library_root(root: PathBuf) -> Result<Project, LoadError> {
+        if !root.is_dir() {
+            return Err(LoadError(format!(
+                "library is not a directory: {}",
+                root.display()
+            )));
+        }
+        Ok(Self::with_root(root.canonicalize()?))
+    }
+
+    // An explicit library takes precedence. Relative overrides use the process directory.
     pub fn new_from_directory_search(start: &Path) -> Result<Project, LoadError> {
-        let root = if let Some(path) = std::env::var_os("VENTICORN_LIBRARY") {
-            if path.is_empty() {
-                return Err(LoadError("VENTICORN_LIBRARY must not be empty".to_string()));
-            }
-            let path = PathBuf::from(path);
-            if !path.is_dir() {
-                return Err(LoadError(format!(
-                    "VENTICORN_LIBRARY is not a directory: {}",
-                    path.display()
-                )));
-            }
-            path
-        } else {
-            let start = start.canonicalize()?;
-            find_library(&start).ok_or_else(|| {
+        let root = match Self::library_override()? {
+            Some(root) => root,
+            None => Self::find_local_library(start)?.ok_or_else(|| {
                 LoadError(format!(
                     "no library found from {}; set VENTICORN_LIBRARY to its directory",
                     start.display()
                 ))
-            })?
+            })?,
         };
-        Ok(Self::with_root(root.canonicalize()?))
+        Self::from_library_root(root)
     }
 
     // A project discovered from the process working directory.

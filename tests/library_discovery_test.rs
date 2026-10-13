@@ -183,3 +183,25 @@ fn search_and_profiling_report_invalid_library_without_panicking() {
         assert!(!stderr.contains("panicked"), "{stderr}");
     }
 }
+
+#[test]
+fn discovered_library_paths_can_construct_an_external_project() {
+    let directory = TestDirectory::new();
+    let library = directory.library("acornlib", "theorem identity { true }");
+    let path = venticorn::project::Project::find_local_library(&directory.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(path, library.canonicalize().unwrap());
+    let mut project = venticorn::project::Project::from_library_root(path).unwrap();
+    assert!(project.add_target_by_name("main"));
+}
+
+#[test]
+fn explicit_project_roots_and_discovery_starts_must_be_directories() {
+    let directory = TestDirectory::new();
+    let file = directory.0.join("acornlib");
+    fs::write(&file, "not a library").unwrap();
+    assert!(venticorn::project::Project::find_local_library(&file).is_err());
+    assert!(venticorn::project::Project::from_library_root(file).is_err());
+    assert!(venticorn::project::Project::from_library_root(directory.0.join("missing")).is_err());
+}
