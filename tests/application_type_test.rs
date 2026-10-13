@@ -47,3 +47,17 @@ fn parametrization_updates_recursive_constant_types() {
         )
     );
 }
+
+#[test]
+fn constant_types_specialize_symmetrically_with_parametrization() {
+    let specific = identity(AcornType::Data(10, "T".into()));
+    let generic = specific.parametrize(10, &["T".into()]);
+    let concrete = generic.specialize(&[("T".into(), AcornType::Bool)]);
+    assert_eq!(concrete.get_type(), identity(AcornType::Bool).get_type());
+    assert!(!concrete.is_parametric());
+    assert!(
+        AcornValue::new_apply(concrete, vec![AcornValue::Bool(true)])
+            .validate()
+            .is_ok()
+    );
+}
