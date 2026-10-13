@@ -584,6 +584,7 @@ impl Token {
                             "not" => TokenType::Not,
                             "self" => TokenType::SelfToken,
                             "inductive" => TokenType::Inductive,
+                            "match" => TokenType::Match,
                             _ => TokenType::Identifier,
                         }
                     }
@@ -783,6 +784,14 @@ mod tests {
         let token = TokenType::Match.generate();
         assert_eq!(token.text(), "match");
         assert_eq!(token.lsp_type(), Some(SemanticTokenType::KEYWORD));
+    }
+
+    #[test]
+    fn match_scanning_preserves_keyword_boundaries() {
+        let tokens = Token::scan("match matcher match_value");
+        assert_eq!(tokens[0].token_type, TokenType::Match);
+        assert_eq!(tokens[1].token_type, TokenType::Identifier);
+        assert_eq!(tokens[2].token_type, TokenType::Identifier);
     }
 
     #[test]
