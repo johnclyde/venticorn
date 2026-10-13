@@ -1,0 +1,92 @@
+{
+  "name": "venticorn-extension",
+  "displayName": "Venticorn",
+  "_venticornNotice": "Modified for Venticorn: product naming and repository metadata.",
+  "version": "0.0.1",
+  "description": "The Venticorn theorem prover for VS Code.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/johnclyde/venticorn.git",
+    "directory": "vscode/extension"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "acorn",
+        "extensions": [
+          ".ac"
+        ],
+        "aliases": [
+          "Venticorn",
+          "Acorn",
+          "acorn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "acorn",
+        "scopeName": "source.acorn",
+        "path": "./syntaxes/acorn.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "category": "Venticorn",
+        "command": "acorn.displaySearchPanel",
+        "title": "Search Panel: Display",
+        "description": "Show the search panel.",
+        "icon": "$(squirrel)"
+      },
+      {
+        "category": "Venticorn",
+        "command": "acorn.toggleSearchPanel",
+        "title": "Search Panel: Toggle",
+        "description": "Toggle whether the search panel is displayed."
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "acorn.toggleSearchPanel",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && editorLangId == acorn"
+      },
+      {
+        "command": "acorn.toggleSearchPanel",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == acorn"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "acorn.displaySearchPanel",
+          "group": "navigation",
+          "when": "editorLangId == acorn"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "watch": "tsc -watch -p ./",
+    "compile": "tsc -p ./"
+  },
+  "author": "Kevin Lacker",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.6.3",
+    "@types/vscode": "^1.82.0",
+    "prettier": "^3.0.3",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}
