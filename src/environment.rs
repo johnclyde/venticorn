@@ -1407,10 +1407,11 @@ impl Environment {
             StatementInfo::Match(ms) => {
                 let scrutinee = self.bindings.evaluate_value(project, &ms.scrutinee, None)?;
                 let scrutinee_type = scrutinee.get_type();
+                let mut cases = vec![];
                 let mut indices = vec![];
                 let mut all_cases = false;
-                for (pattern, _) in &ms.cases {
-                    let (_, _, index, total) =
+                for (pattern, body) in &ms.cases {
+                    let (constructor, args, index, total) =
                         self.bindings
                             .evaluate_pattern(project, &scrutinee_type, pattern)?;
                     if indices.contains(&index) {
@@ -1423,6 +1424,7 @@ impl Environment {
                     if total == indices.len() {
                         all_cases = true;
                     }
+                    cases.push((constructor, args, pattern, body));
                 }
                 if !all_cases {
                     return Err(Error::new(
@@ -1430,6 +1432,22 @@ impl Environment {
                         "not all cases are covered in match statement",
                     ));
                 }
+                // Validate all coverage before constructing any child environments.
+                for (constructor, args, pattern, body) in cases {
+                    let params =
+                        BlockParams::MatchCase(scrutinee.clone(), constructor, pattern.range());
+                    let _block = Block::new(
+                        project,
+                        self,
+                        vec![],
+                        args,
+                        params,
+                        body.left_brace.line_number,
+                        body.right_brace.line_number,
+                        Some(body),
+                    )?;
+                }
+                // Case proof obligations must be attached before accepting this statement.
                 Err(Error::new(
                     &statement.first_token,
                     "match statements are not supported yet",
