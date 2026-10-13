@@ -77,7 +77,7 @@
   "scripts": {
     "check": "tsc -p ./ --noEmit",
     "build": "npm run check && node build.mjs",
-    "test": "tsc -p ./ && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs"
+    "test": "tsc -p ./ && node --test ../../tests/editor_lifecycle_test.cjs ../../tests/server_path_test.cjs ../../tests/server_download_test.cjs ../../tests/info_view_test.cjs"
   },
   "author": "Kevin Lacker",
   "license": "Apache-2.0",
