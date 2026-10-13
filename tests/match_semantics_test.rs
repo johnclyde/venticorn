@@ -61,3 +61,15 @@ fn match_case_names_cannot_shadow_enclosing_arguments() {
     .unwrap_err();
     assert!(error.contains("name b already bound"), "{error}");
 }
+
+#[test]
+fn a_constructor_case_cannot_be_repeated_after_coverage_is_complete() {
+    let mut env = Environment::new_test();
+    env.add("inductive Foo {\n bar(Bool)\n baz\n }\n");
+    let error = add(&mut env, "define foo(f: Foo) -> Bool { match f { Foo.bar(b) { b } Foo.baz { false } Foo.bar(b) { b } } }").unwrap_err();
+    assert!(
+        error.contains("cannot have multiple cases for the same constructor"),
+        "{error}"
+    );
+    assert!(!env.bindings.has_identifier("b"));
+}
