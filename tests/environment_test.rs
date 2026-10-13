@@ -1222,10 +1222,10 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
                     r#"
             define foo(f: Foo) -> Bool {
                 match f {
-                    bar(b) {
+                    Foo.bar(b) {
                         b
                     }
-                    baz(b) {
+                    Foo.baz(b) {
                         not b
                     }
                 }
