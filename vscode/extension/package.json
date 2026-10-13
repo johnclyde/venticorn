@@ -80,7 +80,7 @@
     "test": "npm run compile && node --test ../../tests/editor_lifecycle_test.cjs"
   },
   "author": "Kevin Lacker",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^20.6.3",
     "@types/vscode": "^1.82.0",
