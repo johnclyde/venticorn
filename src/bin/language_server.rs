@@ -636,6 +636,13 @@ impl Backend {
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
+        let path = match uri.to_file_path() {
+            Ok(path) => path,
+            Err(_) => {
+                log(&format!("close ignored for non-file URI: {}", uri));
+                return;
+            }
+        };
         if let Some(old_doc) = self.documents.get(&uri) {
             old_doc.log("closed");
             old_doc
@@ -644,7 +651,7 @@ impl Backend {
         }
         self.documents.remove(&uri);
         let mut project = self.stop_build_and_get_project().await;
-        match project.close_file(uri.to_file_path().unwrap()) {
+        match project.close_file(path) {
             Ok(()) => {}
             Err(e) => log(&format!("close failed: {:?}", e)),
         }
