@@ -1,3 +1,4 @@
+// Modified for Venticorn: parse unsupported syntax without panicking.
 use std::{collections::VecDeque, fmt};
 
 use tower_lsp::lsp_types::Range;
@@ -658,6 +659,13 @@ fn parse_partial_expressions(
                 partials.push_back(PartialExpression::Expression(exp));
             }
 
+            TokenType::Match => {
+                return Err(Error::new(
+                    &token,
+                    "match expressions are not supported yet",
+                ));
+            }
+
             TokenType::NewLine => {
                 // Ignore newlines. The case where the newline is a terminator, we already caught.
             }
@@ -998,5 +1006,10 @@ mod tests {
 
         // A block should not be okay where we expect an expression
         check_not_value("{ x = x }");
+    }
+
+    #[test]
+    fn test_match_expressions() {
+        check_not_value("match a { Foo.bar(b) { b } Foo.qux(b) { b } }");
     }
 }
