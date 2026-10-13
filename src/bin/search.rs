@@ -21,7 +21,7 @@ async fn main() -> ExitCode {
     let external_line_number = args.next().expect(USAGE).parse::<u32>().expect(USAGE);
     let internal_line_number = external_line_number - 1;
 
-    let mut project = match Project::from_library() {
+    let mut project = match Project::new_local() {
         Ok(project) => project,
         Err(error) => {
             eprintln!("error loading library: {}", error);

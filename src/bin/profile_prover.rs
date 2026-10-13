@@ -12,7 +12,7 @@ use venticorn::project::Project;
 
 fn main() -> ExitCode {
     for _ in 0..10 {
-        let mut project = match Project::from_library() {
+        let mut project = match Project::new_local() {
             Ok(project) => project,
             Err(error) => {
                 eprintln!("error loading library: {}", error);
