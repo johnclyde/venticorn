@@ -27,3 +27,31 @@ fn left_recursive_definition_is_guarded() {
     "#);
     assert!(!env.bindings.has_identifier("add"));
 }
+
+#[test]
+fn right_recursive_definition_is_guarded() {
+    let mut env = naturals();
+    reject(&mut env, r#"
+        define add(a: Nat, b: Nat) -> Nat {
+            match b {
+                Nat.zero { a }
+                Nat.suc(pred) { add(a, pred).suc }
+            }
+        }
+    "#);
+    assert!(!env.bindings.has_identifier("add"));
+}
+
+#[test]
+fn unchanged_recursive_arguments_are_rejected() {
+    let mut env = naturals();
+    reject(&mut env, r#"
+        define loop(a: Nat, b: Nat) -> Nat {
+            match a {
+                Nat.zero { b }
+                Nat.suc(pred) { loop(a, b) }
+            }
+        }
+    "#);
+    assert!(!env.bindings.has_identifier("loop"));
+}
