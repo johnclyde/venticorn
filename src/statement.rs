@@ -791,6 +791,42 @@ fn parse_solve_statement(keyword: Token, tokens: &mut TokenIter) -> Result<State
     Ok(s)
 }
 
+fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
+    let (scrutinee, _) = Expression::parse_value(tokens, Terminator::Is(TokenType::LeftBrace))?;
+    let mut cases = vec![];
+    let last_token = loop {
+        let next_type = match tokens.peek() {
+            Some(token) => token.token_type,
+            None => return Err(Error::new(&keyword, "unterminated match statement")),
+        };
+        if next_type == TokenType::NewLine {
+            tokens.next();
+            continue;
+        }
+        if next_type == TokenType::RightBrace {
+            break tokens.next().unwrap();
+        }
+        let (pattern, left_brace) =
+            Expression::parse_value(tokens, Terminator::Is(TokenType::LeftBrace))?;
+        let (statements, right_brace) = parse_block(tokens)?;
+        let body = Body {
+            left_brace,
+            statements,
+            right_brace,
+        };
+        cases.push((pattern, body));
+    };
+    if cases.is_empty() {
+        return Err(Error::new(&keyword, "match must have cases"));
+    }
+    let ms = MatchStatement { scrutinee, cases };
+    Ok(Statement {
+        first_token: keyword,
+        last_token,
+        statement: StatementInfo::Match(ms),
+    })
+}
+
 fn write_type_params(f: &mut fmt::Formatter, type_params: &[Token]) -> fmt::Result {
     if type_params.len() == 0 {
         return Ok(());
@@ -1097,6 +1133,11 @@ impl Statement {
                             last_token: right_brace,
                             statement: StatementInfo::Problem(body),
                         };
+                        return Ok((Some(s), None));
+                    }
+                    TokenType::Match => {
+                        let keyword = tokens.next().unwrap();
+                        let s = parse_match_statement(keyword, tokens)?;
                         return Ok((Some(s), None));
                     }
                     _ => {
@@ -1591,9 +1632,8 @@ mod tests {
     }
 
     #[test]
-    fn test_match_statement_requires_parser_support() {
-        fail_with(
-            indoc! {"
+    fn test_parsing_match_statement() {
+        ok(indoc! {"
             match x {
                 Foo.bar {
                     baz
@@ -1601,9 +1641,7 @@ mod tests {
                 Foo.qux {
                     zip
                 }
-            }"},
-            "unexpected token at the top level",
-        );
+            }"});
     }
     #[test]
     fn test_match_statement_ast_formatting() {
@@ -1628,5 +1666,30 @@ mod tests {
                 }
             }"}
         );
+    }
+    #[test]
+    fn test_match_statement_consumes_closing_brace() {
+        let input = "match x { Foo.bar { true } }\ntheorem after { true }";
+        let mut tokens = TokenIter::new(Token::scan(input));
+        let (statement, brace) = Statement::parse(&mut tokens, false).unwrap();
+        let statement = statement.unwrap();
+        assert!(matches!(statement.statement, StatementInfo::Match(_)));
+        assert!(brace.is_none());
+        assert_eq!(statement.range().end.character, 28);
+        let (after, brace) = Statement::parse(&mut tokens, false).unwrap();
+        assert!(matches!(
+            after.unwrap().statement,
+            StatementInfo::Theorem(_)
+        ));
+        assert!(brace.is_none());
+        let (end, brace) = Statement::parse(&mut tokens, false).unwrap();
+        assert!(end.is_none() && brace.is_none());
+    }
+
+    #[test]
+    fn test_match_statement_requires_cases_and_closing_brace() {
+        fail_with("match x {}", "match must have cases");
+        fail_with("match x { Foo.bar { true }", "unterminated match statement");
+        fail("match x { Foo.bar { true");
     }
 }
