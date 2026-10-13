@@ -10,3 +10,5 @@ profile.json*
 
 /files/release/
 **/__pycache__/
+
+*.vsix
