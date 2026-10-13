@@ -1,3 +1,4 @@
+// Modified for Venticorn: use locked dependencies for local builds.
 {
   "version": "2.0.0",
   "tasks": [
@@ -57,7 +58,7 @@
       "label": "cargo build",
       "type": "shell",
       "command": "cargo",
-      "args": ["build", "--release"],
+      "args": ["build", "--locked", "--release"],
       "group": {
         "kind": "build",
         "isDefault": true
