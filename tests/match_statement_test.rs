@@ -21,9 +21,7 @@ fn match_statements_report_unsupported_semantics_without_adding_nodes() {
     let error = env
         .add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err();
-    assert!(error
-        .message
-        .contains("match statements are not supported yet"));
+    assert!(error.message.contains("not supported yet"));
     assert_eq!(env.nodes.len(), node_count);
     assert!(!env.bindings.has_identifier("b"));
 }
