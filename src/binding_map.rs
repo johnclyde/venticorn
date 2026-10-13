@@ -556,10 +556,10 @@ impl BindingMap {
         Ok((names, types))
     }
 
-    // Checks the number of pattern names against the constructor's argument types.
-    fn bind_names(
+    // Validate every name before mutating the stack, then bind the whole group.
+    fn bind_group(
         &self,
-        _stack: &mut Stack,
+        stack: &mut Stack,
         names: &Expression,
         types: &[AcornType],
     ) -> token::Result<Vec<String>> {
@@ -574,10 +574,37 @@ impl BindingMap {
                 ),
             ));
         }
-        Err(Error::new(
-            names.token(),
-            "match expression evaluation is not supported yet",
-        ))
+        let mut bound_names = vec![];
+        for name_exp in name_exps {
+            let name = match name_exp {
+                Expression::Singleton(token) if token.token_type == TokenType::Identifier => {
+                    token.text().to_string()
+                }
+                _ => {
+                    return Err(Error::new(
+                        name_exp.token(),
+                        "expected a simple name in argument list",
+                    ))
+                }
+            };
+            if self.name_in_use(&name) || stack.get(&name).is_some() {
+                return Err(Error::new(
+                    name_exp.token(),
+                    &format!("name {} already bound", name),
+                ));
+            }
+            if bound_names.contains(&name) {
+                return Err(Error::new(
+                    name_exp.token(),
+                    "cannot use a name twice in one pattern",
+                ));
+            }
+            bound_names.push(name);
+        }
+        for (name, acorn_type) in bound_names.iter().zip(types) {
+            stack.insert(name.clone(), acorn_type.clone());
+        }
+        Ok(bound_names)
     }
 
     // This function evaluates numbers when we already know what type they are.
@@ -1262,7 +1289,7 @@ impl BindingMap {
                         }
                         _ => return Err(Error::new(fn_exp.token(), "expected a function")),
                     };
-                    let arg_names = self.bind_names(stack, args, &arg_types)?;
+                    let arg_names = self.bind_group(stack, args, &arg_types)?;
                     let evaluated = (|| {
                         let pattern =
                             self.evaluate_value_with_stack(stack, project, pattern_exp, None)?;
@@ -1807,6 +1834,52 @@ impl BindingMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pattern_binding_is_transactional_and_cannot_shadow_stack_names() {
+        let bindings = BindingMap::new(FIRST_NORMAL);
+        for input in [
+            "(fresh, outer)",
+            "(fresh, fresh)",
+            "(fresh, true)",
+            "(fresh, f(x))",
+        ] {
+            let mut stack = Stack::new();
+            stack.insert("outer".to_string(), AcornType::Bool);
+            let names = Expression::expect_value(input);
+            assert!(bindings
+                .bind_group(&mut stack, &names, &[AcornType::Bool, AcornType::Bool])
+                .is_err());
+            assert_eq!(stack.names(), vec!["outer"], "{input}");
+        }
+        let mut stack = Stack::new();
+        let names = Expression::expect_value("(first, second)");
+        assert_eq!(
+            bindings
+                .bind_group(&mut stack, &names, &[AcornType::Bool, AcornType::Bool])
+                .unwrap(),
+            vec!["first", "second"]
+        );
+        assert_eq!(stack.names(), vec!["first", "second"]);
+    }
+
+    #[test]
+    fn match_case_body_failure_restores_outer_stack() {
+        let mut env = crate::environment::Environment::new_test();
+        env.add("inductive Foo {\n bar(Bool)\n }\n");
+        let mut stack = Stack::new();
+        stack.insert(
+            "value".to_string(),
+            AcornType::Data(FIRST_NORMAL, "Foo".to_string()),
+        );
+        let expression = Expression::expect_value("match value { Foo.bar(local) { unknown } }");
+        let error = env
+            .bindings
+            .evaluate_value_with_stack(&mut stack, &Project::new_mock(), &expression, None)
+            .unwrap_err();
+        assert!(error.to_string().contains("unknown"));
+        assert_eq!(stack.names(), vec!["value"]);
+    }
 
     #[test]
     fn test_env_types() {
