@@ -15,7 +15,7 @@ pub trait Scorer {
 
 pub fn default_scorer() -> Box<dyn Scorer + Send + Sync> {
     #[cfg(feature = "onnx")]
-    match OrtModel::load(false) {
+    match OrtModel::load() {
         Ok(model) => return Box::new(model),
         Err(error) => eprintln!(
             "Could not load the proof-scoring model; using the built-in heuristic: {error}"
