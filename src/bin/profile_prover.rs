@@ -19,9 +19,9 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        assert!(project.add_target("nat"));
-        assert!(project.add_target("nat_gcd"));
-        assert!(project.add_target("int"));
+        assert!(project.add_target_by_name("nat"));
+        assert!(project.add_target_by_name("nat_gcd"));
+        assert!(project.add_target_by_name("int"));
         let mut logger = Builder::new(|event| {
             if let Some(m) = event.log_message {
                 println!("{}", m);

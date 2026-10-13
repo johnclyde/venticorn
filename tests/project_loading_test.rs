@@ -39,8 +39,8 @@ fn missing_target_prevents_proving_other_targets() {
     let directory = TestDirectory::new();
     directory.write("zvalid.ac", "theorem trivial { true }");
     let mut project = directory.project();
-    assert!(!project.add_target("amissing"));
-    assert!(project.add_target("zvalid"));
+    assert!(!project.add_target_by_name("amissing"));
+    assert!(project.add_target_by_name("zvalid"));
 
     let (status, events) = project.sync_build();
     assert_eq!(status, BuildStatus::Error);
@@ -100,7 +100,7 @@ fn imported_parse_error_fails_the_build() {
     directory.write("broken.ac", "theorem unfinished {");
     directory.write("main.ac", "import broken");
     let mut project = directory.project();
-    assert!(project.add_target("main"));
+    assert!(project.add_target_by_name("main"));
 
     // The dependency is not itself a target, so its error must propagate through main.
     let (status, _) = project.sync_build();
