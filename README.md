@@ -87,6 +87,10 @@ An initialization failure is shown once with its cause. The extension does not r
 
 The F5 build uses ONNX by default. For a heuristic-only editor session, add `--no-default-features` to the local `cargo build` task in `.vscode/tasks.json` before launching.
 
+## Release platforms
+
+The extension logs the Node.js platform and architecture when it activates, so a server build can be matched to the editor host. Release targets are Linux x64 (`linux-x64`), Windows x64 (`win32-x64`), and macOS Apple silicon (`darwin-arm64`). Source builds remain available for local development; a platform label alone does not mean a release artifact has been built or tested.
+
 ## Optional model training
 
 See [the Python tooling instructions](python/README.md). Training requires separate Python dependencies, a generated dataset, and the CUDA-capable PyTorch setup used by the training configuration. Update `python/config.py` to point to your dataset before running the notebooks. These tools are not needed to verify theorems or use the editor.

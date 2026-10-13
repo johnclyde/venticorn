@@ -18,6 +18,7 @@ import {
 } from "vscode";
 import * as path from "path";
 import * as fs from "fs";
+import * as os from "os";
 import {
   CloseAction,
   ErrorAction,
@@ -514,7 +515,10 @@ async function showProgressBar() {
 
 export async function activate(context: ExtensionContext) {
   let timestamp = new Date().toLocaleTimeString();
-  console.log("activating Venticorn language extension at", timestamp);
+  console.log(
+    `activating Venticorn-${os.platform()}-${os.arch()} extension at`,
+    timestamp
+  );
   let traceOutputChannel = window.createOutputChannel("Venticorn Language Server");
   context.subscriptions.push(traceOutputChannel);
 
