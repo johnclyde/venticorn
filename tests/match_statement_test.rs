@@ -267,3 +267,36 @@ fn quantified_match_patterns_reject_cases_after_complete_coverage() {
         assert!(!env.bindings.has_identifier(name));
     }
 }
+
+#[test]
+fn each_match_case_selects_its_own_claim_and_keeps_following_statements() {
+    use venticorn::block::NodeCursor;
+    let mut env = Environment::new_test();
+    let source = "inductive Choice {\n first\n second\n}\nlet value: Choice = axiom\nmatch value {\n Choice.first {\n  value = Choice.first\n }\n Choice.second {\n  value = Choice.second\n }\n}\ntheorem after { true }\n";
+    env.add(source);
+    let first_path = env.path_for_line(7).unwrap();
+    let second_path = env.path_for_line(10).unwrap();
+    assert_ne!(first_path[0], second_path[0]);
+    for path in [&first_path, &second_path] {
+        assert_eq!(path.len(), 2);
+        assert!(NodeCursor::from_path(&env, path).current().has_goal());
+    }
+    let after = env.path_for_line(13).unwrap();
+    assert_eq!(after.len(), 1);
+    assert!(after[0] > second_path[0]);
+    assert!(env.path_for_line(12).is_err());
+}
+
+#[test]
+fn match_body_ranges_preserve_multiline_constructor_patterns() {
+    use venticorn::statement::StatementInfo;
+    let source = "match value {\n Foo.bar(\n  bit\n ) {\n  bit\n }\n Foo.baz {\n  true\n }\n}";
+    let statement = Statement::parse_str(source).unwrap();
+    let StatementInfo::Match(ms) = statement.statement else {
+        panic!("expected match statement");
+    };
+    assert_eq!(ms.cases[0].1.range().start.line, 3);
+    assert_eq!(ms.cases[0].1.range().end.line, 5);
+    assert_eq!(ms.cases[1].1.range().start.line, 6);
+    assert_eq!(ms.cases[1].1.range().end.line, 8);
+}
