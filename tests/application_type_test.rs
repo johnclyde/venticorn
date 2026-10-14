@@ -287,7 +287,10 @@ fn resolved_type_transformations_preserve_declaration_namespaces() {
     let AcornValue::Constant(c) = instance.to_arbitrary() else {
         panic!("constant expected")
     };
-    assert_eq!(c.generic_type, template);
+    assert_eq!(
+        c.instance_type,
+        identity(AcornType::Arbitrary("T".into(), None)).get_type()
+    );
     assert_eq!(
         c.params,
         vec![("A".into(), AcornType::Arbitrary("T".into(), None))]
