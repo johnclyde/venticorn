@@ -16,7 +16,7 @@ use crate::prover::{Outcome, Prover};
 #[serde(rename_all = "camelCase")]
 pub struct DocumentProgress {
     pub version: i32,
-    pub verified: Vec<u32>,
+    pub verified: Vec<(u32, u32)>,
 }
 
 // The language server stores one progress struct, and returns it at any time.

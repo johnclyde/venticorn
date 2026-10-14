@@ -68,7 +68,7 @@ function editor(state, version = 1) {
     lines: [], setDecorations(_type, values) { this.lines = Array.from(values, value => value.range.start.line); } };
   state.editors.push(value); return value;
 }
-const marked = (buildId = 1, version = 1) => ({ buildId, done: 1, total: 1, docs: { "file:///proof.ac": { version, verified: [0] } } });
+const marked = (buildId = 1, version = 1) => ({ buildId, done: 1, total: 1, docs: { "file:///proof.ac": { version, verified: [[0, 0]] } } });
 test("markers clear immediately on edit and reject a mismatched editor version", async () => {
   const { tracker, state } = host([marked(), marked(2, 1), marked(3, 2)]);
   const view = editor(state); await tracker.getProgress(); assert.deepEqual(view.lines, [0]);
@@ -133,4 +133,10 @@ test("a newly visible editor receives only its current cached marks", async () =
   state.events.visible([view]); assert.deepEqual(view.lines, [0]);
   view.document.version = 2; state.events.visible([view]); assert.deepEqual(view.lines, []);
   assert.equal(state.calls, 1);
+});
+
+test("a completed proof range creates one marker at its first line", async () => {
+  const response = marked(); response.docs["file:///proof.ac"].verified = [[0, 3], [4, 4]];
+  const { tracker, state } = host([response]); const view = editor(state);
+  await tracker.getProgress(); assert.deepEqual(view.lines, [0, 4]);
 });

@@ -68,8 +68,9 @@ export class ProgressTracker {
     const progress = this.docs[document.uri.toString()];
     const lines = this.isTracked(document) && !document.isDirty
       && progress?.version === document.version ? progress.verified : [];
-    editor.setDecorations(this.decoration, lines.filter(line => Number.isInteger(line) && line >= 0 && line < document.lineCount)
-      .map(line => ({ range: new Range(line, 0, line, 0) })));
+    editor.setDecorations(this.decoration, lines.filter(([first, last]) => Number.isInteger(first) && Number.isInteger(last)
+      && first >= 0 && first <= last && last < document.lineCount)
+      .map(([first]) => ({ range: new Range(first, 0, first, 0) })));
   }
 
   dispose() {
