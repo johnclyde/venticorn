@@ -306,6 +306,10 @@ class Nat {
     define lte(self, b: Nat) -> Bool { exists(c: Nat) { self + c = b } }
 
     define lt(self, b: Nat) -> Bool { self <= b and self != b }
+
+    define gt(self, b: Nat) -> Bool { b < self }
+
+    define gte(self, b: Nat) -> Bool { b <= self }
 }
 
 theorem lt_not_ref(a: Nat) { not (a < a) }
@@ -1235,4 +1239,12 @@ theorem divides_unmod(d: Nat, a: Nat, m: Nat) {
         divides(d, mod(a, m))
         false
     }
+}
+
+// Misc helpers
+theorem two_neq_zero {
+    2 != 0
+}
+theorem three_neq_zero {
+    3 != 0
 }

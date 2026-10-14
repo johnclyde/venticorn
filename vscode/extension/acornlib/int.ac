@@ -528,7 +528,7 @@ theorem neg_distrib(a: Int, b: Int) { negate(a + b) = negate(a) + negate(b) } by
     negate(a) + negate(b) = sub_nat(pos_part(negate(a)) + pos_part(negate(b)),
                                     neg_part(negate(a)) + neg_part(negate(b)))
     negate(a) + negate(b) = sub_nat(neg_part(a) + neg_part(b),
-                                    neg_part(negate(a)) + neg_part(negate(b)))                                        
+                                    neg_part(negate(a)) + neg_part(negate(b)))
     negate(a) + negate(b) = sub_nat(neg_part(a) + neg_part(b),
                                     pos_part(a) + pos_part(b))
     negate(a) + negate(b) = negate(sub_nat(pos_part(a) + pos_part(b), neg_part(a) + neg_part(b)))
@@ -562,7 +562,7 @@ theorem add_eq_zero(a: Int, b: Int) { a + b = 0 -> a = negate(b) } by {
     pos_part(a) + pos_part(b) = neg_part(a) + neg_part(b)
     pos_part(a) + neg_part(negate(b)) = neg_part(a) + pos_part(negate(b))
     sub_nat(pos_part(a), neg_part(a)) = sub_nat(pos_part(negate(b)), neg_part(negate(b)))
-    a = negate(b)    
+    a = negate(b)
 }
 
 theorem add_right_cancel(a: Int, b: Int, c: Int) { a + c = b + c -> a = b } by {
@@ -586,7 +586,7 @@ theorem add_sub_nat_left_pos(p: Nat, q: Nat, r: Nat) {
     (sub_nat(p, q) + Int.from_nat(r)) = sub_nat(pos_part(sub_nat(p, q)) + r,
                                                 neg_part(sub_nat(p, q)) + nat.0)
     (sub_nat(p, q) + Int.from_nat(r)) = sub_nat(pos_part(sub_nat(p, q)) + r,
-                                                neg_part(sub_nat(p, q))) 
+                                                neg_part(sub_nat(p, q)))
     p + r + neg_part(sub_nat(p, q)) = q + (pos_part(sub_nat(p, q)) + r)
     sub_nat(p + r, q) = sub_nat(pos_part(sub_nat(p, q)) + r, neg_part(sub_nat(p, q)))
 }
@@ -1196,7 +1196,7 @@ theorem mul_int_nat_nat_assoc(a: Int, j: Nat, k: Nat) { mul_nat(a, j * k) = mul_
         a = negate(Int.from_nat(abs(a)))
         mul_nat(a, j * k) = negate(Int.from_nat(abs(a) * (j * k)))
         mul_nat(a, j * k) = negate(Int.from_nat(abs(a) * j * k))
-        
+
         // Simplify rhs
         mul_nat(a, j) = negate(Int.from_nat(abs(a) * j))
         mul_nat(mul_nat(a, j), k) = mul_nat(negate(Int.from_nat(abs(a) * j)), k)
@@ -1209,7 +1209,7 @@ theorem mul_int_nat_nat_assoc(a: Int, j: Nat, k: Nat) { mul_nat(a, j * k) = mul_
         // Simplify lhs
         mul_nat(a, j * k) = Int.from_nat(abs(a) * (j * k))
         mul_nat(a, j * k) = Int.from_nat(abs(a) * j * k)
-        
+
         // Simplify rhs
         mul_nat(a, j) = Int.from_nat(abs(a) * j)
         mul_nat(mul_nat(a, j), k) = mul_nat(Int.from_nat(abs(a) * j), k)
@@ -1266,6 +1266,8 @@ theorem mul_assoc(a: Int, b: Int, c: Int) { a * b * c = a * (b * c) } by {
 class Int {
     define lt(self, b: Int) -> Bool { is_positive(b - self) }
     define lte(self, b: Int) -> Bool { (self < b) or self = b }
+    define gt(self, b: Int) -> Bool { b < self }
+    define gte(self, b: Int) -> Bool { b <= self }
 }
 
 theorem lt_not_ref(a: Int) { not (a < a) } by {
