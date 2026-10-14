@@ -87,3 +87,43 @@ fn generic_callbacks_use_their_declared_types_without_reinference() {
         assert!(!env.bindings.has_type_name("T"));
     }
 }
+
+#[test]
+fn resolved_simple_constants_keep_their_plain_normalized_identity() {
+    use venticorn::normalizer::Normalizer;
+    let resolved = AcornValue::Constant(10, "p".into(), AcornType::Bool, vec![]);
+    let transitional = AcornValue::Unresolved(10, "p".into(), AcornType::Bool, vec![]);
+    assert_eq!(resolved.as_simple_constant(), Some((10, "p")));
+    assert_eq!(
+        Normalizer::new()
+            .normalize(&resolved, true)
+            .expect_clauses(),
+        Normalizer::new()
+            .normalize(&transitional, true)
+            .expect_clauses()
+    );
+    let generic = AcornType::Variable("T".into(), None);
+    let instance =
+        AcornValue::Constant(10, "f".into(), generic, vec![("T".into(), AcornType::Bool)]);
+    assert_eq!(instance.as_simple_constant(), None);
+}
+
+#[test]
+fn unresolved_generic_metadata_cannot_bypass_normalization_through_aliases() {
+    use venticorn::normalizer::{Normalization, Normalizer};
+    let mut normalizer = Normalizer::new();
+    let known = AcornValue::Constant(10, "known".into(), AcornType::Bool, vec![]);
+    let known_clauses = normalizer.normalize(&known, true).expect_clauses();
+    let pending = AcornValue::Unresolved(10, "pending".into(), AcornType::Bool, vec!["T".into()]);
+    assert!(pending.as_simple_constant().is_none());
+    assert!(matches!(
+        normalizer.normalize(&AcornValue::new_equals(pending, known), true),
+        Normalization::Error(_)
+    ));
+    let ordinary = AcornValue::Constant(10, "pending".into(), AcornType::Bool, vec![]);
+    assert_ne!(
+        normalizer.normalize(&ordinary, true).expect_clauses(),
+        known_clauses,
+        "rejected pending metadata must not register a constant alias"
+    );
+}

@@ -1974,4 +1974,20 @@ impl AcornValue {
             _ => None,
         }
     }
+
+    pub fn as_simple_constant(&self) -> Option<(ModuleId, &str)> {
+        match self {
+            AcornValue::Constant(module, name, _, params) => {
+                if params.is_empty() {
+                    Some((*module, name))
+                } else {
+                    None
+                }
+            }
+            AcornValue::Unresolved(module, name, _, params) if params.is_empty() => {
+                Some((*module, name))
+            }
+            _ => None,
+        }
+    }
 }
