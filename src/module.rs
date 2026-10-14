@@ -1,16 +1,56 @@
 // Modified for Venticorn.
 
-use std::{fmt, path::PathBuf};
+use std::{fmt, path::PathBuf, sync::Arc};
 
 use crate::compilation;
 use crate::environment::Environment;
+
+// Fingerprints identify loaded source snapshots, not proof certificates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleFingerprint(pub(crate) [u8; 32]);
+
+// Separate source and dependency identity while retaining the complete fingerprint
+// used by established callers. Prefix storage is shared across build snapshots.
+#[derive(Debug, Clone, Eq)]
+pub struct ModuleHash {
+    fingerprint: ModuleFingerprint,
+    dependencies: ModuleFingerprint,
+    prefixes: Arc<[ModuleFingerprint]>,
+}
+
+impl PartialEq for ModuleHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.dependencies == other.dependencies && self.prefixes.last() == other.prefixes.last()
+    }
+}
+
+impl ModuleHash {
+    pub(crate) fn new(
+        fingerprint: ModuleFingerprint,
+        source: ModuleFingerprint,
+        dependencies: ModuleFingerprint,
+    ) -> Self {
+        Self {
+            fingerprint,
+            dependencies,
+            prefixes: vec![source].into(),
+        }
+    }
+
+    pub fn fingerprint(&self) -> ModuleFingerprint {
+        self.fingerprint
+    }
+    pub fn dependency_fingerprint(&self) -> ModuleFingerprint {
+        self.dependencies
+    }
+}
 
 // Loaded state and its fingerprint are kept together without changing public
 // module identity or lookup APIs.
 pub(crate) struct ModuleRecord {
     pub descriptor: ModuleRef,
     pub state: Module,
-    pub fingerprint: Option<crate::project::ModuleFingerprint>,
+    pub hash: Option<ModuleHash>,
 }
 
 impl ModuleRecord {
@@ -18,7 +58,7 @@ impl ModuleRecord {
         Self {
             descriptor: ModuleRef::Anonymous,
             state: Module::None,
-            fingerprint: None,
+            hash: None,
         }
     }
 
@@ -26,17 +66,13 @@ impl ModuleRecord {
         Self {
             descriptor,
             state: Module::Loading,
-            fingerprint: None,
+            hash: None,
         }
     }
 
-    pub fn finish_loading(
-        &mut self,
-        state: Module,
-        fingerprint: Option<crate::project::ModuleFingerprint>,
-    ) {
-        self.fingerprint = if matches!(state, Module::Ok(_)) {
-            fingerprint
+    pub fn finish_loading(&mut self, state: Module, hash: Option<ModuleHash>) {
+        self.hash = if matches!(state, Module::Ok(_)) {
+            hash
         } else {
             None
         };

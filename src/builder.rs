@@ -10,7 +10,7 @@ use crate::dataset::Dataset;
 use crate::environment::Environment;
 use crate::features::Features;
 use crate::goal::GoalContext;
-use crate::module::ModuleRef;
+use crate::module::{ModuleHash, ModuleRef};
 use crate::project::ModuleFingerprint;
 use crate::prover::{Outcome, Prover};
 
@@ -86,7 +86,7 @@ impl BuildStatus {
 struct ModuleInfo {
     module_ref: ModuleRef,
     direct_dependencies: Vec<ModuleRef>,
-    fingerprint: Option<ModuleFingerprint>,
+    hash: Option<ModuleHash>,
     good: bool,
     expected_goals: Option<usize>,
     goals_started_at: i32,
@@ -260,7 +260,7 @@ impl<'a> Builder<'a> {
         &mut self,
         module: &ModuleRef,
         mut direct_dependencies: Vec<ModuleRef>,
-        fingerprint: Option<ModuleFingerprint>,
+        hash: Option<ModuleHash>,
         expected_goals: Option<usize>,
     ) {
         direct_dependencies.sort();
@@ -268,7 +268,7 @@ impl<'a> Builder<'a> {
         self.current_module = Some(ModuleInfo {
             module_ref: module.clone(),
             direct_dependencies,
-            fingerprint,
+            hash,
             good: true,
             expected_goals,
             goals_started_at: self.goals_done,
@@ -303,7 +303,11 @@ impl<'a> Builder<'a> {
             return false;
         };
         if current.expected_goals != Some(expected.len())
-            || !self.has_cached_module(&current.module_ref, current.fingerprint, expected)
+            || !self.has_cached_module(
+                &current.module_ref,
+                current.hash.as_ref().map(ModuleHash::fingerprint),
+                expected,
+            )
         {
             return false;
         }
@@ -342,11 +346,11 @@ impl<'a> Builder<'a> {
         let info = self.current_module.take().expect("no current module");
         let completed = (self.goals_done - info.goals_started_at) as usize;
         if info.good && info.expected_goals == Some(completed) && info.verified.len() == completed {
-            if let Some(fingerprint) = info.fingerprint {
+            if let Some(hash) = info.hash {
                 if let Some(cache) = &mut self.new_cache {
                     cache.insert_completed(
                         info.module_ref,
-                        fingerprint,
+                        hash.fingerprint(),
                         info.direct_dependencies,
                         info.verified,
                     );
@@ -606,7 +610,7 @@ mod tests {
         builder.module_proving_started_with_metadata(
             &module,
             Vec::new(),
-            project.get_hash(env.module_id),
+            project.get_module_hash(env.module_id).cloned(),
             Some(expected_goals),
         );
         builder.search_finished(&prover, &goal, outcome, Duration::from_secs(1));

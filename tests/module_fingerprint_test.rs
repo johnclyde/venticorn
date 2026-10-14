@@ -92,3 +92,44 @@ fn failed_transitive_dependency_cannot_retain_an_old_fingerprint() {
         .unwrap();
     assert_eq!(original, fingerprint(&mut project, "main"));
 }
+
+#[test]
+fn structured_hash_distinguishes_source_from_dependency_changes() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/dependency.ac", "let value: Bool = true");
+    project.mock(
+        "/mock/main.ac",
+        "import dependency\ntheorem identity { true }",
+    );
+    let id = project.load_module_by_name("main").unwrap();
+    let before = project.get_module_hash(id).unwrap().clone();
+    assert_eq!(before.fingerprint(), project.get_hash(id).unwrap());
+    project
+        .update_file(
+            PathBuf::from("/mock/main.ac"),
+            "import dependency\ntheorem identity { true }\n",
+            1,
+        )
+        .unwrap();
+    let id = project.load_module_by_name("main").unwrap();
+    let edited = project.get_module_hash(id).unwrap().clone();
+    assert_ne!(before, edited);
+    assert_eq!(
+        before.dependency_fingerprint(),
+        edited.dependency_fingerprint()
+    );
+    project
+        .update_file(
+            PathBuf::from("/mock/dependency.ac"),
+            "let value: Bool = false",
+            1,
+        )
+        .unwrap();
+    let id = project.load_module_by_name("main").unwrap();
+    let changed_dependency = project.get_module_hash(id).unwrap();
+    assert_ne!(
+        edited.dependency_fingerprint(),
+        changed_dependency.dependency_fingerprint()
+    );
+    assert_ne!(edited, *changed_dependency);
+}
