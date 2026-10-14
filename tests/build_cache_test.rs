@@ -26,6 +26,7 @@ fn completed_modules_record_identity_dependencies_and_full_goal_ranges() {
     assert_eq!(main.verified(), &[(2, 2), (1, 3)]);
     let id = project.load_module_by_name("main").unwrap();
     assert_eq!(main.fingerprint(), project.get_hash(id).unwrap());
+    assert_eq!(main.module_hash(), project.get_module_hash(id).unwrap());
 }
 
 #[test]

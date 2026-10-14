@@ -11,7 +11,6 @@ use crate::environment::Environment;
 use crate::features::Features;
 use crate::goal::GoalContext;
 use crate::module::{ModuleHash, ModuleRef};
-use crate::project::ModuleFingerprint;
 use crate::prover::{Outcome, Prover};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
@@ -279,10 +278,10 @@ impl<'a> Builder<'a> {
     pub(crate) fn has_cached_module(
         &self,
         module: &ModuleRef,
-        fingerprint: Option<ModuleFingerprint>,
+        hash: Option<&ModuleHash>,
         expected: &[(u32, u32)],
     ) -> bool {
-        self.old_cache.matches(module, fingerprint, expected)
+        self.old_cache.matches(module, hash, expected)
     }
 
     // Only Project supplies the current parsed ranges and verifies all dependency entries.
@@ -303,11 +302,7 @@ impl<'a> Builder<'a> {
             return false;
         };
         if current.expected_goals != Some(expected.len())
-            || !self.has_cached_module(
-                &current.module_ref,
-                current.hash.as_ref().map(ModuleHash::fingerprint),
-                expected,
-            )
+            || !self.has_cached_module(&current.module_ref, current.hash.as_ref(), expected)
         {
             return false;
         }
@@ -350,7 +345,7 @@ impl<'a> Builder<'a> {
                 if let Some(cache) = &mut self.new_cache {
                     cache.insert_completed(
                         info.module_ref,
-                        hash.fingerprint(),
+                        hash,
                         info.direct_dependencies,
                         info.verified,
                     );
