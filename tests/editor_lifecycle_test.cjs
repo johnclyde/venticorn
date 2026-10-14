@@ -295,7 +295,7 @@ test("untitled Acorn documents do not request verification before saving", async
   for (const handler of [...extension.state.open, ...extension.state.save]) await handler(document);
   assert.equal(extension.state.requests, 0);
   assert.equal(extension.state.notifications.length, 0);
-  assert.equal(extension.state.client.options.documentSelector[0].scheme, "file");
+  assert.deepEqual(Array.from(extension.state.client.options.documentSelector, (item) => item.scheme), ["file", "untitled"]);
 });
 
 function acornEditor(scheme = "file", name = "proof.ac") {
