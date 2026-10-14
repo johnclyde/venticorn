@@ -55,6 +55,36 @@ class CompletionTest(unittest.TestCase):
         self.assertEqual(self.complete(0, len("from nat import N")), ["Nat"])
         self.assertEqual(self.complete(0, len("from nat import Nat")), ["Nat"])
 
+    def test_unsaved_local_prefixes_use_the_saved_proof_scope(self):
+        source = "from nat import Nat, saved\nlet bar: Nat = saved\ntheorem goal<T>(bop: T) {\n bop = bop\n} by {\n \n}\n"
+        self.open(source)
+        self.change(2, (5, 1), (5, 1), "bo")
+        self.assertEqual(self.complete(5, 3), ["bop"])
+        self.change(3, (5, 1), (5, 3), "ba")
+        self.assertEqual(self.complete(5, 3), ["bar"])
+        self.change(4, (5, 1), (5, 3), "T")
+        self.assertEqual(self.complete(5, 2), ["T"])
+
+    def test_full_replacement_without_a_scope_anchor_is_conservative(self):
+        self.open("from nat import Nat\nlet old: Nat = axiom\n")
+        self.session.notify("textDocument/didChange", {
+            "textDocument": {"uri": self.uri, "version": 2}, "contentChanges": [{"text": "ol"}],
+        })
+        self.assertEqual(self.complete(0, 2), [])
+        self.session.notify("textDocument/didChange", {
+            "textDocument": {"uri": self.uri, "version": 3}, "contentChanges": [{"text": "from nat import N"}],
+        })
+        self.assertEqual(self.complete(0, len("from nat import N")), ["Nat"])
+
+    def test_unsaved_prefix_after_a_block_uses_the_parent_scope(self):
+        self.open("theorem goal(hidden: Bool) {\n hidden or not hidden\n} by {\n true\n}\n\nlet later: Bool = axiom\nlet alias: Bool = later\n")
+        self.change(2, (5, 0), (5, 0), "hid")
+        self.assertEqual(self.complete(5, 3), [])
+        self.change(3, (5, 0), (5, 3), "lat")
+        self.assertEqual(self.complete(5, 3), [])
+        self.change(4, (5, 0), (5, 3), "ali")
+        self.assertEqual(self.complete(5, 3), [])
+
     def test_unknown_documents_and_invalid_positions_have_no_candidates(self):
         self.open("from nat import Nat\n// a😀b\n")
         self.assertEqual(self.complete(1, 5), [])  # Inside the surrogate pair.

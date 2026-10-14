@@ -114,6 +114,16 @@ impl LiveDocument {
             .and_then(|line| line.saved_index)
     }
 
+    // Anchor unfinished text to the nearest preceding unchanged source line.
+    // Without an anchor, no saved proof scope is known.
+    pub fn get_env_line(&self, line: u32) -> Option<u32> {
+        self.lines.get(line as usize)?;
+        self.lines[..=line as usize]
+            .iter()
+            .rev()
+            .find_map(|line| line.saved_index)
+    }
+
     pub fn byte_offset(&self, position: Position) -> Result<usize, String> {
         byte_offset(&self.text, &self.lines, position)
     }
@@ -214,6 +224,25 @@ mod tests {
             range_length: None,
             text: text.into(),
         }
+    }
+
+    #[test]
+    fn completion_scope_uses_saved_lines_and_handles_missing_anchors() {
+        let mut doc = LiveDocument::new("header\nbody\n}\n\n", 1);
+        doc.apply_changes(&[edit((3, 0), (3, 0), "prefix")], 2)
+            .unwrap();
+        assert_eq!(doc.get_env_line(3), Some(2));
+        assert_eq!(doc.get_env_line(u32::MAX), None);
+        doc.apply_changes(
+            &[TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: "replacement".into(),
+            }],
+            3,
+        )
+        .unwrap();
+        assert_eq!(doc.get_env_line(0), None);
     }
 
     #[test]

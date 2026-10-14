@@ -430,12 +430,38 @@ impl BindingMap {
     }
 
     // Complete one identifier with deterministic ordering.
-    pub fn get_completions(&self, prefix: &str) -> Vec<CompletionItem> {
+    pub fn get_completions(&self, prefix: &str, importing: bool) -> Vec<CompletionItem> {
+        self.get_completions_visible(prefix, importing, &|_| true)
+    }
+
+    pub fn get_completions_visible(
+        &self,
+        prefix: &str,
+        importing: bool,
+        visible: &dyn Fn(&str) -> bool,
+    ) -> Vec<CompletionItem> {
         if prefix.is_empty() {
             return vec![];
         }
         let mut items = vec![];
+        if !importing {
+            for keyword in token::keywords_with_prefix(prefix) {
+                items.push(CompletionItem {
+                    label: keyword.to_string(),
+                    kind: Some(CompletionItemKind::KEYWORD),
+                    ..Default::default()
+                });
+            }
+        }
         for name in keys_with_prefix(&self.identifier_types, prefix) {
+            if !visible(name) {
+                continue;
+            }
+            if importing
+                && (self.alias_to_canonical.contains_key(name) || self.theorems.contains(name))
+            {
+                continue;
+            }
             if !name.contains('.') {
                 items.push(CompletionItem {
                     label: name.clone(),
@@ -445,6 +471,14 @@ impl BindingMap {
             }
         }
         for name in keys_with_prefix(&self.type_names, prefix) {
+            if !visible(name) {
+                continue;
+            }
+            if importing
+                && !matches!(self.type_names.get(name), Some(AcornType::Data(module, canonical)) if *module == self.module && canonical == name)
+            {
+                continue;
+            }
             items.push(CompletionItem {
                 label: name.clone(),
                 kind: Some(CompletionItemKind::CLASS),

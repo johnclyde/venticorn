@@ -731,17 +731,31 @@ impl Backend {
             None => return Ok(None),
         };
         // Release the document guard before waiting on the project lock.
-        let prefix = {
+        let (prefix, env_line) = {
             let document = document.read().await;
-            match document.get_prefix(position.line, position.character) {
+            let prefix = match document.get_prefix(position.line, position.character) {
                 Some(prefix) => prefix,
                 None => return Ok(None),
-            }
+            };
+            let env_line = document.get_env_line(position.line).or_else(|| {
+                // Imports need the target module, but do not require a local proof scope.
+                (prefix.split_whitespace().next() == Some("from")).then_some(0)
+            });
+            (prefix, env_line)
+        };
+        let env_line = match env_line {
+            Some(line) => line,
+            None => return Ok(None),
         };
         let project = self.project.read().await;
         Ok(project
-            .get_completions(&path, position.line, &prefix)
-            .map(CompletionResponse::Array))
+            .get_completions(&path, env_line, &prefix)
+            .map(|items| {
+                CompletionResponse::List(CompletionList {
+                    is_incomplete: false,
+                    items,
+                })
+            }))
     }
 
     async fn semantic_tokens_full(
