@@ -358,7 +358,7 @@ impl Expression {
 
     // Generates prefix notation without changing the operand's grouping.
     pub fn generate_unary(op: TokenType, mut operand: Expression) -> Expression {
-        if operand.value_precedence() < op.unary_precedence() {
+        if operand.top_level_precedence() < op.unary_precedence() {
             operand = Expression::generate_grouping(vec![operand]);
         }
         Expression::Unary(op.generate(), Box::new(operand))
@@ -370,14 +370,14 @@ impl Expression {
         op: TokenType,
         mut right: Expression,
     ) -> Expression {
-        if left.value_precedence() < op.binary_precedence() {
+        if left.top_level_precedence() < op.binary_precedence() {
             left = Expression::Grouping(
                 TokenType::LeftParen.generate(),
                 Box::new(left),
                 TokenType::RightParen.generate(),
             );
         }
-        if right.value_precedence() <= op.binary_precedence() {
+        if right.top_level_precedence() <= op.binary_precedence() {
             right = Expression::Grouping(
                 TokenType::LeftParen.generate(),
                 Box::new(right),
@@ -436,7 +436,7 @@ impl Expression {
 
     // The precedence this expression needs at the top level.
     // We assume this is a value rather than a type.
-    pub fn value_precedence(&self) -> i8 {
+    pub fn top_level_precedence(&self) -> i8 {
         match self {
             Expression::Singleton(_)
             | Expression::Grouping(..)

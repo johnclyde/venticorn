@@ -112,6 +112,12 @@ Recursive constructor fields must use the inductive type directly, such as `suc(
 
 Passing the termination and type checks does not guarantee that proof search will establish every true theorem about the function. The base equation above and concrete recursive unfoldings are supported; some Boolean and higher-order claims remain beyond current proof search. A rejected termination check means the checker could not establish structural descent, not necessarily that the function loops.
 
+## Operators
+
+Prefix minus uses the operand type's `neg` member, so `-a` has the same meaning as `a.neg`. A type supports arithmetic negation by defining `neg(self)`; the bundled `Int` type provides it. Subtraction remains a separate `sub` member, including expressions such as `a - -b`.
+
+Member access and function application bind before prefix minus, which binds before multiplication and addition. Thus `-a.suc` negates the successor, while `(-a).suc` takes the successor of a negative value. Use `-(a * b)` to negate an entire product. Boolean `not` binds below comparisons and above `and` and `or`; use `not (b and c)` to negate the conjunction. Generated proof expressions preserve these groupings.
+
 ## Choose a library and use the CLI
 
 A library is a directory containing `.ac` files. A compatible mathematical library is included at `vscode/extension/acornlib` and packaged with the editor, including its license and attribution. Select that path with `VENTICORN_LIBRARY` to try the bundled modules, or use your own library directory. Set `VENTICORN_LIBRARY` to choose it explicitly; an absolute path is recommended. Relative values resolve from the process working directory. An empty value or a path that is not a directory is an error.
