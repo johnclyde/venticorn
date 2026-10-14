@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{fmt, io};
 
 use sha2::{Digest, Sha256};
@@ -23,7 +23,7 @@ use crate::token::{Token, TokenType};
 
 // A synchronous build's actual proof counts and completed metadata. The cache is
 // absent if the build was interrupted or had a fatal error, even if a final event
-// displayed complete progress. It is not used to skip subsequent verification.
+// displayed complete progress. Only finalized records can seed subsequent verification.
 pub struct BuildReport {
     pub status: BuildStatus,
     pub events: Vec<BuildEvent>,
@@ -61,6 +61,10 @@ pub struct Project {
 
     // The module references that we want to build.
     targets: HashSet<ModuleRef>,
+
+    // Completed builds publish their staged entries atomically. Searches and callbacks
+    // never run with this lock held.
+    build_cache: Arc<Mutex<BuildCache>>,
 
     // Used as a flag to stop a build in progress.
     pub build_stopped: Arc<AtomicBool>,
@@ -191,6 +195,7 @@ impl Project {
             modules: new_modules(),
             module_map: HashMap::new(),
             targets: HashSet::new(),
+            build_cache: Arc::new(Mutex::new(BuildCache::default())),
             build_stopped: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -410,6 +415,11 @@ impl Project {
         Ok(())
     }
 
+    // A read-only snapshot of successful entries from completed builds.
+    pub fn cached_build(&self) -> BuildCache {
+        self.build_cache.lock().unwrap().clone()
+    }
+
     // Builds all open modules, logging build events.
     // Returns the build status.
     pub fn build(&self, builder: &mut Builder) {
@@ -481,6 +491,9 @@ impl Project {
                 .load(std::sync::atomic::Ordering::Relaxed)
                 && builder.goals_done == builder.goals_total,
         );
+        if let Some(completed) = builder.cache() {
+            self.build_cache.lock().unwrap().merge_completed(completed);
+        }
     }
 
     // Verifies all goals within this target.
@@ -650,7 +663,7 @@ impl Project {
     pub fn sync_build_report(&self) -> BuildReport {
         let mut events = vec![];
         let (status, num_success, num_cached, goals_done, goals_total, cache) = {
-            let mut builder = Builder::new(|event| events.push(event));
+            let mut builder = Builder::with_cache(self.cached_build(), |event| events.push(event));
             self.build(&mut builder);
             let stats = (
                 builder.status,

@@ -66,6 +66,23 @@ class BuildPublicationTest(unittest.TestCase):
             time.sleep(0.01)
         self.fail(f"expected diagnostic was not published: {values}")
 
+    def test_repeated_saved_source_keeps_full_ranges_and_changed_goal_is_not_replayed(self):
+        text = "theorem full { true } by {\n true\n}\n"
+        self.open(text, 1)
+        first = self.wait_for_build(total=2)
+        self.assertEqual(first["docs"][self.uri]["verified"], [[0, 2]])
+        self.change(2, text)
+        self.save(text)
+        repeated = self.wait_for_build(first["buildId"], total=2)
+        self.assertEqual(repeated["docs"][self.uri]["verified"], [[0, 2]])
+        self.wait_for_diagnostic(lambda item: item.get("version") == 2 and not item["diagnostics"])
+        changed = text.replace("full { true }", "full { false }")
+        self.change(3, changed)
+        self.save(changed)
+        current = self.wait_for_build(repeated["buildId"], total=2)
+        self.assertEqual(current["docs"][self.uri]["verified"], [[1, 1]])
+        self.wait_for_diagnostic(lambda item: item.get("version") == 3 and item["diagnostics"])
+
     def test_compilation_diagnostics_use_utf16_columns(self):
         for version, (text, token) in enumerate([
             ("let x𐐀é: Bool = missing", "missing"),

@@ -40,6 +40,11 @@ impl BuildCache {
         self.modules.get(module)
     }
 
+    // Only finalized build snapshots are published. Entries for other targets remain valid.
+    pub(crate) fn merge_completed(&mut self, completed: &BuildCache) {
+        self.modules.extend(completed.modules.clone());
+    }
+
     pub(crate) fn matches(
         &self,
         module: &ModuleRef,
