@@ -12,8 +12,7 @@ use tower_lsp::lsp_types::{Range, Url};
 use crate::prover::{Outcome, Prover};
 
 // The language server stores one progress struct, and returns it at any time.
-// 0/0 only occurs at initialization. It means "there have never been any progress bars".
-// Once we ever show a progress bar, we leave it at the previous finished state.
+// Build id zero denotes no active result; a completed empty build can also have 0/0 goals.
 // When progress is cancelled or interrupted, we should update this so that done = total.
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

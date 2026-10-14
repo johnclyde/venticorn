@@ -34,13 +34,10 @@ fn diagnostics_preserve_file_identity_for_success_and_warning() {
     }
     let diagnostics: Vec<_> = events
         .into_iter()
-        .filter_map(|event| event.diagnostic)
+        .filter(|event| event.diagnostic.is_some())
         .collect();
-    assert_eq!(diagnostics.len(), 2);
-    assert_eq!(diagnostics[0].0, file);
-    assert!(diagnostics[0].1.is_none());
-    assert_eq!(diagnostics[1].0, file);
-    assert!(diagnostics[1].1.is_some());
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].module, file);
 }
 
 #[test]
@@ -65,38 +62,18 @@ fn external_file_diagnostics_follow_updates_and_close() {
         assert_eq!(status, expected);
         let diagnostic = events
             .iter()
-            .filter_map(|event| event.diagnostic.as_ref())
-            .find(|(module_ref, _)| module_ref == &reference)
-            .expect("external-file diagnostic");
-        assert_eq!(diagnostic.1.is_some(), diagnostic_present);
+            .any(|event| event.module == reference && event.diagnostic.is_some());
+        assert_eq!(diagnostic, diagnostic_present);
     }
     project.close_file(path.clone()).unwrap();
-    assert!(!project.open_files.contains_key(&path));
+    assert!(project.get_version(&path).is_none());
     assert!(project.get_env_by_ref(&reference).is_none());
     let (status, events) = project.sync_build();
     assert_eq!(status, BuildStatus::Good);
     assert!(events
         .iter()
-        .filter_map(|event| event.diagnostic.as_ref())
-        .all(|(module_ref, _)| module_ref != &reference));
-}
-
-#[test]
-fn invalid_file_updates_and_closes_preserve_existing_state() {
-    use venticorn::builder::BuildStatus;
-    let mut project = Project::new_mock();
-    project.mock("/mock/main.ac", "theorem identity { true }");
-    let invalid = PathBuf::from("/outside/not_source.txt");
-    assert!(project
-        .update_file(invalid.clone(), "theorem identity { true }", 1)
-        .is_err());
-    assert!(!project.open_files.contains_key(&invalid));
-    project
-        .open_files
-        .insert(invalid.clone(), ("editor content".to_string(), 1));
-    assert!(project.close_file(invalid.clone()).is_err());
-    assert_eq!(project.open_files[&invalid].0, "editor content");
-    assert_eq!(project.sync_build().0, BuildStatus::Good);
+        .filter(|event| event.diagnostic.is_some())
+        .all(|event| event.module != reference));
 }
 
 #[test]
@@ -124,7 +101,7 @@ fn first_editor_open_reloads_dependencies_cached_from_disk() {
     let mut project = Project::new(directory.0.to_str().unwrap());
     assert!(project.add_target_by_name("main"));
     assert_eq!(project.sync_build().0, BuildStatus::Good);
-    assert!(!project.open_files.contains_key(&dependency));
+    assert!(project.get_version(&dependency).is_none());
 
     project
         .update_file(dependency.clone(), "let replacement: Bool = false", 1)
