@@ -15,6 +15,7 @@ export class ProgressTracker {
   private active: Promise<void> | undefined;
   private startTime = 0;
   private disposed = false;
+  private buildId: number | null = null;
 
   constructor(private client: ProgressClient, private log: (message: string) => void, private clock: Clock = defaultClock) {}
 
@@ -23,13 +24,15 @@ export class ProgressTracker {
   async getProgress(): Promise<ProgressResponse | undefined> {
     if (this.disposed || !this.client.isRunning()) return undefined;
     const response = await this.client.sendRequest("acorn/progress", {}) as ProgressResponse;
-    return this.disposed || !this.client.isRunning() ? undefined : response;
+    if (this.disposed || !this.client.isRunning()) return undefined;
+    if (response) this.buildId = response.buildId;
+    return response;
   }
 
   track(): Promise<void> {
+    this.startTime = this.clock.now();
     if (this.active) return this.active;
     if (this.disposed) return Promise.resolve();
-    this.startTime = this.clock.now();
     this.active = this.trackHelper().catch((error) => {
       this.log(`Verification progress failed: ${String(error)}`);
     }).finally(() => { this.active = undefined; });
@@ -37,13 +40,14 @@ export class ProgressTracker {
   }
 
   private async trackHelper() {
+    const initialBuildId = this.buildId;
     let response = await this.getProgress();
-    while (response && response.done === response.total) {
+    while (response && (response.buildId === null || response.buildId === initialBuildId)) {
       if (this.clock.now() - this.startTime >= 2000) return;
       await this.clock.pause(100);
       response = await this.getProgress();
     }
-    if (!response) return;
+    if (!response || response.done >= response.total) return;
     await window.withProgress({
       location: ProgressLocation.Notification,
       title: "Venticorn Verification",

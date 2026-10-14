@@ -42,3 +42,14 @@ test("disposal and a stopped client prevent more polling", async () => {
   const stopped = host([]); stopped.state.running = false;
   await stopped.tracker.track(); assert.equal(stopped.state.calls, 0);
 });
+
+test("a completed new build is observed without waiting for nonzero work", async () => {
+  const { tracker, state } = host([progress(2), { ...progress(0, 0), buildId: 2 }]);
+  await tracker.track(); await tracker.track();
+  assert.equal(state.calls, 2); assert.equal(state.windows, 0); assert.equal(state.time, 0);
+});
+test("tracking waits for a new build identity instead of redisplaying a completed build", async () => {
+  const { tracker, state } = host([progress(2), progress(2), { ...progress(0), buildId: 2 }, { ...progress(2), buildId: 2 }]);
+  await tracker.track(); await tracker.track();
+  assert.equal(state.calls, 4); assert.equal(state.windows, 1);
+});
