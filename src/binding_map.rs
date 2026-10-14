@@ -1253,7 +1253,7 @@ impl BindingMap {
             },
             Expression::Unary(token, expr) => match token.token_type {
                 TokenType::Not => {
-                    check_type(token, expected_type, &AcornType::Bool)?;
+                    check_type(expression, expected_type, &AcornType::Bool)?;
                     let value = self.evaluate_value_with_stack(
                         stack,
                         project,
@@ -1275,7 +1275,7 @@ impl BindingMap {
             },
             Expression::Binary(left, token, right) => match token.token_type {
                 TokenType::RightArrow | TokenType::Implies => {
-                    check_type(token, expected_type, &AcornType::Bool)?;
+                    check_type(expression, expected_type, &AcornType::Bool)?;
                     let left_value = self.evaluate_value_with_stack(
                         stack,
                         project,
@@ -1296,7 +1296,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::Equals => {
-                    check_type(token, expected_type, &AcornType::Bool)?;
+                    check_type(expression, expected_type, &AcornType::Bool)?;
                     let left_value = self.evaluate_value_with_stack(stack, project, left, None)?;
                     let right_value = self.evaluate_value_with_stack(
                         stack,
@@ -1311,7 +1311,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::NotEquals => {
-                    check_type(token, expected_type, &AcornType::Bool)?;
+                    check_type(expression, expected_type, &AcornType::Bool)?;
                     let left_value = self.evaluate_value_with_stack(stack, project, left, None)?;
                     let right_value = self.evaluate_value_with_stack(
                         stack,
@@ -1326,7 +1326,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::And => {
-                    check_type(token, expected_type, &AcornType::Bool)?;
+                    check_type(expression, expected_type, &AcornType::Bool)?;
                     let left_value = self.evaluate_value_with_stack(
                         stack,
                         project,
@@ -1346,7 +1346,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::Or => {
-                    check_type(token, expected_type, &AcornType::Bool)?;
+                    check_type(expression, expected_type, &AcornType::Bool)?;
                     let left_value = self.evaluate_value_with_stack(
                         stack,
                         project,
