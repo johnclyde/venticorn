@@ -16,8 +16,47 @@ pub struct DiagnosticUpdate {
 struct DocumentBuildInfo {
     version: Option<i32>,
     publish: bool,
-    verified: Vec<u32>,
+    verified: Vec<(u32, u32)>,
     diagnostics: Vec<Diagnostic>,
+}
+
+impl DocumentBuildInfo {
+    fn overlaps(diagnostic: &Diagnostic, first: u32, last: u32) -> bool {
+        diagnostic.severity != Some(tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION)
+            && diagnostic.severity != Some(tower_lsp::lsp_types::DiagnosticSeverity::HINT)
+            && diagnostic.range.start.line <= last
+            && diagnostic.range.end.line >= first
+    }
+
+    fn verify(&mut self, first: u32, last: u32) {
+        if first > last
+            || self
+                .diagnostics
+                .iter()
+                .any(|diagnostic| Self::overlaps(diagnostic, first, last))
+        {
+            return;
+        }
+        if self
+            .verified
+            .iter()
+            .any(|&(start, end)| start <= first && end >= last)
+        {
+            return;
+        }
+        self.verified
+            .retain(|&(start, end)| !(first <= start && last >= end));
+        self.verified.push((first, last));
+        self.verified.sort_unstable();
+    }
+
+    fn add_diagnostic(&mut self, diagnostic: Diagnostic) {
+        // Diagnostics can arrive before or after success events; either order must
+        // invalidate any encompassing theorem as well as overlapping subgoals.
+        self.verified
+            .retain(|&(first, last)| !Self::overlaps(&diagnostic, first, last));
+        self.diagnostics.push(diagnostic);
+    }
 }
 
 #[derive(Default)]
@@ -120,13 +159,11 @@ impl BuildInfo {
         if !doc.publish {
             return None;
         }
-        if let Some((first, _)) = &event.verified {
-            if !doc.verified.contains(first) {
-                doc.verified.push(*first);
-            }
+        if let Some((first, last)) = event.verified {
+            doc.verify(first, last);
         }
         if let Some(diagnostic) = &event.diagnostic {
-            doc.diagnostics.push(diagnostic.clone());
+            doc.add_diagnostic(diagnostic.clone());
             return Some(DiagnosticUpdate {
                 url,
                 version: doc.version,
@@ -151,18 +188,7 @@ impl BuildInfo {
                             url.clone(),
                             DocumentProgress {
                                 version,
-                                verified: if doc.diagnostics.iter().any(|diagnostic| {
-                                    diagnostic.severity
-                                        != Some(
-                                            tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION,
-                                        )
-                                        && diagnostic.severity
-                                            != Some(tower_lsp::lsp_types::DiagnosticSeverity::HINT)
-                                }) {
-                                    Vec::new()
-                                } else {
-                                    doc.verified.clone()
-                                },
+                                verified: doc.verified.clone(),
                             },
                         )
                     })
@@ -175,11 +201,11 @@ impl BuildInfo {
 #[cfg(test)]
 mod tests {
     // Modified for Venticorn: adversarial build publication ordering.
-    use super::BuildInfo;
+    use super::{BuildInfo, DocumentBuildInfo};
     use crate::builder::BuildEvent;
     use crate::module::ModuleRef;
     use std::collections::HashMap;
-    use tower_lsp::lsp_types::{Diagnostic, Range, Url};
+    use tower_lsp::lsp_types::{Diagnostic, Position, Range, Url};
 
     fn url() -> Url {
         Url::parse("file:///proof.ac").unwrap()
@@ -228,7 +254,7 @@ mod tests {
             .handle_event(reopened, Some(url()), &event(1))
             .is_none());
         assert_eq!(info.progress().build_id, Some(2));
-        assert_eq!(info.progress().docs[&url()].verified, vec![4]);
+        assert_eq!(info.progress().docs[&url()].verified, vec![(4, 4)]);
     }
 
     #[test]
@@ -270,7 +296,7 @@ mod tests {
         let generation = info.generation();
         info.handle_event(generation, Some(url()), &event(1));
         info.handle_event(generation, Some(url()), &event(1));
-        assert_eq!(info.progress().docs[&url()].verified, vec![4]);
+        assert_eq!(info.progress().docs[&url()].verified, vec![(4, 4)]);
         info.reset(versions(2), versions(2));
         let mut empty = event(2);
         empty.progress = Some((0, 0));
@@ -281,5 +307,40 @@ mod tests {
         assert_eq!(info.progress().done, 0);
         assert_eq!(info.progress().total, 0);
         assert!(info.progress().docs[&url()].verified.is_empty());
+    }
+    #[test]
+    fn theorem_ranges_subsume_children_without_duplicates_or_event_order_assumptions() {
+        let mut doc = DocumentBuildInfo::default();
+        doc.verify(4, 4);
+        doc.verify(2, 2);
+        doc.verify(0, 6);
+        doc.verify(2, 2);
+        doc.verify(0, 6);
+        doc.verify(10, 12);
+        assert_eq!(doc.verified, vec![(0, 6), (10, 12)]);
+    }
+
+    #[test]
+    fn every_failure_blocks_overlapping_success_and_late_failure_removes_a_mark() {
+        let warning = |line| {
+            Diagnostic::new_simple(
+                Range::new(Position::new(line, 0), Position::new(line, 1)),
+                "unverified".to_string(),
+            )
+        };
+        let mut doc = DocumentBuildInfo::default();
+        doc.add_diagnostic(warning(2));
+        doc.add_diagnostic(warning(20));
+        doc.verify(0, 6);
+        assert!(doc.verified.is_empty());
+        doc.verify(10, 12);
+        assert_eq!(doc.verified, vec![(10, 12)]);
+        doc.add_diagnostic(warning(11));
+        assert!(doc.verified.is_empty());
+        let mut information = warning(31);
+        information.severity = Some(tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION);
+        doc.add_diagnostic(information);
+        doc.verify(30, 32);
+        assert_eq!(doc.verified, vec![(30, 32)]);
     }
 }

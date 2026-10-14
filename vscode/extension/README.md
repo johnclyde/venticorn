@@ -22,6 +22,13 @@ If you close the Assistant, reopen it with the small acorn button in the editor 
 **Venticorn: Assistant: Display**, or **Ctrl+Enter** (**Cmd+Enter** on macOS). It stays closed until you
 reopen it or reload the editor window.
 
+## Verification marks
+
+A gutter check marks a verified claim. Once every goal in a theorem succeeds, its proof block
+collapses to one check on the theorem header. Failed subgoals prevent that theorem check;
+separate verified theorems can still be marked. Marks clear when an Acorn file changes, and
+only results for its saved version are shown.
+
 ## Name completion
 
 While editing a saved file, request suggestions for a partial name such as `Nat.s` or

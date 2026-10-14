@@ -78,7 +78,7 @@ class BuildPublicationTest(unittest.TestCase):
         self.wait_for_diagnostic(lambda item: item.get("version") == 4 and not item["diagnostics"])
         self.save(text)
         current = self.wait_for_build(old["buildId"])
-        self.assertEqual(current["docs"][self.uri]["verified"], [0])
+        self.assertEqual(current["docs"][self.uri]["verified"], [[0, 0]])
         self.assertEqual(current["docs"][self.uri]["version"], 4)
         self.change(5, "")
         self.save("")
@@ -96,7 +96,7 @@ class BuildPublicationTest(unittest.TestCase):
         first_new = len(self.session.notifications)
         self.open("theorem reopened { true }\n", 7)
         current = self.wait_for_build(old["buildId"])
-        self.assertEqual(current["docs"][self.uri]["verified"], [0])
+        self.assertEqual(current["docs"][self.uri]["verified"], [[0, 0]])
         later = self.session.notifications[first_new:]
         self.assertFalse(any(message.get("method") == "textDocument/publishDiagnostics"
                              and message["params"]["diagnostics"] for message in later))
@@ -108,7 +108,7 @@ class BuildPublicationTest(unittest.TestCase):
         self.open("theorem other { true }\n", 1, self.other)
         current = self.wait_for_build(old["buildId"], total=2)
         self.assertNotIn(self.uri, current["docs"])
-        self.assertEqual(current["docs"][self.other], {"version": 1, "verified": [0]})
+        self.assertEqual(current["docs"][self.other], {"version": 1, "verified": [[0, 0]]})
         self.wait_for_diagnostic(lambda item: item.get("version") == 2 and not item["diagnostics"])
 
     def test_failed_subgoal_does_not_mark_its_theorem_verified(self):
@@ -116,6 +116,16 @@ class BuildPublicationTest(unittest.TestCase):
         current = self.wait_for_build(total=2)
         self.assertEqual(current["docs"][self.uri]["verified"], [])
         self.wait_for_diagnostic(lambda item: bool(item["diagnostics"]))
+
+    def test_successful_theorem_collapses_its_subgoals_into_one_range(self):
+        self.open("theorem complete { true } by {\n true\n}\n")
+        current = self.wait_for_build(total=2)
+        self.assertEqual(current["docs"][self.uri]["verified"], [[0, 2]])
+
+    def test_failed_theorem_does_not_hide_a_separate_successful_theorem(self):
+        self.open("theorem incomplete { true } by {\n false\n}\ntheorem complete { true }\n")
+        current = self.wait_for_build(total=3)
+        self.assertEqual(current["docs"][self.uri]["verified"], [[3, 3]])
 
     def test_unsaved_edit_keeps_other_saved_document_searchable(self):
         self.open("theorem first { true }\n")
@@ -150,7 +160,7 @@ class BuildPublicationTest(unittest.TestCase):
         self.change(2, "theorem latest { true }\n")
         self.save("theorem latest { true }\n")
         current = self.wait_for_build()
-        self.assertEqual(current["docs"][self.uri]["verified"], [0])
+        self.assertEqual(current["docs"][self.uri]["verified"], [[0, 0]])
         for _ in range(3):
             self.assertEqual(self.progress(), current)
         self.wait_for_diagnostic(lambda item: item.get("version") == 2 and not item["diagnostics"])
