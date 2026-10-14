@@ -28,6 +28,7 @@ pub struct BuildReport {
     pub status: BuildStatus,
     pub events: Vec<BuildEvent>,
     pub num_success: i32,
+    pub num_cached: i32,
     pub goals_done: i32,
     pub goals_total: i32,
     pub cache: Option<BuildCache>,
@@ -491,20 +492,44 @@ impl Project {
             .into_iter()
             .map(|id| self.modules[id as usize].0.clone())
             .collect();
+        let ranges = Self::goal_ranges(env);
         builder.module_proving_started_with_metadata(
             target,
             dependencies,
             self.get_hash(env.module_id),
-            Some(env.iter_goals().count()),
+            Some(ranges.len()),
         );
-
-        // Fast and slow modes should be interchangeable here.
-        // If we run into a bug with fast mode, try using slow mode to debug.
-        self.for_each_prover_fast(env, &mut |prover, goal_context| {
-            self.prove(prover, goal_context, builder)
+        let dependencies_verified = self.all_dependencies(env.module_id).into_iter().all(|id| {
+            let Some(dependency) = self.get_env_by_id(id) else {
+                return false;
+            };
+            builder.has_cached_module(
+                &self.modules[id as usize].0,
+                self.get_hash(id),
+                &Self::goal_ranges(dependency),
+            )
         });
+        if !builder.handle_current_module_from_cache(
+            &ranges,
+            dependencies_verified,
+            &self.build_stopped,
+        ) {
+            // Fast and slow modes should be interchangeable here.
+            self.for_each_prover_fast(env, &mut |prover, goal_context| {
+                self.prove(prover, goal_context, builder)
+            });
+        }
 
         builder.module_proving_complete(target);
+    }
+
+    fn goal_ranges(env: &Environment) -> Vec<(u32, u32)> {
+        env.iter_goals()
+            .map(|node| {
+                let goal = node.goal_context().expect("no goal context");
+                (goal.first_line, goal.last_line)
+            })
+            .collect()
     }
 
     // Create a prover for each goal in this environment, and call the callback on it.
@@ -624,21 +649,30 @@ impl Project {
 
     pub fn sync_build_report(&self) -> BuildReport {
         let mut events = vec![];
-        let (status, num_success, goals_done, goals_total, cache) = {
+        let (status, num_success, num_cached, goals_done, goals_total, cache) = {
             let mut builder = Builder::new(|event| events.push(event));
             self.build(&mut builder);
             let stats = (
                 builder.status,
                 builder.num_success,
+                builder.num_cached,
                 builder.goals_done,
                 builder.goals_total,
             );
-            (stats.0, stats.1, stats.2, stats.3, builder.take_cache())
+            (
+                stats.0,
+                stats.1,
+                stats.2,
+                stats.3,
+                stats.4,
+                builder.take_cache(),
+            )
         };
         BuildReport {
             status,
             events,
             num_success,
+            num_cached,
             goals_done,
             goals_total,
             cache,
