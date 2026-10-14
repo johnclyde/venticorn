@@ -362,13 +362,14 @@ impl Backend {
     // A lifecycle lock keeps document, project, and search identity changes ordered.
     async fn set_full_text(&self, url: Url, text: String, version: Option<i32>) {
         let _lifecycle = self.lifecycle.lock().await;
-        let path = match url.to_file_path() {
-            Ok(path) => path,
-            Err(_) => {
-                log(&format!("document ignored for non-file URI: {}", url));
-                return;
-            }
-        };
+        let path = url.to_file_path().ok();
+        if path.is_none() && (url.scheme() != "untitled" || version.is_none()) {
+            log(&format!(
+                "document update ignored for non-file URI: {}",
+                url
+            ));
+            return;
+        }
         let version = match version {
             Some(version) => {
                 if self.documents.contains_key(&url) {
@@ -406,6 +407,10 @@ impl Backend {
                     }
                 }
             }
+        };
+        let path = match path {
+            Some(path) => path,
+            None => return, // Untitled text has editor services, but no project or proof identity.
         };
         self.invalidate_build().await;
         self.set_search_task(None).await;
@@ -473,6 +478,12 @@ impl Backend {
 
     async fn handle_search_request(&self, params: SearchParams) -> jsonrpc::Result<SearchResponse> {
         let _lifecycle = self.lifecycle.lock().await;
+        if params.uri.scheme() != "file" {
+            return self.search_fail(
+                params,
+                "save the document to a file before searching for a proof",
+            );
+        }
         let doc = match self.documents.get(&params.uri) {
             Some(doc) => Arc::clone(doc.value()),
             None => return self.search_fail(params, "no text available"),
@@ -683,12 +694,13 @@ impl Backend {
             .await
             .apply_changes(&params.content_changes, params.text_document.version);
         match result {
-            Ok(()) => {
+            Ok(()) if url.scheme() == "file" => {
                 self.invalidate_build().await;
                 self.set_search_task(None).await;
                 // Retire canceled readers before giving new searches a fresh stop token.
                 drop(self.stop_build_and_get_project().await);
             }
+            Ok(()) => {}
             Err(error) => log(&format!("change ignored for {}: {}", url, error)),
         }
     }
@@ -696,13 +708,13 @@ impl Backend {
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let _lifecycle = self.lifecycle.lock().await;
         let uri = params.text_document.uri;
+        if self.documents.remove(&uri).is_none() {
+            return;
+        }
         let path = match uri.to_file_path() {
             Ok(path) => path,
             Err(_) => return,
         };
-        if self.documents.remove(&uri).is_none() {
-            return;
-        }
         self.invalidate_build().await;
         self.set_search_task(None).await;
         let mut project = self.stop_build_and_get_project().await;
