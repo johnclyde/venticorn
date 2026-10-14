@@ -92,17 +92,11 @@ fn generic_callbacks_use_their_declared_types_without_reinference() {
 fn resolved_simple_constants_keep_their_plain_normalized_identity() {
     use venticorn::normalizer::Normalizer;
     let resolved = AcornValue::new_constant(10, "p".into(), vec![], AcornType::Bool);
-    let transitional = AcornValue::Unresolved(10, "p".into(), AcornType::Bool, vec![]);
     assert_eq!(resolved.as_simple_constant(), Some((10, "p")));
     assert!(!Normalizer::new()
         .normalize(&resolved, true)
         .expect_clauses()
         .is_empty());
-    assert!(transitional.validate().is_err());
-    assert!(matches!(
-        Normalizer::new().normalize(&transitional, true),
-        venticorn::normalizer::Normalization::Error(_)
-    ));
     let generic = AcornType::Variable("T".into(), None);
     let instance = AcornValue::new_constant(
         10,
@@ -114,23 +108,31 @@ fn resolved_simple_constants_keep_their_plain_normalized_identity() {
 }
 
 #[test]
-fn unresolved_generic_metadata_cannot_bypass_normalization_through_aliases() {
-    use venticorn::normalizer::{Normalization, Normalizer};
-    let mut normalizer = Normalizer::new();
-    let known = AcornValue::new_constant(10, "known".into(), vec![], AcornType::Bool);
-    let known_clauses = normalizer.normalize(&known, true).expect_clauses();
-    let pending = AcornValue::Unresolved(10, "pending".into(), AcornType::Bool, vec!["T".into()]);
-    assert!(pending.as_simple_constant().is_none());
-    assert!(matches!(
-        normalizer.normalize(&AcornValue::new_equals(pending, known), true),
-        Normalization::Error(_)
-    ));
-    let ordinary = AcornValue::new_constant(10, "pending".into(), vec![], AcornType::Bool);
-    assert_ne!(
-        normalizer.normalize(&ordinary, true).expect_clauses(),
-        known_clauses,
-        "rejected pending metadata must not register a constant alias"
-    );
+fn pending_generic_names_cannot_create_alias_facts() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut env = Environment::new_test();
+    env.add("let known: Bool = axiom\ndefine pending<T>(value: T) -> T { value }");
+    let node_count = env.nodes.len();
+    let statement = Statement::parse_str("let alias: Bool = pending = known").unwrap();
+    let error = env
+        .add_statement(&mut Project::new_mock(), &statement)
+        .unwrap_err();
+    assert_eq!(error.message(), "name pending has unresolved type");
+    assert_eq!(error.range().start.character, 18);
+    assert_eq!(error.range().end.character, 25);
+    assert!(!env.bindings.has_identifier("alias"));
+    assert_eq!(env.nodes.len(), node_count);
+    env.add("let alias: Bool = known");
+    let value = env
+        .bindings
+        .get_constant_value("alias")
+        .unwrap()
+        .resolved()
+        .unwrap();
+    assert_eq!(value.as_name(), Some((env.module_id, "known")));
+    value.validate().unwrap();
 }
 
 #[test]
