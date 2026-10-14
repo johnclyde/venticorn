@@ -135,7 +135,7 @@ const MAGIC_METHOD_NAMES: &[(&str, TokenType)] = &[
 impl TokenType {
     pub fn is_unary(&self) -> bool {
         match self {
-            TokenType::Not => true,
+            TokenType::Not | TokenType::Minus => true,
             _ => false,
         }
     }
@@ -182,7 +182,7 @@ impl TokenType {
     // Function application implicitly has the same precedence as dot.
     pub fn value_precedence(&self) -> i8 {
         match self {
-            TokenType::Dot => 12,
+            TokenType::Dot => 13,
             TokenType::Asterisk => 11,
             TokenType::Slash => 11,
             TokenType::Plus => 10,
@@ -201,6 +201,15 @@ impl TokenType {
             TokenType::RightArrow => 3,
             TokenType::Colon => 2,
             TokenType::Comma => 1,
+            _ => 0,
+        }
+    }
+
+    // Prefix minus binds more tightly than arithmetic, but below member access.
+    pub fn unary_precedence(&self) -> i8 {
+        match self {
+            TokenType::Not => 6,
+            TokenType::Minus => 12,
             _ => 0,
         }
     }

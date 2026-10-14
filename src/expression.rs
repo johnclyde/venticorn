@@ -72,7 +72,12 @@ impl fmt::Display for Expression {
         match self {
             Expression::Singleton(token) => write!(f, "{}", token),
             Expression::Unary(token, subexpression) => {
-                write!(f, "{} {}", token, subexpression)
+                let spacer = if token.token_type == TokenType::Minus {
+                    ""
+                } else {
+                    " "
+                };
+                write!(f, "{}{}{}", token, spacer, subexpression)
             }
             Expression::Binary(left, token, right) => {
                 let left_spacer = if token.token_type.left_space() {
@@ -599,6 +604,13 @@ fn parse_partial_expressions(
             return Ok((partials, token));
         }
         if token.token_type.is_binary() {
+            if expected_type == ExpressionType::Value
+                && token.token_type.is_unary()
+                && !matches!(partials.back(), Some(PartialExpression::Expression(_)))
+            {
+                partials.push_back(PartialExpression::Unary(token));
+                continue;
+            }
             match (expected_type, token.token_type) {
                 (ExpressionType::Value, TokenType::Colon) => {
                     return Err(Error::new(&token, "unexpected colon in value"));
@@ -749,7 +761,7 @@ fn find_last_operator(
             PartialExpression::Unary(token) => {
                 // Only a unary operator at the beginning of the expression can operate last
                 if i == 0 {
-                    Some((-token.precedence(is_value), i))
+                    Some((-token.token_type.unary_precedence(), i))
                 } else {
                     None
                 }
