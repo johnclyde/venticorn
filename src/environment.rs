@@ -882,6 +882,9 @@ impl Environment {
             }
 
             StatementInfo::Structure(ss) => {
+                if let Some(constraint) = &ss.constraint {
+                    return Err(constraint.error("constrained structures are not supported yet"));
+                }
                 self.add_other_lines(statement);
                 if self.bindings.has_type_name(&ss.name) {
                     return Err(statement.error("type name already defined in this scope"));
