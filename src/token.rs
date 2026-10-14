@@ -1,7 +1,8 @@
 // Modified for Venticorn: match syntax and highlighting.
+use std::collections::BTreeMap;
 use std::fmt;
 use std::iter::Peekable;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::vec::IntoIter;
 
 use tower_lsp::lsp_types::{Position, Range, SemanticTokenType};
@@ -60,6 +61,43 @@ pub enum TokenType {
     Inductive,
     Match,
     Todo,
+}
+
+// Add a new token here if there's an alphabetical name for it.
+pub fn keyword_map() -> &'static BTreeMap<&'static str, TokenType> {
+    static KEYWORD_MAP: OnceLock<BTreeMap<&'static str, TokenType>> = OnceLock::new();
+    KEYWORD_MAP.get_or_init(|| {
+        BTreeMap::from([
+            ("let", TokenType::Let),
+            ("axiom", TokenType::Axiom),
+            ("define", TokenType::Define),
+            ("theorem", TokenType::Theorem),
+            ("type", TokenType::Type),
+            ("forall", TokenType::ForAll),
+            ("exists", TokenType::Exists),
+            ("if", TokenType::If),
+            ("by", TokenType::By),
+            ("function", TokenType::Function),
+            ("structure", TokenType::Structure),
+            ("import", TokenType::Import),
+            ("true", TokenType::True),
+            ("false", TokenType::False),
+            ("else", TokenType::Else),
+            ("class", TokenType::Class),
+            ("numerals", TokenType::Numerals),
+            ("from", TokenType::From),
+            ("solve", TokenType::Solve),
+            ("problem", TokenType::Problem),
+            ("satisfy", TokenType::Satisfy),
+            ("and", TokenType::And),
+            ("or", TokenType::Or),
+            ("not", TokenType::Not),
+            ("self", TokenType::SelfToken),
+            ("inductive", TokenType::Inductive),
+            ("match", TokenType::Match),
+            ("todo", TokenType::Todo),
+        ])
+    })
 }
 
 // The token types that we export via the language server protocol
@@ -560,37 +598,10 @@ impl Token {
                             }
                         };
                         let identifier = &line[char_index..end];
-                        match identifier {
-                            "let" => TokenType::Let,
-                            "axiom" => TokenType::Axiom,
-                            "define" => TokenType::Define,
-                            "theorem" => TokenType::Theorem,
-                            "type" => TokenType::Type,
-                            "forall" => TokenType::ForAll,
-                            "exists" => TokenType::Exists,
-                            "if" => TokenType::If,
-                            "by" => TokenType::By,
-                            "function" => TokenType::Function,
-                            "structure" => TokenType::Structure,
-                            "import" => TokenType::Import,
-                            "true" => TokenType::True,
-                            "false" => TokenType::False,
-                            "else" => TokenType::Else,
-                            "class" => TokenType::Class,
-                            "numerals" => TokenType::Numerals,
-                            "from" => TokenType::From,
-                            "solve" => TokenType::Solve,
-                            "problem" => TokenType::Problem,
-                            "satisfy" => TokenType::Satisfy,
-                            "and" => TokenType::And,
-                            "or" => TokenType::Or,
-                            "not" => TokenType::Not,
-                            "self" => TokenType::SelfToken,
-                            "inductive" => TokenType::Inductive,
-                            "match" => TokenType::Match,
-                            "todo" => TokenType::Todo,
-                            _ => TokenType::Identifier,
-                        }
+                        keyword_map()
+                            .get(identifier)
+                            .copied()
+                            .unwrap_or(TokenType::Identifier)
                     }
                     _ => TokenType::Invalid,
                 };
@@ -787,6 +798,30 @@ impl TokenIter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyword_index_matches_scanning_and_preserves_boundaries() {
+        for (&word, &kind) in keyword_map() {
+            assert_eq!(Token::scan(word)[0].token_type, kind, "{word}");
+            assert_eq!(
+                Token::scan(&format!("{word}_value"))[0].token_type,
+                TokenType::Identifier
+            );
+        }
+        assert_eq!(keyword_map().len(), 28);
+    }
+
+    #[test]
+    fn keyword_prefix_ranges_are_ordered_and_bounded() {
+        let words: Vec<_> = keyword_map()
+            .range("fo"..)
+            .take_while(|(word, _)| word.starts_with("fo"))
+            .map(|(&word, _)| word)
+            .collect();
+        assert_eq!(words, vec!["forall"]);
+        assert!(keyword_map().range("xyz"..).next().is_none());
+        assert_eq!(keyword_map().keys().next(), Some(&"and"));
+    }
 
     #[test]
     fn todo_has_keyword_metadata_and_preserves_identifier_boundaries() {
