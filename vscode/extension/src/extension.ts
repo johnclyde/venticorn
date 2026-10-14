@@ -12,7 +12,7 @@ import {
   ServerOptions,
 } from "vscode-languageclient/node";
 
-import { getServerPath } from "./server";
+import { clearServerCache, getServerPath } from "./server";
 import { Assistant } from "./assistant";
 import { ProgressTracker } from "./progress";
 
@@ -35,6 +35,15 @@ function log(message: string) {
 }
 
 export async function activate(context: ExtensionContext) {
+  context.subscriptions.push(commands.registerCommand("acorn.clearBinaryCache", async () => {
+    try {
+      const removed = await clearServerCache(context);
+      await window.showInformationMessage(`Removed ${removed} cached language server ${removed === 1 ? "binary" : "binaries"}. Configured SERVER_PATH is preserved. This does not restart the server.`);
+    } catch (error) {
+      await window.showErrorMessage(`Could not clear the language server cache: ${String(error)}`);
+    }
+  }));
+
   // Creating a document is useful even when the language server cannot start.
   context.subscriptions.push(commands.registerCommand("acorn.newFile", async () => {
     const document = await workspace.openTextDocument({ language: "acorn" });

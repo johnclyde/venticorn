@@ -60,6 +60,12 @@
         "command": "acorn.toggleAssistant",
         "title": "Assistant: Toggle",
         "description": "Toggle whether the assistant is displayed."
+      },
+      {
+        "category": "Venticorn",
+        "command": "acorn.clearBinaryCache",
+        "title": "Clear Binary Cache",
+        "description": "Remove downloaded language servers without restarting or changing SERVER_PATH."
       }
     ],
     "keybindings": [

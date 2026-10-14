@@ -63,6 +63,7 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
         return { ...disposable(), appendLine: (message) => state.output.push(message) };
       },
       onDidChangeTextEditorSelection: () => disposable(),
+      showInformationMessage: (message) => { state.notifications.push(message); return Promise.resolve(); },
       showErrorMessage: (message) => {
         state.notifications.push(message);
         return Promise.resolve();
@@ -358,4 +359,15 @@ test("startup leaves untitled Acorn documents quiet", async () => {
   await extension.activate(extension.context);
   assert.equal(extension.state.panels.length, 0);
   assert.equal(extension.state.requests, 0);
+});
+
+test("clearing an empty cache after failed startup performs no restart or request", async () => {
+  const extension = loadExtension({ failInitialization: true });
+  await extension.activate(extension.context);
+  const starts = extension.state.starts;
+  const requests = extension.state.requests;
+  await extension.state.fileCommands.get("acorn.clearBinaryCache")();
+  assert.equal(extension.state.starts, starts);
+  assert.equal(extension.state.requests, requests);
+  assert.match(extension.state.notifications.at(-1), /Removed 0.*SERVER_PATH is preserved/);
 });
