@@ -51,6 +51,27 @@ class DocumentLifecycleTest(unittest.TestCase):
     def close_document(self):
         self.session.notify("textDocument/didClose", {"textDocument": {"uri": self.uri}})
 
+    def test_untitled_lifecycle_is_isolated_from_project_proofs(self):
+        self.open()
+        self.assertIn("first", self.search()["goalName"])
+        saved_uri = self.uri
+        self.uri = "untitled:Untitled-1"
+        self.open("theorem draft { true }\n")
+        self.assertIn("save the document", self.search()["failure"])
+        def tokens():
+            return self.session.request("textDocument/semanticTokens/full", {
+                "textDocument": {"uri": self.uri},
+            })["result"]
+        self.assertTrue(tokens()["data"])
+        self.change(2, "")
+        self.assertEqual(tokens()["data"], [])
+        self.save("")
+        self.assertIn("save the document", self.search(2)["failure"])
+        self.close_document()
+        self.assertIsNone(tokens())
+        self.uri = saved_uri
+        self.assertIn("first", self.search()["goalName"])
+
     def test_edit_invalidates_cached_search_and_info(self):
         self.open()
         first = self.search()
