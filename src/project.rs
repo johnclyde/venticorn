@@ -486,36 +486,57 @@ impl Project {
             .iter()
             .map(|goal| (goal.first_line, goal.last_line))
             .collect::<Vec<_>>();
+        let hash = self.get_module_hash(env.module_id);
         builder.module_proving_started_with_metadata(
             target,
             dependencies,
-            self.get_module_hash(env.module_id).cloned(),
+            hash.cloned(),
             Some(ranges.len()),
         );
         let dependencies_verified = self.all_dependencies(env.module_id).into_iter().all(|id| {
             let Some(dependency) = self.get_env_by_id(id) else {
                 return false;
             };
-            builder.has_cached_module(
+            builder.previous_cache().matches(
                 &self.modules[id as usize].descriptor,
                 self.get_module_hash(id),
                 &Self::goal_ranges(dependency),
             )
         });
-        if !builder.handle_current_module_from_cache(
-            &goals,
-            &ranges,
-            dependencies_verified,
-            &self.build_stopped,
-        ) {
-            // Fast and slow modes should be interchangeable here.
+        // Reuse policy belongs with the parsed module graph. The builder only records
+        // outcomes and retains compatible snapshots of completed evidence.
+        let reuse_enabled = builder.dataset.is_none() && dependencies_verified;
+        if builder.stop_if_requested(&self.build_stopped) {
+            builder.module_proving_complete(target);
+            return;
+        }
+        if reuse_enabled && builder.previous_cache().matches(target, hash, &ranges) {
+            for goal in &goals {
+                if builder.stop_if_requested(&self.build_stopped) {
+                    break;
+                }
+                builder.cached_goal_finished(goal);
+            }
+        } else {
+            // Use the same proving order as the complete goal/range collection above.
+            let mut goal_index = 0;
             self.for_each_prover_fast(env, &mut |prover, goal_context| {
-                if builder.handle_goal_from_cache(
-                    &goal_context,
-                    dependencies_verified,
-                    &self.build_stopped,
-                ) {
-                    !builder.status.is_error()
+                if builder.stop_if_requested(&self.build_stopped) {
+                    return false;
+                }
+                let reused = reuse_enabled
+                    && hash.is_some_and(|hash| {
+                        builder.previous_cache().matches_prefix(
+                            target,
+                            hash,
+                            &goal_context,
+                            goal_index,
+                        )
+                    });
+                goal_index += 1;
+                if reused {
+                    builder.cached_goal_finished(&goal_context);
+                    true
                 } else {
                     self.prove(prover, goal_context, builder)
                 }

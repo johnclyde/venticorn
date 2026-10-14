@@ -278,81 +278,23 @@ impl<'a> Builder<'a> {
         });
     }
 
-    pub(crate) fn has_cached_module(
-        &self,
-        module: &ModuleRef,
-        hash: Option<&ModuleHash>,
-        expected: &[(u32, u32)],
-    ) -> bool {
-        self.old_cache.matches(module, hash, expected)
+    // Preserve explicit snapshot builders without assigning reuse policy to the reporter.
+    pub(crate) fn previous_cache(&self) -> &BuildCache {
+        &self.old_cache
     }
 
-    // Only Project supplies the current parsed ranges and verifies all dependency entries.
-    pub(crate) fn handle_current_module_from_cache(
-        &mut self,
-        goals: &[GoalContext],
-        expected: &[(u32, u32)],
-        dependencies_verified: bool,
-        stopped: &AtomicBool,
-    ) -> bool {
+    // Project checks this before reporting a reused result or starting a search.
+    pub(crate) fn stop_if_requested(&mut self, stopped: &AtomicBool) -> bool {
         if stopped.load(Ordering::Relaxed) {
             self.interrupted();
-            return true;
+            true
+        } else {
+            false
         }
-        if self.dataset.is_some() || !dependencies_verified {
-            return false;
-        }
-        let Some(current) = &self.current_module else {
-            return false;
-        };
-        if goals.len() != expected.len()
-            || current.expected_goals != Some(expected.len())
-            || !self.has_cached_module(&current.module_ref, current.hash.as_ref(), expected)
-        {
-            return false;
-        }
-        for goal in goals {
-            if stopped.load(Ordering::Relaxed) {
-                self.interrupted();
-                return true;
-            }
-            self.log_proving_success_cached(goal);
-        }
-        true
     }
 
-    // A partial hit is only available from a fully successful earlier module.
-    pub(crate) fn handle_goal_from_cache(
-        &mut self,
-        goal: &GoalContext,
-        dependencies_verified: bool,
-        stopped: &AtomicBool,
-    ) -> bool {
-        if stopped.load(Ordering::Relaxed) {
-            self.interrupted();
-            return true;
-        }
-        if self.dataset.is_some() || !dependencies_verified {
-            return false;
-        }
-        let Some(current) = &self.current_module else {
-            return false;
-        };
-        let Some(hash) = &current.hash else {
-            return false;
-        };
-        let index = (self.goals_done - current.goals_started_at) as usize;
-        if !self
-            .old_cache
-            .matches_prefix(&current.module_ref, hash, goal, index)
-        {
-            return false;
-        }
-        self.log_proving_success_cached(goal);
-        true
-    }
-
-    fn log_proving_success_cached(&mut self, goal: &GoalContext) {
+    // Project has checked the completed evidence against the current goal and dependencies.
+    pub(crate) fn cached_goal_finished(&mut self, goal: &GoalContext) {
         self.goals_done += 1;
         self.num_cached += 1;
         self.record_verified_goal(goal);
