@@ -2,6 +2,8 @@
 
 use std::{fmt, path::PathBuf, sync::Arc};
 
+use sha2::{Digest, Sha256};
+
 use crate::compilation;
 use crate::environment::Environment;
 
@@ -42,6 +44,67 @@ impl ModuleHash {
     }
     pub fn dependency_fingerprint(&self) -> ModuleFingerprint {
         self.dependencies
+    }
+}
+
+// One construction path provides deterministic source and dependency identity.
+// All dependency references are sorted before framing, independent of load IDs.
+pub(crate) struct ModuleHasher {
+    source: Sha256,
+    dependencies: Vec<(ModuleRef, ModuleFingerprint)>,
+}
+
+impl ModuleHasher {
+    pub fn new(text: &str) -> Self {
+        let mut source = Sha256::new();
+        source.update(b"venticorn:module-logic:v1\0");
+        Self::framed(&mut source, text.as_bytes());
+        Self {
+            source,
+            dependencies: Vec::new(),
+        }
+    }
+
+    pub fn add_dependency(&mut self, descriptor: &ModuleRef, fingerprint: ModuleFingerprint) {
+        self.dependencies.push((descriptor.clone(), fingerprint));
+    }
+
+    fn framed(digest: &mut Sha256, bytes: &[u8]) {
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes);
+    }
+
+    fn finish_digest(
+        mut digest: Sha256,
+        dependencies: &[(ModuleRef, ModuleFingerprint)],
+    ) -> ModuleFingerprint {
+        digest.update((dependencies.len() as u64).to_le_bytes());
+        for (descriptor, fingerprint) in dependencies {
+            match descriptor {
+                ModuleRef::Anonymous => digest.update([0]),
+                ModuleRef::Name(name) => {
+                    digest.update([1]);
+                    Self::framed(&mut digest, name.as_bytes());
+                }
+                ModuleRef::File(path) => {
+                    digest.update([2]);
+                    Self::framed(&mut digest, path.as_os_str().as_encoded_bytes());
+                }
+            }
+            digest.update(fingerprint.0);
+        }
+        ModuleFingerprint(digest.finalize().into())
+    }
+
+    pub fn finish(mut self) -> ModuleHash {
+        self.dependencies
+            .sort_by(|(left, _), (right, _)| left.cmp(right));
+        self.dependencies
+            .dedup_by(|(left, _), (right, _)| left == right);
+        let source = Self::finish_digest(self.source.clone(), &[]);
+        let dependencies = Self::finish_digest(Self::new("").source, &self.dependencies);
+        let fingerprint = Self::finish_digest(self.source, &self.dependencies);
+        ModuleHash::new(fingerprint, source, dependencies)
     }
 }
 
@@ -131,5 +194,46 @@ impl fmt::Display for ModuleRef {
             ModuleRef::Name(name) => write!(f, "{}", name),
             ModuleRef::File(path) => write!(f, "{}", path.display()),
         }
+    }
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+    use super::*;
+
+    fn logical_fingerprint(
+        text: &str,
+        dependencies: Vec<(&ModuleRef, ModuleFingerprint)>,
+    ) -> ModuleFingerprint {
+        let mut hasher = ModuleHasher::new(text);
+        for (descriptor, fingerprint) in dependencies {
+            hasher.add_dependency(descriptor, fingerprint);
+        }
+        hasher.finish().fingerprint()
+    }
+
+    #[test]
+    fn dependency_identity_is_framed_and_ordered_independently_of_ids() {
+        let a = ModuleRef::Name("a".into());
+        let b = ModuleRef::Name("b".into());
+        let file_a = ModuleRef::File(PathBuf::from("a"));
+        let leaf = logical_fingerprint("same source", vec![]);
+        let first = logical_fingerprint("parent", vec![(&a, leaf), (&b, leaf)]);
+        assert_eq!(
+            first,
+            logical_fingerprint("parent", vec![(&b, leaf), (&a, leaf)])
+        );
+        assert_eq!(
+            first,
+            logical_fingerprint("parent", vec![(&a, leaf), (&a, leaf), (&b, leaf)])
+        );
+        assert_ne!(
+            logical_fingerprint("parent", vec![(&a, leaf)]),
+            logical_fingerprint("parent", vec![(&b, leaf)])
+        );
+        assert_ne!(
+            logical_fingerprint("parent", vec![(&a, leaf)]),
+            logical_fingerprint("parent", vec![(&file_a, leaf)])
+        );
     }
 }
