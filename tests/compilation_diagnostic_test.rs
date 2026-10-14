@@ -157,11 +157,21 @@ fn invalid_member_names_cover_the_entire_right_hand_expression() {
 
 #[test]
 fn function_argument_errors_cover_complete_argument_expressions() {
-    assert_diagnostic(
-        "type Thing: axiom\ndefine accept(x: Thing) -> Bool { axiom }\nlet bad: Bool = accept(true and false)",
+    for argument in [
         "true and false",
-        "expected type Thing",
-    );
+        "true or false",
+        "true implies false",
+        "true -> false",
+        "true = false",
+        "true != false",
+        "not true",
+    ] {
+        assert_diagnostic(
+            &format!("type Thing: axiom\ndefine accept(x: Thing) -> Bool {{ axiom }}\nlet bad: Bool = accept({argument})"),
+            argument,
+            "expected type Thing",
+        );
+    }
     assert_diagnostic(
         "let bad: Bool = (true and false)(true)",
         "(true and false)",
