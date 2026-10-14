@@ -101,6 +101,13 @@ impl LiveDocument {
             .map(|line| &self.text[line.start..line.content_end])
     }
 
+    // LSP columns count UTF-16 code units, not bytes or Unicode scalars.
+    pub fn get_prefix(&self, line: u32, character: u32) -> Option<String> {
+        let start = self.byte_offset(Position::new(line, 0)).ok()?;
+        let end = self.byte_offset(Position::new(line, character)).ok()?;
+        self.text.get(start..end).map(str::to_string)
+    }
+
     pub fn saved_line(&self, line: u32) -> Option<u32> {
         self.lines
             .get(line as usize)
@@ -207,6 +214,18 @@ mod tests {
             range_length: None,
             text: text.into(),
         }
+    }
+
+    #[test]
+    fn completion_prefixes_validate_utf16_and_line_boundaries() {
+        let doc = LiveDocument::new("a😀é\r\ntext\n", 1);
+        assert_eq!(doc.get_prefix(0, 3).as_deref(), Some("a😀"));
+        assert_eq!(doc.get_prefix(0, 4).as_deref(), Some("a😀é"));
+        assert_eq!(doc.get_prefix(1, 2).as_deref(), Some("te"));
+        assert_eq!(doc.get_prefix(2, 0).as_deref(), Some(""));
+        assert_eq!(doc.get_prefix(0, 2), None);
+        assert_eq!(doc.get_prefix(0, 5), None);
+        assert_eq!(doc.get_prefix(u32::MAX, 0), None);
     }
 
     #[test]

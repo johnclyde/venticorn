@@ -715,6 +715,35 @@ impl Backend {
         Ok(())
     }
 
+    async fn completion(
+        &self,
+        params: CompletionParams,
+    ) -> jsonrpc::Result<Option<CompletionResponse>> {
+        let _lifecycle = self.lifecycle.lock().await;
+        let uri = params.text_document_position.text_document.uri;
+        let position = params.text_document_position.position;
+        let path = match uri.to_file_path() {
+            Ok(path) => path,
+            Err(_) => return Ok(None),
+        };
+        let document = match self.documents.get(&uri) {
+            Some(document) => document.value().clone(),
+            None => return Ok(None),
+        };
+        // Release the document guard before waiting on the project lock.
+        let prefix = {
+            let document = document.read().await;
+            match document.get_prefix(position.line, position.character) {
+                Some(prefix) => prefix,
+                None => return Ok(None),
+            }
+        };
+        let project = self.project.read().await;
+        Ok(project
+            .get_completions(&path, position.line, &prefix)
+            .map(CompletionResponse::Array))
+    }
+
     async fn semantic_tokens_full(
         &self,
         params: SemanticTokensParams,
@@ -858,6 +887,7 @@ impl LanguageServer for LazyBackend {
             server_info: None,
             capabilities: ServerCapabilities {
                 text_document_sync: Some(sync_options),
+                completion_provider: Some(CompletionOptions::default()),
                 ..ServerCapabilities::default()
             },
         })
@@ -892,6 +922,13 @@ impl LanguageServer for LazyBackend {
             Some(backend) => backend.shutdown().await,
             None => Ok(()),
         }
+    }
+
+    async fn completion(
+        &self,
+        params: CompletionParams,
+    ) -> jsonrpc::Result<Option<CompletionResponse>> {
+        self.initialized_backend()?.completion(params).await
     }
 
     async fn semantic_tokens_full(
