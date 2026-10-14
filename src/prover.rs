@@ -187,7 +187,7 @@ impl Prover {
         // We don't need to add the goal as as polymorphic fact since goals themselves
         // cannot be polymorphic.
         self.monomorphizer
-            .match_constants(&goal_context.goal.value());
+            .add_monomorphs(&goal_context.goal.value());
         for fact in self.monomorphizer.take_facts() {
             self.add_monomorphic_fact(fact);
         }

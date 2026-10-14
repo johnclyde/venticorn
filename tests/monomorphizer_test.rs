@@ -57,7 +57,7 @@ fn admitted_facts_and_goals_supply_demand_in_either_order() {
             assert!(output
                 .iter()
                 .any(|f| f.truthiness == Truthiness::Factual && f.value == concrete));
-            mono.match_constants(&concrete);
+            mono.add_monomorphs(&concrete);
             assert!(
                 mono.take_facts().is_empty(),
                 "repeated demand must be deduplicated"
@@ -67,13 +67,13 @@ fn admitted_facts_and_goals_supply_demand_in_either_order() {
     let mut mono = Monomorphizer::new();
     mono.add_fact(fact(claim("f", vec![variable("V")]), Truthiness::Factual));
     let concrete = claim("f", vec![AcornType::Bool]);
-    mono.match_constants(&concrete);
+    mono.add_monomorphs(&concrete);
     assert_eq!(
         mono.take_facts().len(),
         1,
         "explicit goal demand must instantiate the generic fact"
     );
-    mono.match_constants(&concrete);
+    mono.add_monomorphs(&concrete);
     assert!(mono.take_facts().is_empty());
 }
 
@@ -86,9 +86,9 @@ fn generated_instances_preserve_transitive_definition_demand() {
         Truthiness::Factual,
     ));
     mono.add_fact(fact(claim("g", vec![variable("W")]), Truthiness::Factual));
-    mono.match_constants(&predicate("f", vec![AcornType::Bool]));
+    mono.add_monomorphs(&predicate("f", vec![AcornType::Bool]));
     assert_eq!(mono.take_facts().len(), 2);
-    mono.match_constants(&predicate("g", vec![AcornType::Bool]));
+    mono.add_monomorphs(&predicate("g", vec![AcornType::Bool]));
     assert!(
         mono.take_facts().is_empty(),
         "transitive instances must be deduplicated"
@@ -102,12 +102,12 @@ fn conflicting_repeated_parameters_do_not_create_or_cache_an_instance() {
         claim("f", vec![variable("V"), variable("V")]),
         Truthiness::Factual,
     ));
-    mono.match_constants(&predicate(
+    mono.add_monomorphs(&predicate(
         "f",
         vec![AcornType::Bool, AcornType::Data(10, "Nat".into())],
     ));
     assert!(mono.take_facts().is_empty());
-    mono.match_constants(&predicate("f", vec![AcornType::Bool, AcornType::Bool]));
+    mono.add_monomorphs(&predicate("f", vec![AcornType::Bool, AcornType::Bool]));
     let output = mono.take_facts();
     assert_eq!(output.len(), 1);
     output[0].value.validate().unwrap();
@@ -122,7 +122,7 @@ fn incomplete_fact_substitutions_wait_without_panicking_or_emitting() {
         claim("g", vec![variable("W")]),
     );
     mono.add_fact(fact(value, Truthiness::Factual));
-    mono.match_constants(&predicate("f", vec![AcornType::Bool]));
+    mono.add_monomorphs(&predicate("f", vec![AcornType::Bool]));
     assert!(mono.take_facts().is_empty());
 }
 
@@ -134,10 +134,10 @@ fn constant_matching_uses_declared_positions_and_rejects_wrong_arity() {
         Truthiness::Factual,
     ));
     // An inconsistent request cannot truncate a zip or contaminate later requests.
-    mono.match_constants(&predicate("ordered", vec![AcornType::Bool]));
+    mono.add_monomorphs(&predicate("ordered", vec![AcornType::Bool]));
     assert!(mono.take_facts().is_empty());
     let nat = AcornType::Data(10, "Nat".into());
-    mono.match_constants(&predicate("ordered", vec![nat.clone(), AcornType::Bool]));
+    mono.add_monomorphs(&predicate("ordered", vec![nat.clone(), AcornType::Bool]));
     let emitted = mono.take_facts();
     assert_eq!(emitted.len(), 1);
     assert_eq!(
