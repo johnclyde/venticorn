@@ -127,3 +127,12 @@ fn grouped_list_errors_cover_the_entire_expression() {
         Range::new(Position::new(0, 0), Position::new(0, 14))
     );
 }
+
+#[test]
+fn misplaced_binders_are_highlighted_as_complete_parser_expressions() {
+    assert_diagnostic(
+        "theorem bad { true forall(x: Bool) { x } }",
+        "forall(x: Bool) { x }",
+        "expected a grouping",
+    );
+}

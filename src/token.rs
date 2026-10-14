@@ -7,7 +7,7 @@ use std::vec::IntoIter;
 
 use tower_lsp::lsp_types::{Position, Range, SemanticTokenType};
 
-use crate::compilation::{Error, Result};
+use crate::compilation::{Error, ErrorSource, Result};
 
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum TokenType {
@@ -381,6 +381,12 @@ impl fmt::Display for Token {
     }
 }
 
+impl ErrorSource for Token {
+    fn error(&self, message: &str) -> Error {
+        Error::new(self, self, message)
+    }
+}
+
 impl Token {
     // A token to represent an empty file.
     pub fn empty() -> Self {
@@ -391,10 +397,6 @@ impl Token {
             start: 0,
             len: 0,
         }
-    }
-
-    pub fn error(&self, message: &str) -> Error {
-        Error::new(self, self, message)
     }
 
     pub fn text(&self) -> &str {
