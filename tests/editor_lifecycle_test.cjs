@@ -34,6 +34,7 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
     window: {
       visibleTextEditors: visibleEditors.map(editor => Object.assign(editor, { setDecorations() {} })),
       activeTextEditor: visibleEditors[0],
+      onDidChangeVisibleTextEditors: disposable,
       onDidChangeActiveTextEditor: listen(state.activeEditorChanges),
       createWebviewPanel: (...args) => {
         const handlers = [];

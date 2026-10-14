@@ -32,6 +32,9 @@ export class ProgressTracker {
 
   constructor(private client: ProgressClient, private log: (message: string) => void, private clock: Clock = defaultClock) {
     this.subscriptions.push(
+      window.onDidChangeVisibleTextEditors(editors => {
+        for (const editor of editors) this.updateDecorations(editor);
+      }),
       workspace.onDidChangeTextDocument(event => {
         if (this.isTracked(event.document) && event.contentChanges.length > 0) this.invalidate();
       }),
