@@ -86,7 +86,7 @@ impl Normalizer {
         self.skolem_types.push(acorn_type.clone());
         // Hacky. Turn the int into an s-name
         let name = format!("s{}", skolem_index);
-        AcornValue::Unresolved(SKOLEM, name, acorn_type, vec![])
+        AcornValue::Constant(SKOLEM, name, acorn_type, vec![])
     }
 
     pub fn is_skolem(&self, atom: &Atom) -> bool {
@@ -436,11 +436,11 @@ impl Normalizer {
             Atom::True => AcornValue::Bool(true),
             Atom::GlobalConstant(i) => {
                 let (module, name) = self.constant_map.get_global_info(*i);
-                AcornValue::Unresolved(module, name.to_string(), acorn_type, vec![])
+                AcornValue::Constant(module, name.to_string(), acorn_type, vec![])
             }
             Atom::LocalConstant(i) => {
                 let (module, name) = self.constant_map.get_local_info(*i);
-                AcornValue::Unresolved(module, name.to_string(), acorn_type, vec![])
+                AcornValue::Constant(module, name.to_string(), acorn_type, vec![])
             }
             Atom::Monomorph(i) => {
                 let (module, name, params) = self.type_map.get_monomorph_info(*i);
@@ -459,7 +459,7 @@ impl Normalizer {
             }
             Atom::Skolem(i) => {
                 let acorn_type = self.skolem_types[*i as usize].clone();
-                AcornValue::Unresolved(SKOLEM, format!("s{}", i), acorn_type, vec![])
+                AcornValue::Constant(SKOLEM, format!("s{}", i), acorn_type, vec![])
             }
         }
     }
@@ -589,7 +589,11 @@ mod tests {
     fn evaluate_boolean(value: &AcornValue, variable: bool) -> bool {
         match value {
             AcornValue::Bool(value) => *value,
-            AcornValue::Unresolved(_, name, _, _) if name == "p" => variable,
+            AcornValue::Unresolved(_, name, _, _) | AcornValue::Constant(_, name, _, _)
+                if name == "p" =>
+            {
+                variable
+            }
             AcornValue::Not(inner) => !evaluate_boolean(inner, variable),
             AcornValue::Binary(operator, left, right) => {
                 let left = evaluate_boolean(left, variable);
