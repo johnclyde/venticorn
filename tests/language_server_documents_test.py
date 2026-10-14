@@ -43,9 +43,9 @@ class DocumentLifecycleTest(unittest.TestCase):
             "textDocument": {"uri": self.uri}, "text": text,
         })
 
-    def search(self, version=1, search_id=1):
+    def search(self, version=1, search_id=1, line=0):
         return self.session.request("acorn/search", {
-            "uri": self.uri, "version": version, "selectedLine": 0, "id": search_id,
+            "uri": self.uri, "version": version, "selectedLine": line, "id": search_id,
         })["result"]
 
     def close_document(self):
@@ -83,6 +83,59 @@ class DocumentLifecycleTest(unittest.TestCase):
         self.close_document()
         self.save("theorem ghost { true }\n")
         self.assertIn("no text", self.search(5)["failure"])
+
+    def edit_batch(self, version, changes):
+        self.session.notify("textDocument/didChange", {
+            "textDocument": {"uri": self.uri, "version": version},
+            "contentChanges": changes,
+        })
+
+    @staticmethod
+    def edit(line, start, end, text):
+        return {"range": {
+            "start": {"line": line, "character": start},
+            "end": {"line": line, "character": end},
+        }, "text": text}
+
+    def tokens(self):
+        return self.session.request("textDocument/semanticTokens/full", {
+            "textDocument": {"uri": self.uri},
+        })["result"]["data"]
+
+    def test_unicode_edits_preserve_crlf_and_current_semantic_positions(self):
+        self.open("// 😀\r\ntheorem first { true }\r\n")
+        self.assertEqual(self.tokens()[:5], [0, 0, 5, 1, 0])
+        self.edit_batch(2, [self.edit(0, 3, 5, "é"), self.edit(1, 8, 13, "second")])
+        self.assertEqual(self.tokens()[:5], [0, 0, 4, 1, 0])
+        self.save("// é\r\ntheorem second { true }\r\n")
+        self.assertIn("second", self.search(2, 2, line=1)["goalName"])
+
+    def test_invalid_edit_rolls_back_entire_notification_and_version(self):
+        self.open("// 😀\r\ntheorem first { true }\r\n")
+        self.edit_batch(2, [self.edit(1, 8, 13, "wrong"), self.edit(0, 4, 5, "x")])
+        self.assertEqual(self.tokens()[:5], [0, 0, 5, 1, 0])
+        self.assertIn("first", self.search(line=1)["goalName"])
+        # The rejected notification did not consume version 2.
+        self.edit_batch(2, [self.edit(1, 8, 13, "valid")])
+        self.save("// 😀\r\ntheorem valid { true }\r\n")
+        self.assertIn("valid", self.search(2, 2, line=1)["goalName"])
+
+    def test_mismatched_save_cannot_commit_stale_text(self):
+        self.open()
+        self.change(2, "theorem current { true }\n")
+        self.save("theorem first { true }\n")
+        self.assertTrue(self.search(2)["loading"])
+        self.save("theorem current { true }\n")
+        self.assertIn("current", self.search(2)["goalName"])
+
+    def test_full_replacement_then_ranged_edit_in_same_notification(self):
+        self.open()
+        self.edit_batch(2, [
+            {"text": "theorem replacement { true }\n"},
+            self.edit(0, 8, 19, "final"),
+        ])
+        self.save("theorem final { true }\n")
+        self.assertIn("final", self.search(2)["goalName"])
 
 
 if __name__ == "__main__":
