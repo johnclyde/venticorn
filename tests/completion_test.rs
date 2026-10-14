@@ -129,7 +129,9 @@ fn completion_does_not_reuse_words_before_the_cursor_or_in_comments() {
         "from nat import Nat.s",
         "from nat import (sav",
         "from nat import Nat,,sav",
-        "Nat.",
+        "Nat..",
+        "missing.",
+        ".",
     ] {
         assert!(
             labels(&project, "/mock/main.ac", 0, prefix).is_empty(),
@@ -295,4 +297,28 @@ fn member_aliases_and_alias_namespaces_preserve_declaration_visibility() {
             "{prefix}"
         );
     }
+}
+
+#[test]
+fn after_dot_completion_lists_only_resolved_exports_or_applicable_members() {
+    let mut project = project();
+    project
+        .update_file(
+            Path::new("/mock/main.ac").to_path_buf(),
+            "from nat import Nat, saved\ntype Renamed: Nat\nlet alias: Nat = saved\n",
+            1,
+        )
+        .unwrap();
+    project.expect_ok("main");
+    for (prefix, expected) in [
+        ("nat.", vec!["Nat", "saved"]),
+        ("Nat.", vec!["induction", "suc", "zero"]),
+        ("Renamed.", vec!["induction", "suc", "zero"]),
+        ("alias.", vec!["suc"]),
+    ] {
+        let mut actual = labels(&project, "/mock/main.ac", 2, prefix);
+        actual.sort();
+        assert_eq!(actual, expected, "{prefix}");
+    }
+    assert!(labels(&project, "/mock/main.ac", 2, "").is_empty());
 }

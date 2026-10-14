@@ -902,7 +902,10 @@ impl LanguageServer for LazyBackend {
             server_info: None,
             capabilities: ServerCapabilities {
                 text_document_sync: Some(sync_options),
-                completion_provider: Some(CompletionOptions::default()),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".to_string()]),
+                    ..CompletionOptions::default()
+                }),
                 ..ServerCapabilities::default()
             },
         })

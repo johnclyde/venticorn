@@ -25,7 +25,8 @@ reopen it or reload the editor window.
 ## Name completion
 
 While editing a saved file, request suggestions for a partial name such as `Nat.s` or
-`from nat import N`. Completion uses evaluated library definitions and the nearest unchanged
+`from nat import N`. Typing a dot after a module, type, or value opens suggestions for its
+available names. Completion uses evaluated library definitions and the nearest unchanged
 source line to find the current proof scope. It includes local aliases and proof parameters,
 and distinguishes instance members from type members. Comments and invalid cursor positions
 produce no suggestions.
