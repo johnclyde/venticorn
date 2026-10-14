@@ -1,5 +1,6 @@
 // Modified for Venticorn: bounded build identity and explicit diagnostic events.
 
+use std::collections::HashMap;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
@@ -88,6 +89,47 @@ struct ModuleInfo {
     direct_dependencies: Vec<ModuleRef>,
     fingerprint: Option<ModuleFingerprint>,
     good: bool,
+    expected_goals: Option<usize>,
+    goals_started_at: i32,
+    verified: Vec<(u32, u32)>,
+}
+
+// Completed verification metadata. These records are not proof certificates, and are
+// not used to skip verification. A future reader must also validate its trust policy.
+#[derive(Debug)]
+pub struct CachedModule {
+    fingerprint: ModuleFingerprint,
+    direct_dependencies: Vec<ModuleRef>,
+    verified: Vec<(u32, u32)>,
+}
+
+impl CachedModule {
+    pub fn fingerprint(&self) -> ModuleFingerprint {
+        self.fingerprint
+    }
+
+    pub fn direct_dependencies(&self) -> &[ModuleRef] {
+        &self.direct_dependencies
+    }
+
+    pub fn verified(&self) -> &[(u32, u32)] {
+        &self.verified
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct BuildCache {
+    modules: HashMap<ModuleRef, CachedModule>,
+}
+
+impl BuildCache {
+    pub fn num_modules(&self) -> usize {
+        self.modules.len()
+    }
+
+    pub fn get(&self, module: &ModuleRef) -> Option<&CachedModule> {
+        self.modules.get(module)
+    }
 }
 
 // The Builder exists to manage a single build.
@@ -114,6 +156,9 @@ pub struct Builder<'a> {
 
     // The current module we are proving. Not set when we are loading.
     current_module: Option<ModuleInfo>,
+
+    new_cache: BuildCache,
+    cache_ready: bool,
 
     // If dataset is not None, we are gathering data for training.
     pub dataset: Option<Dataset>,
@@ -154,6 +199,8 @@ impl<'a> Builder<'a> {
             goals_done: 0,
             log_when_slow: false,
             current_module: None,
+            new_cache: BuildCache::default(),
+            cache_ready: false,
             dataset: None,
             num_success: 0,
             num_activated: 0,
@@ -232,7 +279,7 @@ impl<'a> Builder<'a> {
 
     // Called when we start proving a module.
     pub fn module_proving_started(&mut self, module: &ModuleRef) {
-        self.module_proving_started_with_metadata(module, Vec::new(), None);
+        self.module_proving_started_with_metadata(module, Vec::new(), None, None);
     }
 
     pub(crate) fn module_proving_started_with_metadata(
@@ -240,6 +287,7 @@ impl<'a> Builder<'a> {
         module: &ModuleRef,
         mut direct_dependencies: Vec<ModuleRef>,
         fingerprint: Option<ModuleFingerprint>,
+        expected_goals: Option<usize>,
     ) {
         direct_dependencies.sort();
         direct_dependencies.dedup();
@@ -248,12 +296,41 @@ impl<'a> Builder<'a> {
             direct_dependencies,
             fingerprint,
             good: true,
+            expected_goals,
+            goals_started_at: self.goals_done,
+            verified: Vec::new(),
         });
     }
 
     pub fn module_proving_complete(&mut self, module: &ModuleRef) {
         assert_eq!(self.module(), module);
-        self.current_module = None;
+        let info = self.current_module.take().expect("no current module");
+        let completed = (self.goals_done - info.goals_started_at) as usize;
+        if info.good && info.expected_goals == Some(completed) && info.verified.len() == completed {
+            if let Some(fingerprint) = info.fingerprint {
+                self.new_cache.modules.insert(
+                    info.module_ref,
+                    CachedModule {
+                        fingerprint,
+                        direct_dependencies: info.direct_dependencies,
+                        verified: info.verified,
+                    },
+                );
+            }
+        }
+    }
+
+    // Cache metadata is only exposed after every target finishes. In particular, a
+    // fatal event's display progress is not evidence that proof searches completed.
+    pub(crate) fn finish_build(&mut self, completed: bool) {
+        self.cache_ready = completed && !self.status.is_error() && self.current_module.is_none();
+        if !self.cache_ready {
+            self.new_cache.modules.clear();
+        }
+    }
+
+    pub fn cache(&self) -> Option<&BuildCache> {
+        self.cache_ready.then_some(&self.new_cache)
     }
 
     // Called when a single proof search completes.
@@ -289,6 +366,11 @@ impl<'a> Builder<'a> {
                     } else {
                         // Both of these count as a success.
                         self.num_success += 1;
+                        if let Some(module) = &mut self.current_module {
+                            module
+                                .verified
+                                .push((goal_context.first_line, goal_context.last_line));
+                        }
                         if self.log_when_slow && elapsed_f64 > 0.1 {
                             self.log_proving_info(
                                 &prover,
@@ -430,5 +512,58 @@ impl<'a> Builder<'a> {
         println!("{:.2} average clauses", num_clauses);
         let proving_time_ms = 1000.0 * self.proving_time / self.num_success as f64;
         println!("{:.1} ms average proving time", proving_time_ms);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::project::Project;
+
+    fn simulate_result(outcome: Outcome, expected_goals: usize) -> Builder<'static> {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem identity { true }");
+        let module = ModuleRef::Name("main".into());
+        let env = project.get_env_by_ref(&module).unwrap();
+        let node = env.iter_goals().next().unwrap();
+        let goal = node.goal_context().unwrap();
+        let mut prover = Prover::new(&project, false);
+        for fact in node.usable_facts(&project) {
+            prover.add_fact(fact);
+        }
+        prover.set_goal(&goal);
+        assert_eq!(prover.quick_search(), Outcome::Success);
+        let mut builder = Builder::new(|_| {});
+        builder.log_when_slow = true;
+        builder.module_loaded(env);
+        builder.module_proving_started_with_metadata(
+            &module,
+            Vec::new(),
+            project.get_hash(env.module_id),
+            Some(expected_goals),
+        );
+        builder.search_finished(&prover, &goal, outcome, Duration::from_secs(1));
+        builder.module_proving_complete(&module);
+        builder.finish_build(true);
+        builder
+    }
+
+    #[test]
+    fn slow_success_keeps_cache_ranges_as_well_as_events() {
+        let builder = simulate_result(Outcome::Success, 1);
+        let cached = builder
+            .cache()
+            .unwrap()
+            .get(&ModuleRef::Name("main".into()))
+            .unwrap();
+        assert_eq!(cached.verified(), &[(0, 0)]);
+    }
+
+    #[test]
+    fn interrupted_or_incomplete_modules_never_enter_the_cache() {
+        let interrupted = simulate_result(Outcome::Interrupted, 1);
+        assert!(interrupted.cache().is_none());
+        let incomplete = simulate_result(Outcome::Success, 2);
+        assert_eq!(incomplete.cache().unwrap().num_modules(), 0);
     }
 }

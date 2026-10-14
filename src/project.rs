@@ -423,6 +423,7 @@ impl Project {
         }
 
         if builder.status.is_error() {
+            builder.finish_build(false);
             return;
         }
 
@@ -432,9 +433,16 @@ impl Project {
         for (target, env) in envs {
             self.verify_target(target, env, builder);
             if builder.status.is_error() {
+                builder.finish_build(false);
                 return;
             }
         }
+        builder.finish_build(
+            !self
+                .build_stopped
+                .load(std::sync::atomic::Ordering::Relaxed)
+                && builder.goals_done == builder.goals_total,
+        );
     }
 
     // Verifies all goals within this target.
@@ -450,6 +458,7 @@ impl Project {
             target,
             dependencies,
             self.get_hash(env.module_id),
+            Some(env.iter_goals().count()),
         );
 
         // Fast and slow modes should be interchangeable here.
