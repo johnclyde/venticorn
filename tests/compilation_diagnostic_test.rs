@@ -112,3 +112,18 @@ fn numeric_class_type_errors_cover_the_complete_type_expression() {
         "numeric class variables must be the class type",
     );
 }
+
+#[test]
+fn grouped_list_errors_cover_the_entire_expression() {
+    use venticorn::expression::{Expression, Terminator};
+    use venticorn::token::{TokenIter, TokenType};
+    let mut tokens = TokenIter::new(Token::scan("left and right"));
+    let (expression, _) =
+        Expression::parse_value(&mut tokens, Terminator::Is(TokenType::NewLine)).unwrap();
+    let error = expression.flatten_list(false).unwrap_err();
+    assert!(error.message().contains("expected a grouped list"));
+    assert_eq!(
+        error.range(),
+        Range::new(Position::new(0, 0), Position::new(0, 14))
+    );
+}
