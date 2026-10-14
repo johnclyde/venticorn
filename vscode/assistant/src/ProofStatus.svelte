@@ -3,25 +3,32 @@
 </script>
 
 {#if status.outcome === null}
-  <pre>Working...</pre>
+  <p>Working...</p>
 {:else if status.outcome === "Inconsistent"}
-  <pre>Local assumptions are inconsistent.</pre>
-  <pre>If this is a proof by contradiction, put a `false` at the end of this block.</pre>
-  <pre>If there shouldn't be a contradiction, please report a bug!</pre>
+  <p>Local assumptions are inconsistent.</p>
+  <p>If this is a proof by contradiction, put a `false` at the end of this block.</p>
+  <p>If there shouldn't be a contradiction, please report a bug!</p>
 {:else if status.steps === null}
-  <pre>We could not find a proof.</pre>
+  <p>We could not find a proof.</p>
 {:else if status.code === null}
-  <pre>Error during code generation:</pre>
-  <pre>    {status.codeError}</pre>
+  <p>Error during code generation:</p>
+  <div class="proof-code">{status.codeError}</div>
 {:else if !status.needsSimplification}
-  <pre>The proposition follows trivially.</pre>
+  <p>The proposition follows trivially.</p>
 {:else if status.code.length === 0}
-  <pre>We found a proof, but it needs to be simplified, and we couldn't
-       decide how to simplify it. Sorry!</pre>
+  <p>We found a proof, but it needs to be simplified, and we couldn't
+       decide how to simplify it. Sorry!</p>
 {:else}
-  <pre>{["The proof needs to be simplified. Try this:\n"]
-      .concat(status.code)
-      .join("\n\t")
-      .replace(/\t/g, "\u00A0".repeat(4))}</pre>
+  <p>The proof needs to be simplified. Try this:</p>
+  <div class="proof-code">{status.code.join("\n")}</div>
   <button on:click>Insert code</button>
 {/if}
+
+<style>
+  .proof-code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding-inline-start: 4ch;
+    tab-size: 4;
+  }
+</style>

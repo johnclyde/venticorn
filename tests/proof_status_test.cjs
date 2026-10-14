@@ -52,3 +52,30 @@ test("running and inconsistent searches keep their own status messages", async (
   assert.match(await render({ outcome: null, steps: null, code: null }), /Working/);
   assert.match(await render({ outcome: "Inconsistent", steps: null, code: null }), /Local assumptions are inconsistent/);
 });
+
+
+test("status prose uses host typography without preformatted elements", async () => {
+  const cases = [
+    {},
+    { outcome: null, steps: null, code: null },
+    { outcome: "Inconsistent", steps: null, code: null },
+    { outcome: "Exhausted", steps: null, code: null },
+    { code: null, codeError: "cannot format this proof" },
+    { needsSimplification: true, code: [] },
+    { needsSimplification: true, code: ["claim"] },
+  ];
+  for (const status of cases) {
+    const html = await render(status);
+    assert.doesNotMatch(html, /<pre[ >]/);
+    assert.match(html, /<p>/);
+  }
+});
+
+test("generated code preserves nested indentation, line breaks and escaping", async () => {
+  const code = ["if condition {", "\t<script>nested</script>", "    spaced", "}"];
+  const html = await render({ needsSimplification: true, code });
+  assert.match(html, /class="proof-code[^"]*"/);
+  assert.ok(html.includes("if condition {\n\t&lt;script>nested&lt;/script>\n    spaced\n}"));
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /Insert code/);
+});
