@@ -111,6 +111,10 @@ impl Environment {
         self.line_types.len() as u32 + self.first_line
     }
 
+    pub fn first_line(&self) -> u32 {
+        self.first_line
+    }
+
     pub fn last_line(&self) -> u32 {
         self.next_line() - 1
     }
