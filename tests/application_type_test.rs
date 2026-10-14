@@ -200,10 +200,7 @@ fn inference_preserves_declared_parameter_order_instead_of_sorting_names() {
     let AcornValue::Constant(c) = *app.function else {
         panic!("expected resolved constant")
     };
-    assert_eq!(
-        c.params,
-        vec![("Z".into(), AcornType::Bool), ("A".into(), nat)]
-    );
+    assert_eq!(c.params, vec![AcornType::Bool, nat]);
 }
 
 #[test]
@@ -291,10 +288,7 @@ fn resolved_type_transformations_preserve_declaration_namespaces() {
         c.instance_type,
         identity(AcornType::Arbitrary("T".into(), None)).get_type()
     );
-    assert_eq!(
-        c.params,
-        vec![("A".into(), AcornType::Arbitrary("T".into(), None))]
-    );
+    assert_eq!(c.params, vec![AcornType::Arbitrary("T".into(), None)]);
 }
 
 #[test]
