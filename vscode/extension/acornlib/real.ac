@@ -1,0 +1,1450 @@
+from nat import Nat
+from int import Int
+from rat import Rat
+
+// Using the Dedekind cut definition of reals.
+
+define is_cut(f: Rat -> Bool) -> Bool {
+    exists(x: Rat) {
+        f(x)
+    } and exists(x: Rat) {
+        not f(x)
+    }
+}
+
+define is_lower(f: Rat -> Bool) -> Bool {
+    forall(x: Rat, y: Rat) {
+        f(y) and x < y -> f(x)
+    }
+}
+
+define is_greatest(f: Rat -> Bool, x: Rat) -> Bool {
+    f(x) and forall(y: Rat) {
+        f(y) -> y <= x
+    }
+}
+
+define has_greatest(f: Rat -> Bool) -> Bool {
+    exists(x: Rat) {
+        is_greatest(f, x)
+    }
+}
+
+define is_dedekind_cut(f: Rat -> Bool) -> Bool {
+    is_cut(f) and is_lower(f) and not has_greatest(f)
+}
+
+// "All numbers y such that x is greater then y" is the cut that embeds x.
+
+theorem gt_is_cut(r: Rat) {
+    is_cut(r.gt)
+} by {
+    r - (r - Rat.1) = Rat.1
+    r > (r - Rat.1)
+    not r > r
+}
+
+theorem gt_is_lower(r: Rat) {
+    is_lower(r.gt)
+} by {
+    forall(x: Rat, y: Rat) {
+        if r > y and x < y {
+            y < r
+            x < r
+            r > x
+        }
+    }
+}
+
+theorem gt_has_no_greatest(r: Rat) {
+    not has_greatest(r.gt)
+} by {
+    if has_greatest(r.gt) {
+        let q: Rat satisfy {
+            is_greatest(r.gt, q)
+        }
+        r > q
+        let diff: Rat = r - q
+        diff.is_positive
+        q + diff = r
+
+        // z will be a counterexample.
+        // It's constructed to be larger than q.
+        let z: Rat = q + diff / Rat.2
+        (diff / Rat.2).is_positive
+        q < z
+
+        // z is still less than r, though. Since q is assu
+        z + diff / Rat.2 = r
+        z < r
+        r > z
+
+        // Since q is the greatest satisfying r.gt(_). But this contradicts.
+        q >= z
+        false
+    }
+}
+
+theorem gt_is_dedekind_cut(r: Rat) {
+    is_dedekind_cut(r.gt)
+} by {
+    gt_is_cut(r)
+    gt_is_lower(r)
+    gt_has_no_greatest(r)
+}
+
+// Real numbers are defined by a function of which rationals they are greater than.
+structure Real {
+    gt_rat: Rat -> Bool
+} constraint {
+    is_dedekind_cut(gt_rat)
+}
+
+class Real {
+    let from_rat: Rat -> Real = function(r: Rat) {
+        Real.new(r.gt)
+    }
+
+    let 0: Real = Real.from_rat(Rat.0)
+
+    define is_positive(self) -> Bool {
+        self.gt_rat(Rat.0)
+    }
+
+    define is_negative(self) -> Bool {
+        self != Real.0 and not self.is_positive
+    }
+
+    // For reals, <= is the comparison operator by which the others are defined. 
+    define lte(self, other: Real) -> Bool {
+        forall(r: Rat) {
+            self.gt_rat(r) -> other.gt_rat(r)
+        }
+    }
+
+    define lt(self, other: Real) -> Bool {
+        self != other and self.lte(other)
+    }
+
+    define gte(self, other: Real) -> Bool {
+        other.lte(self)
+    }
+
+    define gt(self, other: Real) -> Bool {
+        other.lt(self)
+    }
+}
+
+theorem gt_imp_from_rat_gt(r1: Rat, r2: Rat) {
+    r1 > r2 -> Real.from_rat(r1).gt_rat(r2)
+}
+
+theorem from_rat_gt_imp_gt(r1: Rat, r2: Rat) {
+    Real.from_rat(r1).gt_rat(r2) -> r1 > r2
+}
+
+theorem not_gt_rat_self(r: Rat) {
+    not Real.from_rat(r).gt_rat(r)
+}
+
+theorem zero_not_positive {
+    not Real.0.is_positive
+} by {
+    not Rat.0 > Rat.0
+    not Real.from_rat(Rat.0).gt_rat(Rat.0)
+    not Real.from_rat(Rat.0).is_positive
+}
+
+theorem lte_self(r: Real) {
+    r <= r
+}
+
+theorem gte_self(r: Real) {
+    r >= r
+}
+
+theorem lte_trans(a: Real, b: Real, c: Real) {
+    a <= b and b <= c -> a <= c
+}
+
+theorem gt_rat_sorts(z: Real, r1: Rat, r2: Rat) {
+    z.gt_rat(r1) and not z.gt_rat(r2) -> r1 < r2
+} by {
+    if r2 < r1 {
+        is_lower(z.gt_rat)
+        z.gt_rat(r2)
+        false
+    }
+    if r2 = r1 {
+        z.gt_rat(r2)
+        false
+    }
+}
+
+theorem lte_or_gte(a: Real, b: Real) {
+    a <= b or b <= a
+} by {
+    if not a <= b {
+        let r1: Rat satisfy {
+            a.gt_rat(r1) and not b.gt_rat(r1)
+        }
+        forall(r2: Rat) {
+            if b.gt_rat(r2) {
+                r2 < r1
+                a.gt_rat(r2)
+            }
+        }
+        b <= a
+    }
+}
+
+theorem lte_both_ways_imp_eq(a: Real, b: Real) {
+    a <= b and b <= a -> a = b
+} by {
+    forall(r: Rat) {
+        if a.gt_rat(r) {
+            b.gt_rat(r)
+            a.gt_rat(r) = b.gt_rat(r)
+        } else {
+            not a.gt_rat(r)
+            not b.gt_rat(r)
+            a.gt_rat(r) = b.gt_rat(r)
+        }
+    }
+    a.gt_rat = b.gt_rat
+    a = b    
+}
+
+theorem gt_rat_imp_gt_from_rat(a: Real, r: Rat) {
+    a.gt_rat(r) -> a > Real.from_rat(r)
+} by {
+    if not Real.from_rat(r) <= a {
+        let r2: Rat satisfy {
+            Real.from_rat(r).gt_rat(r2) and not a.gt_rat(r2)
+        }
+        r < r2
+        a.gt_rat(r2)
+        false
+    }
+    if Real.from_rat(r) = a {
+        false
+    }
+}
+
+theorem gt_from_rat_imp_gt_rat(a: Real, r: Rat) {
+    a > Real.from_rat(r) -> a.gt_rat(r)
+} by {
+    not a <= Real.from_rat(r)
+    let r2: Rat satisfy {
+        a.gt_rat(r2) and not Real.from_rat(r).gt_rat(r2)
+    }
+}
+
+theorem pos_gt_zero(a: Real) {
+    a.is_positive -> a > Real.0
+} by {
+    a.is_positive
+    a.gt_rat(Rat.0)
+    a > Real.from_rat(Rat.0)
+}
+
+theorem gt_zero_imp_pos(a: Real) {
+    a > Real.0 -> a.is_positive
+} by {
+    a > Real.0
+    a > Real.from_rat(Rat.0)
+    a.gt_rat(Rat.0)
+    a.is_positive
+}
+
+theorem neg_lt_zero(a: Real) {
+    a.is_negative -> a < Real.0
+} by {
+    if not a < Real.0 {
+        Real.0 <= a
+        if a = Real.0 {
+            false
+        } else {
+            a > Real.0
+            a.is_positive
+            false
+        }
+    }
+}
+
+theorem lt_zero_imp_neg(a: Real) {
+    a < Real.0 -> a.is_negative
+} by {
+    if not a.is_negative {
+        a.is_positive
+        a > Real.0
+        a >= Real.0
+        a = Real.0
+        false
+    }
+}
+
+// Informally, z1 + z2 > r.
+define add_gt(z1: Real, z2: Real, r: Rat) -> Bool {
+    exists(r1: Rat, r2: Rat) {
+        z1.gt_rat(r1) and z2.gt_rat(r2) and r = r1 + r2
+    }
+}
+
+theorem add_gt_symm(z1: Real, z2: Real, r: Rat) {
+    add_gt(z1, z2, r) -> add_gt(z2, z1, r)
+} by {
+    let (r1: Rat, r2: Rat) satisfy {
+        z1.gt_rat(r1) and z2.gt_rat(r2) and r = r1 + r2
+    }
+    add_gt(z2, z1, r2 + r1)
+}
+
+theorem exists_lesser_rat(z: Real) {
+    exists(r: Rat) {
+        z.gt_rat(r)
+    }
+} by {
+    is_cut(z.gt_rat)
+}
+
+theorem exists_gte_rat(z: Real) {
+    exists(r: Rat) {
+        not z.gt_rat(r)
+    }
+} by {
+    is_cut(z.gt_rat)
+}
+
+theorem add_gt_is_cut(z1: Real, z2: Real) {
+    is_cut(add_gt(z1, z2))
+} by {
+    // Prove there's something lower
+    let lower1: Rat satisfy {
+        z1.gt_rat(lower1)
+    }
+    let lower2: Rat satisfy {
+        z2.gt_rat(lower2)
+    }
+    add_gt(z1, z2, lower1 + lower2)
+
+    // Prove there's something higher
+    let upper1: Rat satisfy {
+        not z1.gt_rat(upper1)
+    }
+    let upper2: Rat satisfy {
+        not z2.gt_rat(upper2)
+    }
+    if add_gt(z1, z2, upper1 + upper2) {
+        let (f1: Rat, f2: Rat) satisfy {
+            z1.gt_rat(f1) and z2.gt_rat(f2) and upper1 + upper2 = f1 + f2
+        } 
+        f1 < upper1
+        f2 < upper2
+        f1 + f2 < upper1 + f2
+        upper1 + f2 < upper1 + upper2
+        f1 + f2 < upper1 + upper2
+        false
+    }
+}
+
+theorem add_gt_is_lower(z1: Real, z2: Real) {
+    is_lower(add_gt(z1, z2))
+} by {
+    forall(r1: Rat, r2: Rat) {
+        if add_gt(z1, z2, r2) and r1 < r2 {
+            let (f1: Rat, f2: Rat) satisfy {
+                z1.gt_rat(f1) and z2.gt_rat(f2) and r2 = f1 + f2
+            }
+            (r2 - r1).is_positive
+            f1 + f2 + -(r2 - r1) = r2 + -(r2 - r1)
+            f1 + f2 + -(r2 - r1) = r1
+            f1 + (f2 + -(r2 - r1)) = r1
+            f2 + -(r2 - r1) < f2
+            z2.gt_rat(f2 + -(r2 - r1))
+            add_gt(z1, z2, r1)
+        }
+    }
+}
+
+theorem add_gt_has_no_greatest(z1: Real, z2: Real) {
+    not has_greatest(add_gt(z1, z2))
+} by {
+    if has_greatest(add_gt(z1, z2)) {
+        let q: Rat satisfy {
+            is_greatest(add_gt(z1, z2), q)
+        }
+        add_gt(z1, z2, q)
+        let (f1: Rat, f2: Rat) satisfy {
+            z1.gt_rat(f1) and z2.gt_rat(f2) and q = f1 + f2
+        }
+        not is_greatest(z1.gt_rat, f1)
+        let g1: Rat satisfy {
+            z1.gt_rat(g1) and not g1 <= f1
+        }
+        f1 < g1
+        f1 + f2 < g1 + f2
+        add_gt(z1, z2, g1 + f2)
+        q < g1 + f2
+        not g1 + f2 <= q
+        not is_greatest(add_gt(z1, z2), q)
+        false
+    }
+}
+
+theorem add_gt_is_dedekind_cut(z1: Real, z2: Real) {
+    is_dedekind_cut(add_gt(z1, z2))
+}
+
+class Real {
+    define add(self, other: Real) -> Real {
+        Real.new(add_gt(self, other))
+    }
+}
+
+theorem add_gt_rat(z1: Real, z2: Real, r1: Rat, r2: Rat) {
+    z1.gt_rat(r1) and z2.gt_rat(r2) -> (z1 + z2).gt_rat(r1 + r2)
+}
+
+theorem add_comm(a: Real, b: Real) {
+    a + b = b + a
+} by {
+    forall(r: Rat) {
+        if add_gt(a, b, r) {
+            add_gt(b, a, r)
+            add_gt(a, b, r) = add_gt(b, a, r)
+        } else {
+            not add_gt(b, a, r)
+            add_gt(a, b, r) = add_gt(b, a, r)
+        }
+        add_gt(a, b, r) = add_gt(b, a, r)
+    }
+    add_gt(a, b) = add_gt(b, a)
+}
+
+theorem gt_rat_adding_three(z1: Real, z2: Real, z3: Real, q: Rat) {
+    (z1 + z2 + z3).gt_rat(q) -> exists(r1: Rat, r2: Rat, r3: Rat) {
+        z1.gt_rat(r1) and z2.gt_rat(r2) and z3.gt_rat(r3) and q = r1 + r2 + r3
+    }
+} by {
+    add_gt(z1 + z2, z3, q)
+    let (r12: Rat, r3: Rat) satisfy {
+        (z1 + z2).gt_rat(r12) and z3.gt_rat(r3) and q = r12 + r3
+    }
+    add_gt(z1, z2, r12)
+    let (r1: Rat, r2: Rat) satisfy {
+        z1.gt_rat(r1) and z2.gt_rat(r2) and r12 = r1 + r2
+    }
+}
+
+theorem gt_rat_adding_three_converse(z1: Real, z2: Real, z3: Real, q: Rat) {
+    exists(r1: Rat, r2: Rat, r3: Rat) {
+        z1.gt_rat(r1) and z2.gt_rat(r2) and z3.gt_rat(r3) and q = r1 + r2 + r3
+    } -> (z1 + z2 + z3).gt_rat(q)
+} by {
+    let (r1: Rat, r2: Rat, r3: Rat) satisfy {
+        z1.gt_rat(r1) and z2.gt_rat(r2) and z3.gt_rat(r3) and q = r1 + r2 + r3
+    }
+    add_gt(z1, z2 + z3, r1 + r2 + r3)
+}
+
+theorem add_assoc(a: Real, b: Real, c: Real) {
+    a + b + c = a + (b + c)
+} by {
+    forall(r: Rat) {
+        if (a + b + c).gt_rat(r) {
+            let (ra: Rat, rb: Rat, rc: Rat) satisfy {
+                a.gt_rat(ra) and b.gt_rat(rb) and c.gt_rat(rc) and r = ra + rb + rc
+            }
+            (b + c).gt_rat(rb + rc)
+            (a + (b + c)).gt_rat(r)
+            (a + b + c).gt_rat(r) = (a + (b + c)).gt_rat(r)
+        } else {
+            if (a + (b + c)).gt_rat(r) {
+                add_gt(a, b + c, r)
+                let (ra: Rat, rbc: Rat) satisfy {
+                    a.gt_rat(ra) and (b + c).gt_rat(rbc) and r = ra + rbc
+                }
+                add_gt(b, c, rbc)
+                let (rb: Rat, rc: Rat) satisfy {
+                    b.gt_rat(rb) and c.gt_rat(rc) and rbc = rb + rc
+                }
+                r = ra + rb + rc
+                false
+            }
+            (a + b + c).gt_rat(r) = (a + (b + c)).gt_rat(r)
+        }
+    }
+    (a + b + c).gt_rat = (a + (b + c)).gt_rat
+}
+
+theorem gt_imp_not_lte(a: Real, b: Real) {
+    a > b -> not a <= b
+}
+
+theorem not_lte_imp_gt(a: Real, b: Real) {
+    not a <= b -> a > b
+}
+
+theorem gte_imp_not_lt(a: Real, b: Real) {
+    a >= b -> not a < b
+}
+
+theorem not_lt_imp_gte(a: Real, b: Real) {
+    not a < b -> a >= b
+}
+
+theorem rat_separating(a: Real, b: Real) {
+    a < b -> exists(r: Rat) {
+        b.gt_rat(r) and not a.gt_rat(r)
+    }
+} by {
+    a != b
+    a.gt_rat != b.gt_rat
+    let r: Rat satisfy {
+        a.gt_rat(r) != b.gt_rat(r)
+    }
+    if a.gt_rat(r) {
+        not b.gt_rat(r)
+        false
+    }
+    not a.gt_rat(r)
+    b.gt_rat(r)
+}
+
+theorem rat_between_rat_and_real(z: Real, r1: Rat) {
+    z.gt_rat(r1) -> exists(r2: Rat) {
+        z.gt_rat(r2) and r1 < r2
+    }
+} by {
+    not is_greatest(z.gt_rat, r1)
+    exists(r2: Rat) {
+        z.gt_rat(r2) and not r2 <= r1
+    }
+}
+
+// Strict version of rat_separating.
+theorem rat_between_reals(a: Real, b: Real) {
+    a < b -> exists(r: Rat) {
+        a < Real.from_rat(r) and Real.from_rat(r) < b
+    }
+} by {
+    // r1 is less than b, but it might be equal to a.
+    // We need to use the "no greatest" property of b.gt_rat.
+    let r1: Rat satisfy {
+        b.gt_rat(r1) and not a.gt_rat(r1)
+    }
+    not (a > Real.from_rat(r1))
+    a <= Real.from_rat(r1)
+    let r2: Rat satisfy {
+        b.gt_rat(r2) and r1 < r2
+    }
+    a < Real.from_rat(r2)
+    Real.from_rat(r2) < b
+}
+
+theorem add_gt_trans(z1: Real, z2: Real, r1: Rat, r2: Rat) {
+    add_gt(z1, z2, r1) and r1 > r2 -> add_gt(z1, z2, r2)
+}
+
+theorem add_gt_imp_gt_from_rat(z1: Real, z2: Real, r: Rat) {
+    add_gt(z1, z2, r) -> z1 + z2 > Real.from_rat(r)
+} by {
+    Real.new(add_gt(z1, z2)).gt_rat(r)
+    Real.new(add_gt(z1, z2)) > Real.from_rat(r)
+}
+
+theorem gt_from_rat_imp_add_gt(z1: Real, z2: Real, r: Rat) {
+    z1 + z2 > Real.from_rat(r) -> add_gt(z1, z2, r)
+} by {
+    Real.new(add_gt(z1, z2)) > Real.from_rat(r)
+    Real.new(add_gt(z1, z2)).gt_rat(r)
+}
+
+theorem lt_lte_trans(a: Real, b: Real, c: Real) {
+    a < b and b <= c -> a < c
+} by {
+    not b <= a
+    not c <= a
+}
+
+theorem lte_lt_trans(a: Real, b: Real, c: Real) {
+    a <= b and b < c -> a < c
+} by {
+    not b < a
+    not c < a
+}
+
+theorem lt_trans(a: Real, b: Real, c: Real) {
+    a < b and b < c -> a < c
+} by {
+    not b < a
+    not c < b
+}
+
+theorem add_gt_from_rat_imp_rat_add_gt(p: Rat, q: Rat, r: Rat) {
+    add_gt(Real.from_rat(p), Real.from_rat(q), r) -> p + q > r
+} by {
+    let (rp: Rat, rq: Rat) satisfy {
+        Real.from_rat(p).gt_rat(rp) and Real.from_rat(q).gt_rat(rq) and r = rp + rq
+    }
+    p > rp
+    q > rq
+    p + q > rp + rq
+    p + q > r
+}
+
+theorem rat_add_gt_imp_add_gt_from_rat(p: Rat, q: Rat, r: Rat) {
+    p + q > r -> add_gt(Real.from_rat(p), Real.from_rat(q), r)
+} by {
+    let d: Rat = p + q - r
+    d.is_positive
+    d + r = p + q
+    p + q = r + d
+    p + q - d = r + d - d
+    p + q - d = r
+    let rp: Rat = p - d / Rat.2
+    (d / Rat.2).is_positive
+    rp < p
+    Real.from_rat(p).gt_rat(rp)
+    let rq: Rat = q - d / Rat.2
+    rq < q
+    Real.from_rat(q).gt_rat(rq)
+    rp + rq = (p - d / Rat.2) + (q - d / Rat.2)
+    rp + rq = (p - d / Rat.2) + q - d / Rat.2
+    p + q - d / Rat.2 = p - d / Rat.2 + q
+    rp + rq = p + q - d / Rat.2 - d / Rat.2
+    rp + rq = p + q - (d / Rat.2 + d / Rat.2)
+    rp + rq = p + q - d
+}
+
+theorem add_from_rat(p: Rat, q: Rat) {
+    Real.from_rat(p) + Real.from_rat(q) = Real.from_rat(p + q)
+} by {
+    if Real.from_rat(p) + Real.from_rat(q) < Real.from_rat(p + q) {
+        let r: Rat satisfy {
+            Real.from_rat(p) + Real.from_rat(q) < Real.from_rat(r) and Real.from_rat(r) < Real.from_rat(p + q)
+        }
+        p + q > r
+        add_gt(Real.from_rat(p), Real.from_rat(q), r)
+        Real.from_rat(p) + Real.from_rat(q) > Real.from_rat(r)
+        false
+    }
+    if Real.from_rat(p + q) < Real.from_rat(p) + Real.from_rat(q) {
+        let r: Rat satisfy {
+            Real.from_rat(p + q) < Real.from_rat(r) and Real.from_rat(r) < Real.from_rat(p) + Real.from_rat(q)
+        }
+        add_gt(Real.from_rat(p), Real.from_rat(q), r)
+        p + q > r
+        Real.from_rat(p) + Real.from_rat(q) > Real.from_rat(r)
+        false
+    }
+}
+
+theorem lte_add_right(a: Real, b: Real, c: Real) {
+    a <= b -> a + c <= b + c
+} by {
+    forall(r: Rat) {
+        if (a + c).gt_rat(r) {
+            add_gt(a, c, r)
+            let (ra: Rat, rc: Rat) satisfy {
+                a.gt_rat(ra) and c.gt_rat(rc) and r = ra + rc
+            }
+            b.gt_rat(ra)
+            (b + c).gt_rat(r)
+        }
+    }
+}
+
+theorem lte_add_left(a: Real, b: Real, c: Real) {
+    a <= b -> c + a <= c + b
+}
+
+theorem lt_add_converse(a: Real, b: Real, c: Real) {
+    a + c < b + c -> a < b
+}
+
+theorem add_from_rat_zero(r: Rat) {
+    Real.from_rat(r) + Real.0 = Real.from_rat(r)
+}
+
+theorem add_zero_right(a: Real) {
+    a + Real.0 = a
+} by {
+    if a + Real.0 < a {
+        let r: Rat satisfy {
+            a + Real.0 < Real.from_rat(r) and Real.from_rat(r) < a
+        }
+        Real.from_rat(r) <= a
+        Real.from_rat(r) + Real.0 <= a + Real.0
+        Real.from_rat(r) <= a + Real.0
+        false
+    }
+    if a < a + Real.0 {
+        let r: Rat satisfy {
+            a < Real.from_rat(r) and Real.from_rat(r) < a + Real.0
+        }
+        a <= Real.from_rat(r)
+        a + Real.0 <= Real.from_rat(r) + Real.0
+        a + Real.0 <= Real.from_rat(r)
+        false
+    }
+}
+
+theorem add_zero_left(a: Real) {
+    Real.0 + a = a
+}
+
+theorem from_rat_maintains_lt(p: Rat, q: Rat) {
+    p < q -> Real.from_rat(p) < Real.from_rat(q)
+}
+
+theorem add_lt_lt(a: Real, b: Real, c: Real, d: Real) {
+    a < b and c < d -> a + c < b + d
+} by {
+    // Find two rationals between each pair of real numbers
+    let rab1: Rat satisfy {
+        a < Real.from_rat(rab1) and Real.from_rat(rab1) < b
+    }
+    let rab2: Rat satisfy {
+        Real.from_rat(rab1) < Real.from_rat(rab2) and Real.from_rat(rab2) < b
+    }
+    let rcd1: Rat satisfy {
+        c < Real.from_rat(rcd1) and Real.from_rat(rcd1) < d
+    }
+    let rcd2: Rat satisfy {
+        Real.from_rat(rcd1) < Real.from_rat(rcd2) and Real.from_rat(rcd2) < d
+    }
+
+    // We can get a non-strict inequality in reals. Here's the left side.
+    a + c <= Real.from_rat(rab1) + c
+    Real.from_rat(rab1) + c <= Real.from_rat(rab1) + Real.from_rat(rcd1)
+    a + c <= Real.from_rat(rab1) + Real.from_rat(rcd1)
+
+    // Now we get the right side.
+    Real.from_rat(rab2) + d <= b + d
+    Real.from_rat(rab2) + Real.from_rat(rcd2) <= Real.from_rat(rab2) + d
+    Real.from_rat(rab2) + Real.from_rat(rcd2) <= b + d
+
+    // Then we can get the strict inequality in the middle from the all-rational formula.
+    rab1 < rab2
+    rcd1 < rcd2
+    rab1 + rcd1 < rab2 + rcd2
+    Real.from_rat(rab1 + rcd1) < Real.from_rat(rab2 + rcd2)
+    Real.from_rat(rab1) + Real.from_rat(rcd1) < Real.from_rat(rab2) + Real.from_rat(rcd2)
+
+    Real.from_rat(rab1) + Real.from_rat(rcd1) < Real.from_rat(rab2) + Real.from_rat(rcd2)
+    a + c < Real.from_rat(rab2) + Real.from_rat(rcd2)
+    Real.from_rat(rab2) + Real.from_rat(rcd2) <= b + d
+}
+
+theorem lte_some_rat(a: Real) {
+    exists(r: Rat) {
+        a <= Real.from_rat(r)
+    }
+} by {
+    let r: Rat satisfy {
+        not a.gt_rat(r)
+    }
+}
+
+theorem lt_some_rat(a: Real) {
+    exists(r: Rat) {
+        a < Real.from_rat(r)
+    }
+} by {
+    let r1: Rat satisfy {
+        a <= Real.from_rat(r1)
+    }
+    r1 < r1 + Rat.1
+    Real.from_rat(r1) < Real.from_rat(r1 + Rat.1)
+    a < Real.from_rat(r1 + Rat.1)
+}
+
+theorem gt_some_rat(a: Real) {
+    exists(r: Rat) {
+        a > Real.from_rat(r)
+    }
+}
+
+class Real {
+    let from_int: Int -> Real = function(n: Int) {
+        Real.from_rat(Rat.from_int(n))
+    }
+}
+
+theorem from_rat_maintains_lte(p: Rat, q: Rat) {
+    p <= q -> Real.from_rat(p) <= Real.from_rat(q)
+} by {
+    if p < q {
+        Real.from_rat(p) < Real.from_rat(q)
+    }
+    Real.from_rat(p) <= Real.from_rat(q)
+}
+
+theorem gt_some_int(a: Real) {
+    exists(n: Int) {
+        a > Real.from_int(n)
+    }
+} by {
+    let r: Rat satisfy {
+        a > Real.from_rat(r)
+    }
+    Rat.from_int(rat.floor(r)) <= r
+    Real.from_rat(Rat.from_int(rat.floor(r))) <= Real.from_rat(r)
+    Real.from_int(rat.floor(r)) <= Real.from_rat(r)
+}
+
+theorem lt_some_int(a: Real) {
+    exists(n: Int) {
+        a < Real.from_int(n)
+    }
+} by {
+    let r: Rat satisfy {
+        a < Real.from_rat(r)
+    }
+    let n: Int satisfy {
+        r < Rat.from_int(n)
+    }
+    a < Real.from_int(n)
+}
+
+theorem real_neg_imp_rat_neg(r: Rat) {
+    Real.from_rat(r).is_negative -> r.is_negative
+} by {
+    Real.from_rat(r) < Real.0
+    Real.0.gt_rat(r)
+    r < Rat.0
+}
+
+theorem lt_some_int_cancel(m: Int, n: Int) {
+    Real.from_int(m) < Real.from_int(n) -> m < n
+} by {
+    Real.from_rat(Rat.from_int(m)) < Real.from_rat(Rat.from_int(n))
+    Rat.from_int(m) < Rat.from_int(n)
+}
+
+theorem floor_exists(a: Real) {
+    exists(n: Int) {
+        Real.from_int(n) <= a and a < Real.from_int(n + Int.1)
+    }
+} by {
+    if not floor_exists(a) {
+        // We will show by induction that a is greater than all integers.
+        // First let's find a base case.
+        let m: Int satisfy {
+            a > Real.from_int(m)
+        }
+        Real.from_int(m) <= a
+
+        // Now we define the function to induct on.
+        let f: Nat -> Bool = function(k: Nat) {
+            Real.from_int(m + Int.from_nat(k)) <= a
+        }
+        f(Nat.0)
+
+        // Inductive step
+        forall(x: Nat) {
+            if f(x) {
+                Real.from_int(m + Int.from_nat(x)) <= a
+                Real.from_int(m + Int.from_nat(x) + Int.1) <= a
+                Real.from_int(m + Int.from_nat(x.suc)) <= a
+                f(x.suc)
+            }
+        }
+
+        // By induction we have:
+        forall(x: Nat) {
+            f(x)
+        }
+
+        // But m plus some really big number has to be greater than a.
+        let big: Int satisfy {
+            a < Real.from_int(big)
+        }
+        f(int.abs(m) + int.abs(big))
+        Real.from_int(m + Int.from_nat(int.abs(m) + int.abs(big))) <= a
+        Real.from_int(m + Int.from_nat(int.abs(m) + int.abs(big))) < Real.from_int(big)
+        m + Int.from_nat(int.abs(m) + int.abs(big)) < big
+        m + Int.from_nat(int.abs(m)) + Int.from_nat(int.abs(big)) < big
+        big <= Int.from_nat(int.abs(big))
+        Int.0 <= m + Int.from_nat(int.abs(m))
+        Int.0 + big <= m + Int.from_nat(int.abs(m)) + Int.from_nat(int.abs(big))
+        false
+    }
+}
+
+let floor(a: Real) -> n: Int satisfy {
+    Real.from_int(n) <= a and a < Real.from_int(n + Int.1)
+}
+
+class Real {
+    let 1: Real = Real.from_rat(Rat.1)
+}
+
+theorem add_from_int(m: Int, n: Int) {
+    Real.from_int(m) + Real.from_int(n) = Real.from_int(m + n)
+} by {
+    Real.from_int(m) + Real.from_int(n) = Real.from_rat(Rat.from_int(m)) + Real.from_int(n)
+    Real.from_rat(Rat.from_int(m)) + Real.from_int(n) = Real.from_rat(Rat.from_int(m)) + Real.from_rat(Rat.from_int(n))
+    Real.from_rat(Rat.from_int(m) + Rat.from_int(n)) = Real.from_int(m + n)
+    Real.from_int(m + n) = Real.from_int(m + n)
+}
+
+theorem lt_add_one(a: Real) {
+    a < a + Real.1
+} by {
+    if a = Real.from_int(floor(a)) {
+        floor(a) < floor(a) + Int.1
+        Real.from_int(floor(a)) < Real.from_int(floor(a) + Int.1)
+        a < Real.from_int(floor(a) + Int.1)
+        a < Real.from_int(floor(a)) + Real.1
+        a < a + Real.1
+    } else {
+        // This is kind of a trick
+        Real.from_int(floor(a)) <= a
+        Real.from_int(floor(a)) < a
+        a < Real.from_int(floor(a) + Int.1)
+        Real.from_int(floor(a)) + a < a + (Real.from_int(floor(a) + Int.1))
+        Real.from_int(floor(a)) + a < a + (Real.from_int(floor(a)) + Real.1)        
+        a + Real.from_int(floor(a)) < a + Real.1 + Real.from_int(floor(a))
+        a < a + Real.1
+    }
+}
+
+theorem lt_add_pos_int(a: Real, n: Int) {
+    n.is_positive -> a < a + Real.from_int(n)
+} by {
+    Int.1 <= n
+    Real.1 <= Real.from_int(n)
+    a + Real.1 <= a + Real.from_int(n)
+    a < a + Real.1
+}
+
+theorem lt_add_pos_rat(a: Real, r: Rat) {
+    r.is_positive -> a < a + Real.from_rat(r)
+} by {
+    Real.0 <= Real.from_rat(r)
+    a <= a + Real.from_rat(r)
+    if a = a + Real.from_rat(r) {
+        // We can keep sticking on r's. Induct on f:
+        let f: Nat -> Bool = function(k: Nat) {
+            a = a + Real.from_rat(r * Rat.from_int(Int.from_nat(k)))
+        }
+
+        // Base case
+        r * Rat.from_int(Int.from_nat(Nat.0)) = Rat.0
+        f(Nat.0)
+
+        // Inductive step
+        forall(x: Nat) {
+            if f(x) {
+                a = a + Real.from_rat(r * Rat.from_int(Int.from_nat(x)))
+                a = (a + Real.from_rat(r)) + Real.from_rat(r * Rat.from_int(Int.from_nat(x)))
+                a = a + (Real.from_rat(r) + Real.from_rat(r * Rat.from_int(Int.from_nat(x))))
+                a = a + Real.from_rat(r + r * Rat.from_int(Int.from_nat(x)))
+                a = a + Real.from_rat(r * Rat.1 + r * Rat.from_int(Int.from_nat(x)))
+                a = a + Real.from_rat(r * (Rat.1 + Rat.from_int(Int.from_nat(x))))
+                a = a + Real.from_rat(r * Rat.from_int(Int.from_nat(x.suc)))
+                f(x.suc)
+            }
+        }
+
+        // Via induction
+        forall(x: Nat) {
+            f(x)
+        }
+
+        // Just add enough r's to get to an integer
+        f(int.abs(r.denom))
+        a = a + Real.from_rat(r * Rat.from_int(Int.from_nat(int.abs(r.denom))))
+        r.denom.is_positive
+        Int.from_nat(int.abs(r.denom)) = r.denom
+        a = a + Real.from_rat(r * Rat.from_int(r.denom))
+        a = a + Real.from_rat(Rat.from_int(r.num))
+        r.num.is_positive
+        false
+    }
+}
+
+theorem lt_add_pos(a: Real, b: Real) {
+    b.is_positive -> a < a + b
+} by {
+    Real.0 < b
+    let r: Rat satisfy {
+        Real.0 < Real.from_rat(r) and Real.from_rat(r) < b
+    }
+    Real.from_rat(r).is_positive
+    r.is_positive
+    a < a + Real.from_rat(r)
+    a + Real.from_rat(r) <= a + b
+    a < a + b
+}
+
+theorem lt_add_rat_right(a: Real, b: Real, r: Rat) {
+    a < b -> a + Real.from_rat(r) < b + Real.from_rat(r)
+} by {
+  a + Real.0 < b + Real.0
+  a + (Real.from_rat(r) + Real.from_rat(-r)) < b + (Real.from_rat(r) + Real.from_rat(-r))
+  a + Real.from_rat(r) + Real.from_rat(-r) < b + Real.from_rat(r) + Real.from_rat(-r)
+}
+
+theorem lt_add_rat_left(a: Real, b: Real, r: Rat) {
+    a < b -> Real.from_rat(r) + a < Real.from_rat(r) + b
+}
+
+theorem add_rat_eps_between(a: Real, b: Real) {
+    a < b -> exists(eps: Rat) {
+        eps.is_positive and a + Real.from_rat(eps) < b
+    }
+} by {
+    let r1: Rat satisfy {
+        a < Real.from_rat(r1) and Real.from_rat(r1) < b
+    }
+    let r2: Rat satisfy {
+        Real.from_rat(r1) < Real.from_rat(r2) and Real.from_rat(r2) < b
+    }
+    r1 + (r2 - r1) = r2
+    let eps: Rat = r2 - r1
+    r1 < r2
+    eps.is_positive
+    r1 + eps = r2
+    Real.from_rat(r1) + Real.from_rat(eps) = Real.from_rat(r2)
+    
+    // Combine them
+    a + Real.from_rat(eps) < Real.from_rat(r1) + Real.from_rat(eps)
+    a + Real.from_rat(eps) < Real.from_rat(r2)
+    Real.from_rat(r2) < b
+    a + Real.from_rat(eps) < b
+}
+
+theorem lt_add_right(a: Real, b: Real, c: Real) {
+    a < b -> a + c < b + c
+} by {
+    let r: Rat satisfy {
+        r.is_positive and a + Real.from_rat(r) < b
+    }
+    let hr: Real = Real.from_rat(r / Rat.2)
+    a < a + Real.from_rat(r / Rat.2)
+    a < a + hr
+    c < c + Real.from_rat(r / Rat.2)
+    c < c + hr 
+    hr + hr = Real.from_rat(r)
+    a + c < (a + hr) + (c + hr)
+    a + c < (a + hr + hr) + c
+    a + c < (a + Real.from_rat(r)) + c
+    (a + Real.from_rat(r)) + c <= b + c
+}
+
+theorem lt_add_left(a: Real, b: Real, c: Real) {
+    a < b -> c + a < c + b
+}
+
+theorem lt_add_cancel_right(a: Real, b: Real, c: Real) {
+    a + c = b + c -> a = b
+} by {
+    not a + c < b + c
+    not b + c < a + c
+    not b < a
+    a <= b
+}
+
+theorem lt_add_cancel_left(a: Real, b: Real, c: Real) {
+    c + a = c + b -> a = b
+}
+
+// Whether -a > r. Which is just a < -r.
+define neg_gt(a: Real, r: Rat) -> Bool {
+    a < Real.from_rat(-r)
+}
+
+theorem lower_rat(a: Real) {
+    exists(r: Rat) {
+        Real.from_rat(r) < a
+    }
+} by {
+    Real.from_int(floor(a)) <= a
+    let p: Rat satisfy {
+        Real.from_rat(p) <= a
+    }
+    let q: Rat satisfy {
+        q < p
+    }
+    Real.from_rat(q) < a
+}
+
+theorem neg_gt_is_cut(a: Real) {
+    is_cut(neg_gt(a))
+} by {
+    // Something not in the cut
+    let r1: Rat satisfy {
+        Real.from_rat(r1) < a
+    }
+    not a < Real.from_rat(r1)
+    not a < Real.from_rat(--r1)
+    not neg_gt(a, -r1)
+
+    // Something in the cut
+    let r2: Rat satisfy {
+        a < Real.from_rat(r2)
+    }
+    a < Real.from_rat(--r2)
+    neg_gt(a, -r2)
+}
+
+theorem neg_gt_is_lower(a: Real) {
+    is_lower(neg_gt(a))
+} by {
+    forall(r1: Rat, r2: Rat) {
+        if neg_gt(a, r2) and r1 < r2 {
+            a < Real.from_rat(-r2)
+            -r2 < -r1
+            Real.from_rat(-r2) < Real.from_rat(-r1)
+            neg_gt(a, r1)
+        }
+    }
+}
+
+theorem neg_gt_has_no_greatest(a: Real) {
+    not has_greatest(neg_gt(a))
+} by {
+    if has_greatest(neg_gt(a)) {
+        let q: Rat satisfy {
+            is_greatest(neg_gt(a), q)
+        }
+        neg_gt(a, q)
+        a < Real.from_rat(-q)
+        let r: Rat satisfy {
+            r.is_positive and a + Real.from_rat(r) < Real.from_rat(-q)
+        }
+        a + Real.from_rat(r) + Real.from_rat(-r) < Real.from_rat(-q) + Real.from_rat(-r)
+        a + (Real.from_rat(r) + Real.from_rat(-r)) < Real.from_rat(-q) + Real.from_rat(-r)
+        a + Real.from_rat(r + -r) < Real.from_rat(-q) + Real.from_rat(-r)
+        a < Real.from_rat(-q) + Real.from_rat(-r)
+        a < Real.from_rat(-q + -r)
+        a < Real.from_rat(-(q + r))
+        neg_gt(a, q + r)
+        q + r <= q
+        q < q + r
+        false
+    }
+}
+
+theorem neg_gt_is_dedekind_cut(a: Real) {
+    is_dedekind_cut(neg_gt(a))
+}
+
+class Real {
+    define neg(self) -> Real {
+        Real.new(neg_gt(self))
+    }
+}
+
+theorem lt_rat_neg(a: Real, r: Rat) {
+    a < Real.from_rat(-r) -> -a > Real.from_rat(r)
+} by {
+    Real.new(neg_gt(a)).gt_rat(r)
+    Real.new(neg_gt(a)) > Real.from_rat(r)
+}
+
+theorem neg_from_rat(r: Rat) {
+    -Real.from_rat(r) = Real.from_rat(-r)
+} by {
+    if -Real.from_rat(r) > Real.from_rat(-r) {
+        Real.new(neg_gt(Real.from_rat(r))) > Real.from_rat(-r)
+        Real.new(neg_gt(Real.from_rat(r))).gt_rat(-r)
+        neg_gt(Real.from_rat(r), -r)
+        Real.from_rat(--r).gt_rat(r)
+        r < --r
+        false
+    }
+    if -Real.from_rat(r) < Real.from_rat(-r) {
+        let q: Rat satisfy {
+            -Real.from_rat(r) < Real.from_rat(q) and Real.from_rat(q) < Real.from_rat(-r)
+        }
+        q < -r
+        --r < -q
+        r < -q
+        Real.from_rat(r) < Real.from_rat(-q)
+        -Real.from_rat(r) > Real.from_rat(q)
+        false
+    }
+}
+
+theorem neg_gt_rat(a: Real, r: Rat) {
+    -a > Real.from_rat(r) -> a < Real.from_rat(-r)
+} by {
+    Real.new(neg_gt(a)) > Real.from_rat(r)
+    Real.new(neg_gt(a)).gt_rat(r)
+}
+
+theorem gt_rat_neg(a: Real, r: Rat) {
+    a > Real.from_rat(-r) -> -a < Real.from_rat(r)
+} by {
+    if -a > Real.from_rat(r) {
+        a < Real.from_rat(-r)
+        false
+    }
+    Real.from_rat(-r) < a
+    let eps: Rat satisfy {
+        eps.is_positive and Real.from_rat(-r) + Real.from_rat(eps) < a
+    }
+    if -a = Real.from_rat(r) {
+        -a > Real.from_rat(r - eps)
+        false
+    }
+}
+
+theorem neg_lt_rat(a: Real, r: Rat) {
+    -a < Real.from_rat(r) -> a > Real.from_rat(-r)
+} by {
+    if a < Real.from_rat(-r) {
+        -a > Real.from_rat(r)
+        false
+    }
+    -a != Real.from_rat(r)
+    Real.from_rat(-r) != a
+    Real.from_rat(-r) < a
+    let eps: Rat satisfy {
+        eps.is_positive and Real.from_rat(-r) + Real.from_rat(eps) < a
+    }
+    if -a = Real.from_rat(r) {
+        -a < Real.from_rat(r + eps)
+        false
+    }
+}
+
+theorem lt_swap_neg(a: Real, b: Real) {
+    a < b -> -b < -a
+} by {
+    let r: Rat satisfy {
+        a < Real.from_rat(r) and Real.from_rat(r) < b
+    }
+    -b < -Real.from_rat(r)
+    a < Real.from_rat(--r)
+    -a > Real.from_rat(-r)
+    -Real.from_rat(r) < -a
+}
+
+theorem lt_neg_swap_neg(a: Real, b: Real) {
+    a < -b -> b < -a
+} by {
+    let r: Rat satisfy {
+        a < Real.from_rat(r) and Real.from_rat(r) < -b
+    }
+}
+
+theorem neg_lt_swap_neg(a: Real, b: Real) {
+    -a < b -> -b < a
+} by {
+    let r: Rat satisfy {
+        -a < Real.from_rat(r) and Real.from_rat(r) < b
+    }
+}
+
+theorem neg_lt_neg_swap_neg(a: Real, b: Real) {
+    -a < -b -> b < a
+} by {
+    let r: Rat satisfy {
+        -a < Real.from_rat(r) and Real.from_rat(r) < -b
+    }
+}
+
+theorem neg_neg(a: Real) {
+    -(-a) = a
+} by {
+    if -(-a) > a {
+        -a < -a
+        false
+    }
+    if -(-a) < a {
+        -a > -a
+        false
+    }
+}
+
+theorem neg_zero {
+    -Real.0 = Real.0
+}
+
+theorem neg_pos_is_neg(a: Real) {
+    a.is_positive -> (-a).is_negative
+}
+
+theorem neg_neg_is_pos(a: Real) {
+    (-a).is_negative -> a.is_positive
+}
+
+theorem gt_add_neg(a: Real, b: Real) {
+    b.is_negative -> a > a + b
+}
+
+theorem rat_window(a: Real, eps: Rat) {
+    eps.is_positive -> exists(r: Rat) {
+        Real.from_rat(r) < a and a < Real.from_rat(r + eps)
+    }
+} by {
+    a < a + Real.from_rat(eps)
+    let top: Rat satisfy {
+        a < Real.from_rat(top) and Real.from_rat(top) < a + Real.from_rat(eps)
+    }
+    let r: Rat = top + -eps
+    r + eps = top
+    Real.from_rat(r) < a
+    a < Real.from_rat(top)
+}
+
+theorem add_neg_lte_zero(a: Real) {
+    a + -a <= Real.0
+} by {
+    if a + -a > Real.0 {
+        let r: Rat satisfy {
+            Real.0 < Real.from_rat(r) and Real.from_rat(r) < a + -a
+        }
+        Real.from_rat(r) > Real.0
+        Real.from_rat(r).gt_rat(Rat.0)
+        Rat.0 < r
+        r.is_positive
+        let b: Rat satisfy {
+            Real.from_rat(b) < a and a < Real.from_rat(b + r)
+        }
+        -a < Real.from_rat(-b)
+        a + -a < Real.from_rat(b + r) + Real.from_rat(-b)
+        a + -a < Real.from_rat(b + r + -b)
+        a + -a < Real.from_rat(r)
+        false
+    }
+}
+
+theorem add_neg_gte_zero(a: Real) {
+    a + -a >= Real.0
+} by {
+    if a + -a < Real.0 {
+        let r: Rat satisfy {
+            Real.from_rat(r) < Real.0 and a + -a < Real.from_rat(r)
+        }
+        Real.0 > Real.from_rat(r)
+        (-r).is_positive
+        let b: Rat satisfy {
+            Real.from_rat(b) < a and a < Real.from_rat(b + -r)
+        }
+        a > Real.from_rat(b)
+        -a > -Real.from_rat(b + -r)
+        a + -a > Real.from_rat(b) + -Real.from_rat(b + -r)
+        a + -a > Real.from_rat(b) + Real.from_rat(-b + r)
+        a + -a > Real.from_rat(b + -b + r)
+        a + -a > Real.from_rat(r)
+        false
+    }
+}
+
+theorem add_neg_eq_zero(a: Real) {
+    a + -a = Real.0
+}
+
+theorem neg_distrib(a: Real, b: Real) {
+    -(a + b) = -a + -b
+} by {
+    a + b + -(a + b) = Real.0
+    -(a + b) + b + a = Real.0
+    -(a + b) + b = -a 
+    -(a + b) + (b + -b) = -(a + b)
+    -(a + b) + b + -b = -(a + b)
+    -(a + b) = -a + -b
+}
+
+class Real {
+    define sub(self, other: Real) -> Real {
+        self + -other
+    }
+
+    define abs(self) -> Real {
+        if self.is_negative {
+            -self
+        } else {
+            self
+        }
+    }
+
+    define unit_sign(self) -> Real {
+        if self.is_negative {
+            -Real.1
+        } else {
+            Real.1
+        }
+    }
+}
+
+theorem sub_cancels(a: Real, b: Real) {
+    a + b - b = a
+} by {
+    a + (b + -b) = a
+    a + b + -b = a
+}
+
+theorem sub_moves_sides(a: Real, b: Real, c: Real) {
+    a + b = c -> a = c - b
+}
+
+define pos_mul_gt(a: Real, b: Real, r: Rat) -> Bool {
+    exists(ra: Rat, rb: Rat) {
+        ra.is_positive and Real.from_rat(ra) < a and
+        rb.is_positive and Real.from_rat(rb) < b and
+        r <= ra * rb
+    }
+}
+
+theorem pos_mul_not_gt(a: Real, b: Real, ra: Rat, rb: Rat) {
+    a <= Real.from_rat(ra) and b <= Real.from_rat(rb) ->
+    not pos_mul_gt(a, b, ra * rb)
+} by {
+    if pos_mul_gt(a, b, ra * rb) {
+        let (r1: Rat, r2: Rat) satisfy {
+            r1.is_positive and Real.from_rat(r1) < a and
+            r2.is_positive and Real.from_rat(r2) < b and
+            ra * rb <= r1 * r2
+        }
+        r1 < ra
+        r2 < rb
+        r1 * r2 < ra * rb
+        false
+    }
+}
+
+theorem pos_mul_not_gt_something(a: Real, b: Real) {
+    a.is_positive and b.is_positive -> exists(r: Rat) {
+        not pos_mul_gt(a, b, r)
+    }
+} by {
+    let ra: Rat satisfy {
+        a < Real.from_rat(ra)
+    }
+    Real.from_rat(ra).is_positive
+    ra.is_positive
+    let rb: Rat satisfy {
+        b < Real.from_rat(rb)
+    }
+    Real.from_rat(rb).is_positive
+    rb.is_positive
+    not pos_mul_gt(a, b, ra * rb)
+}
+
+theorem pos_mul_gt_zero(a: Real, b: Real) {
+    a.is_positive and b.is_positive -> pos_mul_gt(a, b, Rat.0)
+} by {
+    Real.0 < a
+    let ra: Rat satisfy {
+        Real.0 < Real.from_rat(ra) and Real.from_rat(ra) < a
+    }
+    Rat.0 < ra
+    Real.0 < b
+    let rb: Rat satisfy {
+        Real.0 < Real.from_rat(rb) and Real.from_rat(rb) < b
+    }
+    Rat.0 < rb
+    rb.is_positive
+    ra.is_positive
+    (ra * rb).is_positive
+    Rat.0 < ra * rb
+    Rat.0 <= ra * rb
+}

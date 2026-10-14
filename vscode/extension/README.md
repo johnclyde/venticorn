@@ -1,7 +1,7 @@
 <!-- Modified for Venticorn: editor setup, first proof, and library selection. -->
 # Venticorn for VS Code
 
-Venticorn verifies `.ac` files and displays proof-search results in the editor. It includes language highlighting, a proof assistant, and a mathematical library with natural numbers, integers, and divisibility.
+Venticorn verifies `.ac` files and displays proof-search results in the editor. It includes language highlighting, a proof assistant, and a mathematical library with natural numbers, integers, divisibility, rational numbers, and real-number foundations.
 
 ## Try a first proof
 
