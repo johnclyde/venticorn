@@ -18,6 +18,7 @@ use venticorn::interfaces::{
     InfoParams, InfoResponse, ProgressParams, ProgressResponse, SearchParams, SearchResponse,
     SearchStatus,
 };
+use venticorn::live_document::LiveDocument;
 use venticorn::module::{Module, ModuleRef};
 use venticorn::project::Project;
 use venticorn::prover::{Outcome, Prover};
@@ -96,33 +97,12 @@ fn log(message: &str) {
     eprintln!("{}", stamped);
 }
 
-// A structure representing a particular version of a document.
-#[derive(Clone)]
-struct Document {
-    url: Url,
-    text: String,
-    version: i32,
-
-    // superseded is set to true when there is a newer version of the document.
-    superseded: Arc<AtomicBool>,
-}
-
-impl Document {
-    fn new(url: Url, text: String, version: i32) -> Document {
-        Document {
-            url,
-            text,
-            version,
-            superseded: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    fn log(&self, message: &str) {
-        // Extract the last component of the url
-        let filename = self.url.path_segments().unwrap().last().unwrap();
-        let versioned = format!("{} v{}: {}", filename, self.version, message);
-        log(&versioned);
-    }
+fn log_with_doc(url: &Url, version: i32, message: &str) {
+    let filename = url
+        .path_segments()
+        .and_then(|parts| parts.last())
+        .unwrap_or(url.as_str());
+    log(&format!("{} v{}: {}", filename, version, message));
 }
 
 // A search task is a long-running task that searches for a proof.
@@ -135,7 +115,8 @@ impl Document {
 #[derive(Clone)]
 struct SearchTask {
     project: Arc<RwLock<Project>>,
-    document: Arc<Document>,
+    url: Url,
+    version: i32,
 
     // While we are proving, most of the time the thread running the 'run' method
     // will hold a write lock on the prover.
@@ -184,8 +165,8 @@ impl SearchTask {
     async fn response(&self) -> SearchResponse {
         let status = self.status.read().await.clone();
         SearchResponse {
-            uri: self.document.url.clone(),
-            version: self.document.version,
+            uri: self.url.clone(),
+            version: self.version,
             failure: None,
             loading: false,
             goal_name: Some(self.goal_name.clone()),
@@ -269,13 +250,12 @@ struct Backend {
     // Search tasks update it as they go.
     progress: Arc<Mutex<ProgressResponse>>,
 
-    // Maps uri to the most recent version of a document we have
-    documents: DashMap<Url, Arc<Document>>,
+    // Maps each URI to the most recently saved document text.
+    documents: DashMap<Url, Arc<LiveDocument>>,
 
     // Maps uri to the most recent version of a document the user has.
-    // This can be ahead of the version in documents, because we don't necessarily get the
-    // most up-to-date version while the user is typing.
-    versions: DashMap<Url, i32>,
+    // This can be ahead of the saved text while the user is typing.
+    live_versions: DashMap<Url, i32>,
 
     // The current search task, if any
     search_task: Arc<RwLock<Option<SearchTask>>>,
@@ -291,7 +271,7 @@ impl Backend {
             client,
             progress: Arc::new(Mutex::new(ProgressResponse::default())),
             documents: DashMap::new(),
-            versions: DashMap::new(),
+            live_versions: DashMap::new(),
             search_task: Arc::new(RwLock::new(None)),
             diagnostic_map: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -384,12 +364,12 @@ impl Backend {
         });
     }
 
-    fn update_version(&self, url: Url, version: i32) {
-        self.versions.insert(url, version);
+    fn update_live_version(&self, url: Url, version: i32) {
+        self.live_versions.insert(url, version);
     }
 
     async fn update_text(&self, url: Url, text: String, event: &str) {
-        let version = match self.versions.get(&url) {
+        let version = match self.live_versions.get(&url) {
             Some(v) => *v,
             None => 0,
         };
@@ -419,18 +399,19 @@ impl Backend {
     // The backend tracks every single change; the project only gets them when we want it to use them.
     // This means that typing a little bit doesn't necessarily cancel an ongoing build.
     fn update_doc_in_backend(&self, url: Url, text: String, version: i32, event: &str) -> bool {
-        let new_doc = Document::new(url.clone(), text, version);
+        let new_doc = LiveDocument::new(text, version);
         if let Some(old_doc) = self.documents.get(&url) {
-            if old_doc.version == version {
-                old_doc.log("unchanged");
+            if old_doc.saved_version() == version {
+                log_with_doc(&url, version, "unchanged");
                 return false;
             }
-            old_doc.log(&format!("superseded by v{}", version));
-            old_doc
-                .superseded
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+            log_with_doc(
+                &url,
+                old_doc.saved_version(),
+                &format!("replaced with v{}", version),
+            );
         } else {
-            new_doc.log(event);
+            log_with_doc(&url, version, event);
         }
         self.documents.insert(url.clone(), Arc::new(new_doc));
         true
@@ -459,7 +440,7 @@ impl Backend {
             // Check if the project already has this document state.
             // If the update is a no-op, there's no need to stop the build.
             let project = self.project.read().await;
-            if project.has_version(&path, document.version) {
+            if project.has_version(&path, document.saved_version()) {
                 return;
             }
         }
@@ -467,9 +448,9 @@ impl Backend {
         log(&format!(
             "updating {} with {} bytes",
             path.display(),
-            document.text.len()
+            document.text().len()
         ));
-        match project.update_file(path, &document.text, document.version) {
+        match project.update_file(path, document.text(), document.saved_version()) {
             Ok(()) => {}
             Err(e) => log(&format!("update failed: {:?}", e)),
         }
@@ -525,8 +506,8 @@ impl Backend {
         // This is less general than checking the full path, but we don't have the
         // full path until we acquire a lock on the project.
         if let Some(current_task) = self.search_task.read().await.as_ref() {
-            if current_task.document.url == params.uri
-                && current_task.document.version == params.version
+            if current_task.url == params.uri
+                && current_task.version == params.version
                 && current_task.selected_line == params.selected_line
             {
                 return Ok(current_task.response().await);
@@ -534,7 +515,7 @@ impl Backend {
         }
 
         let project = self.project.read().await;
-        let path = match doc.url.to_file_path() {
+        let path = match params.uri.to_file_path() {
             Ok(path) => path,
             Err(_) => {
                 // There should be a path available, because we don't run this task without one.
@@ -590,8 +571,8 @@ impl Backend {
         // This is slower (because we had to acquire the project lock first)
         // but catches more situations than just checking the selected line.
         if let Some(current_task) = self.search_task.read().await.as_ref() {
-            if current_task.document.url == params.uri
-                && current_task.document.version == params.version
+            if current_task.url == params.uri
+                && current_task.version == params.version
                 && current_task.path == path
             {
                 return Ok(current_task.response().await);
@@ -614,7 +595,8 @@ impl Backend {
         // Create a new search task
         let new_task = SearchTask {
             project: self.project.clone(),
-            document: doc.clone(),
+            url: params.uri.clone(),
+            version: doc.saved_version(),
             prover: Arc::new(RwLock::new(prover)),
             module_ref,
             selected_line: params.selected_line,
@@ -696,7 +678,7 @@ impl Backend {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
         let version = params.text_document.version;
-        self.update_version(uri.clone(), version);
+        self.update_live_version(uri.clone(), version);
         self.update_text(uri, text, "open").await;
     }
 
@@ -704,7 +686,7 @@ impl Backend {
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
         let version = params.text_document.version;
-        self.update_version(uri, version);
+        self.update_live_version(uri, version);
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
@@ -717,10 +699,7 @@ impl Backend {
             }
         };
         if let Some(old_doc) = self.documents.get(&uri) {
-            old_doc.log("closed");
-            old_doc
-                .superseded
-                .store(true, std::sync::atomic::Ordering::Relaxed);
+            log_with_doc(&uri, old_doc.saved_version(), "closed");
         }
         self.documents.remove(&uri);
         let mut project = self.stop_build_and_get_project().await;
@@ -747,8 +726,8 @@ impl Backend {
                 return Ok(None);
             }
         };
-        doc.log("semantic_tokens_full");
-        let tokens = Token::scan(&doc.text);
+        log_with_doc(&uri, doc.saved_version(), "semantic_tokens_full");
+        let tokens = Token::scan(doc.text());
 
         // Convert tokens to LSP semantic tokens
         let mut semantic_tokens: Vec<SemanticToken> = vec![];
