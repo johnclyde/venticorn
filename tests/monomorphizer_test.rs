@@ -11,7 +11,7 @@ fn variable(name: &str) -> AcornType {
 }
 fn predicate(name: &str, actuals: Vec<AcornType>) -> AcornValue {
     let names: Vec<_> = (0..actuals.len()).map(|i| format!("P{i}")).collect();
-    AcornValue::Constant(
+    AcornValue::new_constant(
         10,
         name.into(),
         AcornType::new_functional(names.iter().map(|n| variable(n)).collect(), AcornType::Bool),
