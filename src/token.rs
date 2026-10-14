@@ -100,6 +100,14 @@ pub fn keyword_map() -> &'static BTreeMap<&'static str, TokenType> {
     })
 }
 
+// Bool is a built-in type rather than a keyword.
+pub fn keywords_with_prefix(prefix: &str) -> impl Iterator<Item = &str> {
+    keyword_map()
+        .range(prefix..)
+        .take_while(move |(word, _)| word.starts_with(prefix))
+        .map(|(word, _)| *word)
+}
+
 // The token types that we export via the language server protocol
 pub const LSP_TOKEN_TYPES: &[SemanticTokenType] = &[
     SemanticTokenType::VARIABLE,
@@ -436,7 +444,7 @@ impl Token {
         }
     }
 
-    fn identifierish(ch: char) -> bool {
+    pub fn identifierish(ch: char) -> bool {
         ch.is_alphanumeric() || ch == '_'
     }
 

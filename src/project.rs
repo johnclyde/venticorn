@@ -782,17 +782,23 @@ impl Project {
     // Complete against an already evaluated module. Unknown modules have no invented symbols.
     pub fn get_completions(
         &self,
-        _path: &Path,
-        _env_line: u32,
+        path: &Path,
+        env_line: u32,
         prefix: &str,
     ) -> Option<Vec<CompletionItem>> {
         let parts: Vec<_> = prefix.split_whitespace().collect();
-        if parts.len() != 4 || parts[0] != "from" || parts[2] != "import" {
+        if parts.len() == 4 && parts[0] == "from" && parts[2] == "import" {
+            let module_ref = ModuleRef::Name(parts[1].to_string());
+            let env = self.get_env_by_ref(&module_ref)?;
+            return Some(env.bindings.get_completions(parts[3], true));
+        }
+        let word = *parts.last()?;
+        if !word.chars().all(Token::identifierish) || prefix.ends_with(char::is_whitespace) {
             return None;
         }
-        let module_ref = ModuleRef::Name(parts[1].to_string());
-        let env = self.get_env_by_ref(&module_ref)?;
-        Some(env.bindings.get_completions(parts[3]))
+        let module_ref = self.module_ref_from_path(path).ok()?;
+        let env = self.get_env_by_ref(&module_ref)?.env_for_line(env_line);
+        env.get_completions(self, env_line, word)
     }
 
     // Expects the module to load successfully and for there to be no errors in the loaded module.

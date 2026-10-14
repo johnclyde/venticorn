@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use tower_lsp::lsp_types::Range;
+use tower_lsp::lsp_types::{CompletionItem, Range};
 
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
@@ -242,6 +242,35 @@ impl Environment {
         None
     }
 
+    // Find the innermost proof environment containing this saved source line.
+    pub fn env_for_line(&self, line: u32) -> &Environment {
+        if let Some(LineType::Node(index)) = self.get_line_type(line) {
+            if let Some(block) = &self.nodes[index].block {
+                // A line following this closing brace belongs to the parent scope.
+                if block.env.get_line_type(line) != Some(LineType::Closing) {
+                    return block.env.env_for_line(line);
+                }
+            }
+        }
+        self
+    }
+
+    pub fn get_completions(
+        &self,
+        _project: &Project,
+        line: u32,
+        prefix: &str,
+    ) -> Option<Vec<CompletionItem>> {
+        Some(
+            self.bindings
+                .get_completions_visible(prefix, false, &|name| {
+                    self.definition_ranges
+                        .get(name)
+                        .map_or(true, |range| range.start.line <= line)
+                }),
+        )
+    }
+
     // Adds a conditional block to the environment.
     // Takes the condition, the range to associate with the condition, the first line of
     // the conditional block, and finally the body itself.
@@ -364,6 +393,7 @@ impl Environment {
             // 'let x = y' creates an alias for y, not a new constant.
             self.bindings
                 .add_alias(&name, canonical_module, canonical_name, acorn_type);
+            self.definition_ranges.insert(name.clone(), range);
             return Ok(());
         }
 
@@ -483,6 +513,8 @@ impl Environment {
                     let acorn_type = self.bindings.evaluate_type(project, &ts.type_expr)?;
                     self.bindings.add_type_alias(&ts.name, acorn_type);
                 };
+                self.definition_ranges
+                    .insert(ts.name.clone(), statement.range());
                 Ok(())
             }
 
@@ -748,6 +780,8 @@ impl Environment {
                 for (quant_name, quant_type) in quant_names.iter().zip(quant_types.iter()) {
                     self.bindings
                         .add_constant(quant_name, vec![], quant_type.clone(), None, None);
+                    self.definition_ranges
+                        .insert(quant_name.clone(), statement.range());
                 }
 
                 // We can then assume the specific existence claim with the named constants
@@ -897,6 +931,8 @@ impl Environment {
 
                 // The member functions take the type itself to a particular member.
                 let struct_type = self.bindings.add_data_type(&ss.name);
+                self.definition_ranges
+                    .insert(ss.name.clone(), statement.range());
                 let mut member_fns = vec![];
                 for (member_fn_name, field_type) in member_fn_names.iter().zip(&field_types) {
                     let member_fn_type =
@@ -1256,6 +1292,8 @@ impl Environment {
                     Proposition::theorem(true, forall_claim, self.module_id, range, Some(name)),
                     None,
                 );
+                self.definition_ranges
+                    .insert(is.name.clone(), statement.range());
 
                 Ok(())
             }
@@ -1293,10 +1331,14 @@ impl Environment {
                     ));
                 }
                 self.bindings.add_module(local_name, module_id);
+                self.definition_ranges
+                    .insert(local_name.clone(), statement.range());
 
                 // Bring the imported names into this environment
                 for name in &is.names {
                     self.bindings.import_name(project, module_id, name)?;
+                    self.definition_ranges
+                        .insert(name.text().to_string(), statement.range());
                 }
 
                 Ok(())
