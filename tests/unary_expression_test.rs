@@ -42,3 +42,37 @@ fn prefix_minus_is_guarded_until_the_operand_supports_negation() {
     // Syntax is accepted independently of whether the type defines negation.
     assert!(error.message.contains("no members"), "{error}");
 }
+
+// A compact tree description checks meaning rather than merely retaining source parentheses.
+fn tree(expression: &Expression) -> String {
+    match expression {
+        Expression::Singleton(token) => token.to_string(),
+        Expression::Grouping(_, child, _) => tree(child),
+        Expression::Unary(token, child) => format!("({} {})", token, tree(child)),
+        Expression::Binary(left, token, right) => {
+            format!("({} {} {})", token, tree(left), tree(right))
+        }
+        Expression::Apply(function, args) => format!("(apply {} {})", tree(function), tree(args)),
+        _ => panic!("unexpected expression in operator fixture"),
+    }
+}
+#[test]
+fn negative_operands_keep_their_tree_across_arithmetic_and_member_access() {
+    for (source, expected) in [
+        ("-a - b", "(- (- a) b)"),
+        ("-(a - b)", "(- (- a b))"),
+        ("a + -b", "(+ a (- b))"),
+        ("a - -b", "(- a (- b))"),
+        ("-a * b", "(* (- a) b)"),
+        ("-(a * b)", "(- (* a b))"),
+        ("-a.suc", "(- (. a suc))"),
+        ("(-a).suc", "(. (- a) suc)"),
+        ("-f(a)", "(- (apply f a))"),
+        ("--a", "(- (- a))"),
+        ("not -a < b", "(not (< (- a) b))"),
+    ] {
+        let parsed = Expression::expect_value(source);
+        assert_eq!(parsed.to_string(), source);
+        assert_eq!(tree(&parsed), expected, "{source}");
+    }
+}
