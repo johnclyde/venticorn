@@ -58,9 +58,9 @@ test("the Assistant keeps legacy display and toggle command aliases", () => {
   let toggled = 0;
   view.display = () => displayed++;
   view.toggle = () => toggled++;
-  for (const name of ["acorn.displayAssistant", "acorn.displayInfoView", "acorn.displaySearchPanel"]) registrations.get(name)();
+  for (const name of ["acorn.showAssistant", "acorn.displayAssistant", "acorn.displayInfoView", "acorn.displaySearchPanel"]) registrations.get(name)();
   for (const name of ["acorn.toggleAssistant", "acorn.toggleInfoView", "acorn.toggleSearchPanel"]) registrations.get(name)();
-  assert.equal(displayed, 3);
+  assert.equal(displayed, 4);
   assert.equal(toggled, 3);
 });
 

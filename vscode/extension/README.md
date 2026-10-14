@@ -13,13 +13,14 @@ Once the language server is available, save a file named `hello.ac` containing:
 theorem identity(value: Bool) { value = value }
 ```
 
-Saving runs verification. Once the server starts, the Assistant opens beside the first visible saved
-proof file without moving focus out of the editor. Place the cursor on the proposition to inspect its
-proof-search result or insert generated proof code when available. Saved `.ac` files work even outside
-a workspace; imports use the selected library.
+Saving runs verification. Once the server starts, the Assistant opens beside the first active Acorn
+document, including an untitled document, without moving focus out of the editor. It shows guidance
+until the file is saved and clears earlier proof results while changes are unsaved. In a saved file,
+place the cursor on a proposition to inspect its proof-search result or insert generated proof code.
+Saved `.ac` files work even outside a workspace; imports use the selected library.
 
 If you close the Assistant, reopen it with the small acorn button in the editor title bar,
-**Venticorn: Assistant: Display**, or **Ctrl+Enter** (**Cmd+Enter** on macOS). It stays closed until you
+**Venticorn: Show Assistant**, or **Ctrl+Enter** (**Cmd+Enter** on macOS). It stays closed until you
 reopen it or reload the editor window.
 
 ## Verification marks

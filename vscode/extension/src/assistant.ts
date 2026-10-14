@@ -28,6 +28,9 @@ export class Assistant implements Disposable {
     this.lastEditor = window.activeTextEditor;
     this.currentSearchId = 0;
     this.disposables = [
+      commands.registerTextEditorCommand("acorn.showAssistant", (editor) =>
+        this.display(editor)
+      ),
       commands.registerTextEditorCommand("acorn.displayAssistant", (editor) =>
         this.display(editor)
       ),
