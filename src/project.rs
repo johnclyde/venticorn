@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::{fmt, io};
 
+use sha2::{Digest, Sha256};
 use tower_lsp::lsp_types::{CompletionItem, Url};
 use walkdir::WalkDir;
 
@@ -39,9 +40,8 @@ pub struct Project {
     // From vscode, it'll be the vscode version number.
     open_files: HashMap<PathBuf, (String, i32)>,
 
-    // modules[module_id] is the (ref, Module) for the given module id.
-    // Built-in modules have no name.
-    modules: Vec<(ModuleRef, Module)>,
+    // Failed or loading modules have no fingerprint. IDs may change after a reload.
+    modules: Vec<(ModuleRef, Module, Option<ModuleFingerprint>)>,
 
     // module_map maps from a module ref to its id
     module_map: HashMap<ModuleRef, ModuleId>,
@@ -70,10 +70,22 @@ impl fmt::Display for LoadError {
     }
 }
 
-fn new_modules() -> Vec<(ModuleRef, Module)> {
+// Fingerprints identify loaded source snapshots; they are not proof certificates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleFingerprint([u8; 32]);
+
+fn source_fingerprint(text: &str) -> ModuleFingerprint {
+    let mut digest = Sha256::new();
+    digest.update(b"venticorn:module-source:v1\0");
+    digest.update((text.len() as u64).to_le_bytes());
+    digest.update(text.as_bytes());
+    ModuleFingerprint(digest.finalize().into())
+}
+
+fn new_modules() -> Vec<(ModuleRef, Module, Option<ModuleFingerprint>)> {
     let mut modules = vec![];
     while modules.len() < FIRST_NORMAL as usize {
-        modules.push((ModuleRef::Anonymous, Module::None));
+        modules.push((ModuleRef::Anonymous, Module::None, None));
     }
     modules
 }
@@ -434,7 +446,11 @@ impl Project {
             .into_iter()
             .map(|id| self.modules[id as usize].0.clone())
             .collect();
-        builder.module_proving_started_with_dependencies(target, dependencies);
+        builder.module_proving_started_with_metadata(
+            target,
+            dependencies,
+            self.get_hash(env.module_id),
+        );
 
         // Fast and slow modes should be interchangeable here.
         // If we run into a bug with fast mode, try using slow mode to debug.
@@ -572,9 +588,13 @@ impl Project {
             .expect("mock file update failed");
     }
 
+    pub fn get_hash(&self, module_id: ModuleId) -> Option<ModuleFingerprint> {
+        self.modules.get(module_id as usize)?.2
+    }
+
     pub fn get_module_by_id(&self, module_id: ModuleId) -> &Module {
         match self.modules.get(module_id as usize) {
-            Some((_, module)) => module,
+            Some((_, module, _)) => module,
             None => &Module::None,
         }
     }
@@ -605,7 +625,7 @@ impl Project {
     pub fn errors(&self) -> Vec<(ModuleId, &compilation::Error)> {
         let mut errors = vec![];
         for (module_id, module) in self.modules.iter().enumerate() {
-            if let (_, Module::Error(e)) = module {
+            if let (_, Module::Error(e), _) = module {
                 errors.push((module_id as ModuleId, e));
             }
         }
@@ -749,7 +769,8 @@ impl Project {
 
         // Give this module an id before parsing it, so that we can catch circular imports.
         let module_id = self.modules.len() as ModuleId;
-        self.modules.push((module_ref.clone(), Module::Loading));
+        self.modules
+            .push((module_ref.clone(), Module::Loading, None));
         self.module_map.insert(module_ref.clone(), module_id);
 
         let mut env = Environment::new(module_id);
@@ -759,7 +780,9 @@ impl Project {
         } else {
             Module::Ok(env)
         };
+        let fingerprint = matches!(module, Module::Ok(_)).then(|| source_fingerprint(&text));
         self.modules[module_id as usize].1 = module;
+        self.modules[module_id as usize].2 = fingerprint;
 
         Ok(module_id)
     }

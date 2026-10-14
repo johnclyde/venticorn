@@ -11,6 +11,7 @@ use crate::environment::Environment;
 use crate::features::Features;
 use crate::goal::GoalContext;
 use crate::module::ModuleRef;
+use crate::project::ModuleFingerprint;
 use crate::prover::{Outcome, Prover};
 
 static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
@@ -85,6 +86,7 @@ impl BuildStatus {
 struct ModuleInfo {
     module_ref: ModuleRef,
     direct_dependencies: Vec<ModuleRef>,
+    fingerprint: Option<ModuleFingerprint>,
     good: bool,
 }
 
@@ -230,19 +232,21 @@ impl<'a> Builder<'a> {
 
     // Called when we start proving a module.
     pub fn module_proving_started(&mut self, module: &ModuleRef) {
-        self.module_proving_started_with_dependencies(module, Vec::new());
+        self.module_proving_started_with_metadata(module, Vec::new(), None);
     }
 
-    pub(crate) fn module_proving_started_with_dependencies(
+    pub(crate) fn module_proving_started_with_metadata(
         &mut self,
         module: &ModuleRef,
         mut direct_dependencies: Vec<ModuleRef>,
+        fingerprint: Option<ModuleFingerprint>,
     ) {
         direct_dependencies.sort();
         direct_dependencies.dedup();
         self.current_module = Some(ModuleInfo {
             module_ref: module.clone(),
             direct_dependencies,
+            fingerprint,
             good: true,
         });
     }
