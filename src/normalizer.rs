@@ -666,7 +666,7 @@ mod tests {
             ],
         );
 
-        env.expect_type("induction", "Nat -> Bool -> Bool");
+        env.expect_type("induction", "(Nat -> Bool) -> Bool");
 
         env.add("define recursion(f: Nat -> Nat, a: Nat, n: Nat) -> Nat { axiom }");
         env.expect_type("recursion", "(Nat -> Nat, Nat, Nat) -> Nat");
