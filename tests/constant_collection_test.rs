@@ -3,12 +3,8 @@ use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
 
 fn generic(name: &str) -> AcornValue {
-    AcornValue::new_constant(
-        10,
-        name.into(),
-        AcornType::Variable("P".into(), None),
-        vec![("P".into(), AcornType::Variable("T".into(), None))],
-    )
+    let t = AcornType::Variable("T".into(), None);
+    AcornValue::new_constant(10, name.into(), vec![t.clone()], t)
 }
 fn names(value: &AcornValue, generic_only: bool) -> Vec<String> {
     let mut found = vec![];
@@ -23,8 +19,8 @@ fn collection_visits_function_arguments_binders_conditions_and_match_branches() 
         AcornValue::new_constant(
             10,
             "function".into(),
-            AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
             vec![],
+            AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
         ),
         vec![generic("argument")],
     );
@@ -67,8 +63,8 @@ fn plain_scoped_types_are_generic_even_without_type_arguments() {
     let plain = AcornValue::new_constant(
         10,
         "local".into(),
-        AcornType::Variable("T".into(), None),
         vec![],
+        AcornType::Variable("T".into(), None),
     );
     assert_eq!(names(&plain, true), ["local"]);
     assert!(names(&plain.to_arbitrary(), true).is_empty());

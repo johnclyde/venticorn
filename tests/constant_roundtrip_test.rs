@@ -6,14 +6,8 @@ use venticorn::literal::Literal;
 use venticorn::normalizer::Normalizer;
 
 fn instance(left: AcornType, right: AcornType) -> AcornValue {
-    let t = AcornType::Variable("T".into(), None);
-    let u = AcornType::Variable("U".into(), None);
-    AcornValue::new_constant(
-        10,
-        "first".into(),
-        AcornType::new_functional(vec![t.clone(), u], t),
-        vec![("T".into(), left), ("U".into(), right)],
-    )
+    let instance_type = AcornType::new_functional(vec![left.clone(), right.clone()], left.clone());
+    AcornValue::new_constant(10, "first".into(), vec![left, right], instance_type)
 }
 
 #[test]
@@ -27,7 +21,7 @@ fn normalized_instances_retain_distinct_order_and_complete_roundtrip_metadata() 
     let reverse_term = normalizer.term_from_value(&reversed, false).unwrap();
     assert_ne!(term.head, reverse_term.head);
     assert_ne!(term.head_type, reverse_term.head_type);
-    let other = AcornValue::new_constant(10, "other".into(), original.get_type(), vec![]);
+    let other = AcornValue::new_constant(10, "other".into(), vec![], original.get_type());
     let other_term = normalizer.term_from_value(&other, false).unwrap();
     let clause = Clause::new(vec![Literal::new(true, term, other_term)]);
     normalizer.type_map.check_clause(&clause);

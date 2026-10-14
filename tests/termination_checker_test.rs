@@ -7,8 +7,8 @@ fn recursive() -> AcornValue {
     AcornValue::new_constant(
         10,
         "f".into(),
-        AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
         vec![],
+        AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
     )
 }
 
@@ -29,8 +29,8 @@ fn partially_bound_recursion_checks_missing_arguments_without_panicking() {
     let f = AcornValue::new_constant(
         10,
         "f".into(),
-        AcornType::new_functional(vec![AcornType::Bool, AcornType::Bool], AcornType::Bool),
         vec![],
+        AcornType::new_functional(vec![AcornType::Bool, AcornType::Bool], AcornType::Bool),
     );
     let call = AcornValue::new_apply(f, vec![AcornValue::Variable(0, AcornType::Bool)]);
     assert!(!TerminationChecker::new(10, "f".into(), 2).check(&call));
