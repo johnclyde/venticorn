@@ -22,24 +22,24 @@ fn import_completion_uses_loaded_types_and_constants() {
         ("from nat import sav", "saved", CompletionItemKind::CONSTANT),
     ] {
         let items = project
-            .get_completions(Path::new("/mock/main.ac"), 0, prefix)
+            .get_completions(Some(Path::new("/mock/main.ac")), 0, prefix)
             .unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, label);
         assert_eq!(items[0].kind, Some(kind));
     }
     assert!(project
-        .get_completions(Path::new("/mock/main.ac"), 0, "from unknown import N")
+        .get_completions(Some(Path::new("/mock/main.ac")), 0, "from unknown import N")
         .is_none());
     assert!(project
-        .get_completions(Path::new("/mock/main.ac"), 0, "from nat import zzz")
+        .get_completions(Some(Path::new("/mock/main.ac")), 0, "from nat import zzz")
         .unwrap()
         .is_empty());
 }
 
 fn labels(project: &Project, path: &str, line: u32, prefix: &str) -> Vec<String> {
     project
-        .get_completions(Path::new(path), line, prefix)
+        .get_completions(Some(Path::new(path)), line, prefix)
         .unwrap_or_default()
         .into_iter()
         .map(|item| item.label)
@@ -139,7 +139,7 @@ fn completion_does_not_reuse_words_before_the_cursor_or_in_comments() {
         );
     }
     assert!(project
-        .get_completions(Path::new("/missing/main.ac"), 0, "N")
+        .get_completions(Some(Path::new("/missing/main.ac")), 0, "N")
         .is_none());
 }
 
@@ -321,4 +321,22 @@ fn after_dot_completion_lists_only_resolved_exports_or_applicable_members() {
         assert_eq!(actual, expected, "{prefix}");
     }
     assert!(labels(&project, "/mock/main.ac", 2, "").is_empty());
+}
+
+#[test]
+fn untitled_completion_only_uses_loaded_imports() {
+    let project = project();
+    let items = project
+        .get_completions(None, 0, "from nat import N")
+        .unwrap();
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Nat"]
+    );
+    for prefix in ["saved", "Nat.", "from missing import N"] {
+        assert!(project.get_completions(None, 0, prefix).is_none());
+    }
 }

@@ -792,7 +792,7 @@ impl Project {
     // Complete against an already evaluated module. Unknown modules have no invented symbols.
     pub fn get_completions(
         &self,
-        path: &Path,
+        path: Option<&Path>,
         env_line: u32,
         prefix: &str,
     ) -> Option<Vec<CompletionItem>> {
@@ -850,7 +850,7 @@ impl Project {
             // Module-path discovery is separate from completing names within a loaded module.
             return None;
         }
-        let module_ref = self.module_ref_from_path(path).ok()?;
+        let module_ref = self.module_ref_from_path(path?).ok()?;
         let env = self.get_env_by_ref(&module_ref)?.env_for_line(env_line);
         env.get_completions(self, env_line, word)
     }
