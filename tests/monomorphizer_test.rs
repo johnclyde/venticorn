@@ -130,3 +130,23 @@ fn incomplete_fact_substitutions_wait_without_panicking_or_emitting() {
     mono.match_constants(&predicate("f", vec![AcornType::Bool]));
     assert!(mono.take_facts().is_empty());
 }
+
+#[test]
+fn constant_matching_uses_declared_positions_and_rejects_wrong_arity() {
+    let mut mono = Monomorphizer::new();
+    mono.add_fact(fact(
+        claim("ordered", vec![variable("B"), variable("A")]),
+        Truthiness::Factual,
+    ));
+    // An inconsistent request cannot truncate a zip or contaminate later requests.
+    mono.match_constants(&predicate("ordered", vec![AcornType::Bool]));
+    assert!(mono.take_facts().is_empty());
+    let nat = AcornType::Data(10, "Nat".into());
+    mono.match_constants(&predicate("ordered", vec![nat.clone(), AcornType::Bool]));
+    let emitted = mono.take_facts();
+    assert_eq!(emitted.len(), 1);
+    assert_eq!(
+        emitted[0].value,
+        claim("ordered", vec![nat, AcornType::Bool])
+    );
+}
