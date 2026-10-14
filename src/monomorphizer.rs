@@ -92,7 +92,8 @@ impl Monomorphizer {
 
         let i = self.generic_facts.len();
         let mut instances = vec![];
-        fact.value.find_generic_constants(&mut instances);
+        fact.value
+            .find_constants(&|c| !c.params.is_empty() && c.is_generic(), &mut instances);
         if instances.is_empty() {
             if let AcornValue::ForAll(args, _) = &fact.value {
                 if args.iter().any(|arg| arg.is_generic()) {
@@ -113,8 +114,9 @@ impl Monomorphizer {
         self.instantiations_for_fact.push(vec![]);
 
         // Store a reference to our generic instances in the index
-        for (constant_key, params) in instances.clone() {
-            let params = ConstantParams::new(params);
+        for c in &instances {
+            let constant_key = c.key();
+            let params = ConstantParams::new(c.params.clone());
             self.generic_constants
                 .entry(constant_key)
                 .or_insert(vec![])
@@ -122,8 +124,9 @@ impl Monomorphizer {
         }
 
         // Check how this new generic fact should be monomorphized
-        for (constant_key, params) in instances {
-            let instance_params = ConstantParams::new(params);
+        for c in instances {
+            let constant_key = c.key();
+            let instance_params = ConstantParams::new(c.params);
             if let Some(monomorphs) = self.instantiations_for_constant.get(&constant_key) {
                 for monomorph_params in monomorphs.clone() {
                     self.try_monomorphize(i, &monomorph_params, &instance_params);
