@@ -57,8 +57,8 @@ fn evaluate(value: &AcornValue, stack: &[Value]) -> Value {
     match value {
         AcornValue::Variable(index, _) => stack[*index as usize].clone(),
         AcornValue::Bool(value) => Value::Bool(*value),
-        AcornValue::Constant(_, name, _, _) if name == "Item.empty" => Value::Item(None),
-        AcornValue::Constant(_, name, _, _) => Value::Function(name.clone()),
+        AcornValue::Unresolved(_, name, _, _) if name == "Item.empty" => Value::Item(None),
+        AcornValue::Unresolved(_, name, _, _) => Value::Function(name.clone()),
         AcornValue::Lambda(vars, body) => {
             Value::Closure(vars.clone(), body.clone(), stack.to_vec())
         }
@@ -128,7 +128,7 @@ fn evaluate(value: &AcornValue, stack: &[Value]) -> Value {
 }
 
 fn constant(name: &str, t: AcornType) -> AcornValue {
-    AcornValue::Constant(0, name.to_string(), t, vec![])
+    AcornValue::Unresolved(0, name.to_string(), t, vec![])
 }
 
 fn wrap(value: AcornValue) -> AcornValue {

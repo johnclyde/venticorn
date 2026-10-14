@@ -29,8 +29,8 @@ impl TerminationChecker {
     fn traverse(&mut self, value: &AcornValue) {
         match value {
             AcornValue::Variable(..) | AcornValue::Bool(..) => {}
-            AcornValue::Constant(module, name, _, _)
-            | AcornValue::Specialized(module, name, _, _) => {
+            AcornValue::Unresolved(module, name, _, _)
+            | AcornValue::Constant(module, name, _, _) => {
                 if *module == self.module && *name == self.function_name {
                     self.recursive = true;
                     self.always_strict_sub.fill(false);

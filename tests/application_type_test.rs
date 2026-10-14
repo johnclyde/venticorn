@@ -3,7 +3,7 @@ use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
 
 fn identity(t: AcornType) -> AcornValue {
-    AcornValue::Constant(
+    AcornValue::Unresolved(
         10,
         "identity".into(),
         AcornType::new_functional(vec![t.clone()], t),
@@ -60,4 +60,30 @@ fn constant_types_specialize_symmetrically_with_parametrization() {
             .validate()
             .is_ok()
     );
+}
+
+#[test]
+fn generic_callbacks_use_their_declared_types_without_reinference() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut env = Environment::new_test();
+    env.add("define apply<T>(f: T -> T, value: T) -> T { f(value) }");
+    env.get_definition("apply").unwrap().validate().unwrap();
+    assert!(!env.bindings.has_type_name("T"));
+
+    for source in [
+        "define bad<T>(f: T -> T, value: T) -> T { f(true) }",
+        "define bad<T>(f: T -> Bool, value: T) -> T { f(value) }",
+    ] {
+        let error = env
+            .add_statement(
+                &mut Project::new_mock(),
+                &Statement::parse_str(source).unwrap(),
+            )
+            .unwrap_err();
+        assert!(error.message().contains("expected type"), "{error}");
+        assert!(!env.bindings.has_identifier("bad"));
+        assert!(!env.bindings.has_type_name("T"));
+    }
 }
