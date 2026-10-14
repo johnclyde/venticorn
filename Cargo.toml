@@ -25,6 +25,7 @@ ordered-float = "4.2.2"
 ort = { version = "=2.0.0-rc.7", optional = true }
 qp-trie = "0.8.2"
 serde = "1.0.188"
+sha2 = "=0.10.8"
 tokio = { version = "1.32.0", features = ["full"] }
 tower-lsp = "0.20.0"
 walkdir = "2.4.0"
