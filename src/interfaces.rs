@@ -4,6 +4,8 @@
 //
 // This file should be kept parallel to vscode/interfaces.d.ts.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use tower_lsp::lsp_types::{Range, Url};
 
@@ -16,13 +18,20 @@ use crate::prover::{Outcome, Prover};
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressResponse {
+    pub build_id: u32,
     pub done: i32,
     pub total: i32,
+    pub verified: HashMap<Url, Vec<u32>>,
 }
 
 impl ProgressResponse {
     pub fn default() -> ProgressResponse {
-        ProgressResponse { done: 0, total: 0 }
+        ProgressResponse {
+            build_id: 0,
+            done: 0,
+            total: 0,
+            verified: HashMap::new(),
+        }
     }
 }
 

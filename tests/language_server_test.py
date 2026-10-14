@@ -99,7 +99,7 @@ class LanguageServerTest(unittest.TestCase):
                 send({"jsonrpc": "2.0", "id": 2, "method": "acorn/progress", "params": {}})
                 progress = receive(2)
                 if expected_error is None:
-                    self.assertEqual(progress["result"], {"done": 0, "total": 0})
+                    self.assertEqual(progress["result"], {"buildId": 0, "done": 0, "total": 0, "verified": {}})
                     send({"jsonrpc": "2.0", "id": 3, "method": "shutdown"})
                     shutdown = receive(3)
                     self.assertIn("result", shutdown, shutdown)
