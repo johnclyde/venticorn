@@ -66,6 +66,24 @@ class BuildPublicationTest(unittest.TestCase):
             time.sleep(0.01)
         self.fail(f"expected diagnostic was not published: {values}")
 
+    def test_empty_open_then_edit_and_save_gets_a_fresh_verification(self):
+        self.open("", 1)
+        empty = self.wait_for_build(total=0)
+        text = "theorem ready { true }\n"
+        self.change(2, text)
+        self.assertIsNone(self.progress()["buildId"])
+        params = {"uri": self.uri, "version": 2, "selectedLine": 0, "id": 90}
+        self.assertTrue(self.session.request("acorn/search", params)["result"]["loading"])
+        self.save(text)
+        current = self.wait_for_build(empty["buildId"])
+        self.assertNotEqual(current["buildId"], empty["buildId"])
+        result = self.session.request("acorn/search", params)["result"]
+        self.assertIsNone(result["failure"])
+        self.assertIn("ready", result["goalName"])
+        self.wait_for_diagnostic(lambda item: item.get("version") == 2 and not item["diagnostics"])
+        self.change(3, "theorem changed { false }\n")
+        self.assertIsNone(self.progress()["buildId"])
+
     def test_edit_save_and_zero_goal_build_publish_current_versions(self):
         self.open("theorem impossible { false }\n", 3)
         old = self.wait_for_build()

@@ -140,3 +140,18 @@ test("a completed proof range creates one marker at its first line", async () =>
   const { tracker, state } = host([response]); const view = editor(state);
   await tracker.getProgress(); assert.deepEqual(view.lines, [0, 4]);
 });
+
+test("an empty document gets fresh markers only after its edited text is saved", async () => {
+  const empty = { buildId: 1, done: 0, total: 0, docs: { "file:///proof.ac": { version: 1, verified: [] } } };
+  const { tracker, state } = host([empty, empty, marked(2, 2)]);
+  const view = editor(state);
+  state.events.open(view.document);
+  await tracker.getProgress();
+  assert.deepEqual(view.lines, []);
+  view.document.version = 2;
+  state.events.change({ document: view.document, contentChanges: [{ text: "theorem ready { true }" }] });
+  await tracker.getProgress();
+  assert.deepEqual(view.lines, []);
+  await tracker.getProgress();
+  assert.deepEqual(view.lines, [0]);
+});

@@ -5,6 +5,7 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
+  import PreSaveHelpView from "./PreSaveHelp.svelte";
   import Goal from "./Goal.svelte";
   import ProofStatus from "./ProofStatus.svelte";
   import ProofStep from "./ProofStep.svelte";
@@ -12,6 +13,7 @@
   // These are updated to reflect the last valid responses from the extension.
   let searchResponse: SearchResponse | null = null;
   let infoResult: InfoResult | null = null;
+  let help: PreSaveHelp = {};
 
   function stepsContain(
     steps: Array<ProofStepInfo>,
@@ -56,7 +58,13 @@
   }
 
   onMount(() => {
-    window.addEventListener("message", (event) => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === "help") {
+        help = event.data.help;
+        searchResponse = null;
+        infoResult = null;
+        return;
+      }
       if (event.data.type === "search") {
         handleSearchResponse(event.data.response);
         return;
@@ -66,7 +74,10 @@
         return;
       }
       console.error("unexpected message type:", event.data.type);
-    });
+    };
+    window.addEventListener("message", handleMessage);
+    vscode.postMessage({ command: "ready" });
+    return () => window.removeEventListener("message", handleMessage);
   });
 
   function insertProof() {
@@ -80,6 +91,7 @@
     }
     vscode.postMessage({
       command: "insertProof",
+      searchId: searchResponse.id,
       uri: searchResponse.uri,
       version: searchResponse.version,
       line: searchResponse.proofInsertionLine,
@@ -121,7 +133,7 @@
 
 <main>
   {#if searchResponse === null || searchResponse.goalName === null}
-    <h1 class="header">Select a proposition to see its proof.</h1>
+    <PreSaveHelpView {help} />
   {:else}
     <Goal {searchResponse} {showLocation} />
     <hr />
