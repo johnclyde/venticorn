@@ -52,9 +52,9 @@ fn parametrization_updates_recursive_constant_types() {
 fn constant_types_specialize_symmetrically_with_parametrization() {
     let specific = identity(AcornType::Data(10, "T".into()));
     let generic = specific.parametrize(10, &["T".into()]);
-    let concrete = generic.specialize(&[("T".into(), AcornType::Bool)]);
+    let concrete = generic.instantiate(&[("T".into(), AcornType::Bool)]);
     assert_eq!(concrete.get_type(), identity(AcornType::Bool).get_type());
-    assert!(!concrete.is_parametric());
+    assert!(!concrete.is_generic());
     assert!(
         AcornValue::new_apply(concrete, vec![AcornValue::Bool(true)])
             .validate()
@@ -273,17 +273,17 @@ fn pending_generic_values_are_rejected_before_declaration_admission() {
 fn resolved_type_transformations_preserve_declaration_namespaces() {
     let t = AcornType::Variable("T".into(), None);
     let plain = identity(t.clone());
-    assert!(plain.is_parametric());
+    assert!(plain.is_generic());
     assert_eq!(
-        plain.to_placeholder().get_type(),
+        plain.to_arbitrary().get_type(),
         identity(AcornType::Arbitrary("T".into(), None)).get_type()
     );
     let a = AcornType::Variable("A".into(), None);
     let template = AcornType::new_functional(vec![a.clone()], a);
     let instance = AcornValue::Constant(10, "f".into(), template.clone(), vec![("A".into(), t)]);
-    let specialized = instance.specialize(&[("T".into(), AcornType::Bool)]);
+    let specialized = instance.instantiate(&[("T".into(), AcornType::Bool)]);
     assert_eq!(specialized.get_type(), identity(AcornType::Bool).get_type());
-    let AcornValue::Constant(_, _, preserved, actuals) = instance.to_placeholder() else {
+    let AcornValue::Constant(_, _, preserved, actuals) = instance.to_arbitrary() else {
         panic!("constant expected")
     };
     assert_eq!(preserved, template);

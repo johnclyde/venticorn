@@ -196,7 +196,7 @@ impl<T> FingerprintSpecializer<T> {
         tree.entry(fingerprint).or_insert(vec![]).push(value);
     }
 
-    // Find all ids with a fingerprint that this literal could specialize into.
+    // Find all ids with a fingerprint that this literal could instantiate into.
     // Only does a single left->right direction of lookup.
     pub fn find_specializing(&self, left: &Term, right: &Term) -> Vec<&T> {
         let fingerprint = LiteralFingerprint::new(left, right);
