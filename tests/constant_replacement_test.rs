@@ -8,8 +8,8 @@ use venticorn::prover::{Outcome, Prover};
 fn recursive_replacement_shifts_closed_definitions_beneath_mixed_binders() {
     let item = AcornType::Data(10, "Item".into());
     let function_type = AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool);
-    let inner = AcornValue::new_constant(10, "inner".into(), function_type.clone(), vec![]);
-    let outer = AcornValue::new_constant(10, "outer".into(), function_type, vec![]);
+    let inner = AcornValue::new_constant(10, "inner".into(), vec![], function_type.clone());
+    let outer = AcornValue::new_constant(10, "outer".into(), vec![], function_type);
     let inner_definition = AcornValue::new_lambda(
         vec![AcornType::Bool],
         AcornValue::Variable(0, AcornType::Bool),

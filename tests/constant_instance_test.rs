@@ -7,11 +7,13 @@ fn variable(name: &str) -> AcornType {
 }
 
 fn first(params: Vec<(String, AcornType)>) -> AcornValue {
+    let template = AcornType::new_functional(vec![variable("T"), variable("U")], variable("T"));
+    let instance_type = template.instantiate(&params);
     AcornValue::new_constant(
         10,
         "first".into(),
-        AcornType::new_functional(vec![variable("T"), variable("U")], variable("T")),
-        params,
+        params.into_iter().map(|(_, t)| t).collect(),
+        instance_type,
     )
 }
 
@@ -29,7 +31,7 @@ fn nested_instantiation_distinguishes_definition_and_outer_type_names() {
         ("U".into(), AcornType::Bool),
     ]);
     assert_eq!(concrete, direct);
-    let nat_value = AcornValue::new_constant(10, "zero".into(), nat.clone(), vec![]);
+    let nat_value = AcornValue::new_constant(10, "zero".into(), vec![], nat.clone());
     let application = AcornValue::new_apply(concrete, vec![nat_value, AcornValue::Bool(true)]);
     application.validate().unwrap();
     assert_eq!(application.get_type(), nat);
@@ -59,7 +61,7 @@ fn repeated_actual_types_retain_both_parameter_positions() {
 
 #[test]
 fn scoped_plain_constants_follow_the_surrounding_type_substitution() {
-    let local = AcornValue::new_constant(10, "local".into(), variable("T"), vec![]);
+    let local = AcornValue::new_constant(10, "local".into(), vec![], variable("T"));
     let concrete = local.instantiate(&[("T".into(), AcornType::Bool)]);
     concrete.validate().unwrap();
     assert_eq!(concrete.get_type(), AcornType::Bool);
@@ -91,7 +93,7 @@ fn opaque_scope_types_transform_in_effective_types_and_arguments_together() {
             AcornType::Arbitrary("T".into(), None)
         )
     );
-    let plain = AcornValue::new_constant(20, "local".into(), scoped, vec![]);
+    let plain = AcornValue::new_constant(20, "local".into(), vec![], scoped);
     let generic_plain = plain.parametrize(20, &["T".into()]);
     assert!(generic_plain.is_generic());
     assert_eq!(

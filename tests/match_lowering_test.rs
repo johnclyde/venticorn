@@ -128,7 +128,7 @@ fn evaluate(value: &AcornValue, stack: &[Value]) -> Value {
 }
 
 fn constant(name: &str, t: AcornType) -> AcornValue {
-    AcornValue::new_constant(0, name.to_string(), t, vec![])
+    AcornValue::new_constant(0, name.to_string(), vec![], t)
 }
 
 fn wrap(value: AcornValue) -> AcornValue {

@@ -10,13 +10,8 @@ fn variable(name: &str) -> AcornType {
     AcornType::Variable(name.into(), None)
 }
 fn predicate(name: &str, actuals: Vec<AcornType>) -> AcornValue {
-    let names: Vec<_> = (0..actuals.len()).map(|i| format!("P{i}")).collect();
-    AcornValue::new_constant(
-        10,
-        name.into(),
-        AcornType::new_functional(names.iter().map(|n| variable(n)).collect(), AcornType::Bool),
-        names.into_iter().zip(actuals).collect(),
-    )
+    let instance_type = AcornType::new_functional(actuals.clone(), AcornType::Bool);
+    AcornValue::new_constant(10, name.into(), actuals, instance_type)
 }
 fn claim(name: &str, actuals: Vec<AcornType>) -> AcornValue {
     let args = actuals

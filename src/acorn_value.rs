@@ -391,7 +391,22 @@ impl AcornValue {
         AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
     }
 
+    // Construct an instance whose ordered arguments and effective type are resolved.
     pub fn new_constant(
+        module_id: ModuleId,
+        name: String,
+        params: Vec<AcornType>,
+        instance_type: AcornType,
+    ) -> AcornValue {
+        AcornValue::Constant(ConstantInstance {
+            module_id,
+            name,
+            params,
+            instance_type,
+        })
+    }
+
+    pub fn new_generic_constant(
         module_id: ModuleId,
         name: String,
         generic_type: AcornType,
