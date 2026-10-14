@@ -1,5 +1,10 @@
-from nat import Nat, NatPair, divides, mod
+from nat import Nat, divides, mod
 numerals Nat
+
+structure NatPair {
+    first: Nat
+    second: Nat
+}
 
 // One step is taking the pair (a, b) and replacing with (b, a mod b).
 define gcd_step(p: NatPair) -> NatPair {

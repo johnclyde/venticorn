@@ -777,11 +777,6 @@ theorem has_prime_divisor(n: Nat) {
     has_prime_divisor(n)
 }
 
-structure NatPair {
-    first: Nat
-    second: Nat
-}
-
 define factorial(n: Nat) -> Nat {
     match n {
         Nat.0 {
