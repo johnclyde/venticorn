@@ -23,7 +23,7 @@ struct DocumentBuildInfo {
 #[derive(Default)]
 pub struct BuildInfo {
     generation: u64,
-    id: u32,
+    id: Option<u32>,
     done: i32,
     total: i32,
     docs: HashMap<Url, DocumentBuildInfo>,
@@ -42,7 +42,7 @@ impl BuildInfo {
             .generation
             .checked_add(1)
             .expect("build generation exhausted");
-        self.id = 0;
+        self.id = None;
         self.done = 0;
         self.total = 0;
         let mut urls: Vec<_> = self
@@ -87,7 +87,9 @@ impl BuildInfo {
     }
 
     pub fn accepts(&self, generation: u64, build_id: u32) -> bool {
-        generation == self.generation && build_id != 0 && (self.id == 0 || self.id == build_id)
+        generation == self.generation
+            && build_id != 0
+            && (self.id.is_none() || self.id == Some(build_id))
     }
 
     pub fn handle_event(
@@ -99,7 +101,7 @@ impl BuildInfo {
         if !self.accepts(generation, event.build_id) {
             return None;
         }
-        self.id = event.build_id;
+        self.id = Some(event.build_id);
         if let Some((done, total)) = event.progress {
             self.done = done;
             self.total = total;
@@ -207,14 +209,14 @@ mod tests {
         let reopened = info.generation();
         assert_ne!(old, reopened);
         assert!(info.handle_event(old, Some(url()), &event(1)).is_none());
-        assert_eq!(info.progress().build_id, 0);
+        assert_eq!(info.progress().build_id, None);
         assert!(info.progress().docs[&url()].verified.is_empty());
         info.handle_event(reopened, Some(url()), &event(2));
         assert!(info.handle_event(old, Some(url()), &event(1)).is_none());
         assert!(info
             .handle_event(reopened, Some(url()), &event(1))
             .is_none());
-        assert_eq!(info.progress().build_id, 2);
+        assert_eq!(info.progress().build_id, Some(2));
         assert_eq!(info.progress().docs[&url()].verified, vec![4]);
     }
 
@@ -264,7 +266,7 @@ mod tests {
         empty.verified = None;
         empty.diagnostic = None;
         info.handle_event(info.generation(), None, &empty);
-        assert_eq!(info.progress().build_id, 2);
+        assert_eq!(info.progress().build_id, Some(2));
         assert_eq!(info.progress().done, 0);
         assert_eq!(info.progress().total, 0);
         assert!(info.progress().docs[&url()].verified.is_empty());
