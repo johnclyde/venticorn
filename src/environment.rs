@@ -971,8 +971,10 @@ impl Environment {
                         .add_constant(&member_fn_name, vec![], member_fn_type, None, None);
                     member_fns.push(
                         self.bindings
-                            .old_get_constant_value(&member_fn_name)
-                            .unwrap(),
+                            .get_constant_value(&member_fn_name)
+                            .unwrap()
+                            .resolved()
+                            .expect("generated datatype constants have no type parameters"),
                     );
                 }
 
@@ -993,7 +995,12 @@ impl Environment {
                         None
                     },
                 );
-                let new_fn = self.bindings.old_get_constant_value(&new_fn_name).unwrap();
+                let new_fn = self
+                    .bindings
+                    .get_constant_value(&new_fn_name)
+                    .unwrap()
+                    .resolved()
+                    .expect("generated datatype constants have no type parameters");
 
                 // Each object of this new type has certain properties.
                 let object_var = AcornValue::Variable(0, struct_type.clone());
@@ -1163,8 +1170,10 @@ impl Environment {
                     );
                     constructor_fns.push(
                         self.bindings
-                            .old_get_constant_value(constructor_name)
-                            .unwrap(),
+                            .get_constant_value(constructor_name)
+                            .unwrap()
+                            .resolved()
+                            .expect("generated datatype constants have no type parameters"),
                     );
                 }
 
