@@ -111,10 +111,20 @@ pub struct BindingMap {
     theorems: HashSet<String>,
 }
 
+// A generic declaration whose type arguments have not been inferred yet.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UnresolvedConstant {
+    module_id: ModuleId,
+    name: String,
+    // Formal parameters are kept in declaration order.
+    params: Vec<String>,
+    generic_type: AcornType,
+}
+
 // A named declaration may still need type arguments before it becomes a proof value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PotentialValue {
-    Unresolved(ModuleId, String, AcornType, Vec<String>),
+    Unresolved(UnresolvedConstant),
     Resolved(AcornValue),
 }
 
@@ -130,8 +140,8 @@ impl PotentialValue {
     pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
         match self {
             PotentialValue::Resolved(value) => Ok(value),
-            PotentialValue::Unresolved(_, name, _, _) => {
-                Err(source.error(&format!("name {} has unresolved type", name)))
+            PotentialValue::Unresolved(unresolved) => {
+                Err(source.error(&format!("name {} has unresolved type", unresolved.name)))
             }
         }
     }
@@ -186,6 +196,7 @@ enum NamedEntity {
     Value(AcornValue),
     Type(AcornType),
     Module(ModuleId),
+    Unresolved(UnresolvedConstant),
 }
 
 impl NamedEntity {
@@ -195,6 +206,9 @@ impl NamedEntity {
         source: &dyn ErrorSource,
     ) -> compilation::Result<AcornValue> {
         match self {
+            NamedEntity::Unresolved(unresolved) => {
+                Err(source.error(&format!("name {} has unresolved type", unresolved.name)))
+            }
             NamedEntity::Value(value) => {
                 check_type(source, expected_type, &value.get_type())?;
                 Ok(value)
@@ -210,6 +224,9 @@ impl NamedEntity {
 
     fn expect_type(self, source: &dyn ErrorSource) -> compilation::Result<AcornType> {
         match self {
+            NamedEntity::Unresolved(unresolved) => {
+                Err(source.error(&format!("name {} has unresolved type", unresolved.name)))
+            }
             NamedEntity::Value(_) => {
                 Err(source.error("name refers to a value but we expected a type"))
             }
@@ -359,12 +376,12 @@ impl BindingMap {
                 constant_type,
             )))
         } else {
-            Some(PotentialValue::Unresolved(
-                self.module,
-                name.to_string(),
-                constant_type,
+            Some(PotentialValue::Unresolved(UnresolvedConstant {
+                module_id: self.module,
+                name: name.to_string(),
                 params,
-            ))
+                generic_type: constant_type,
+            }))
         }
     }
 
@@ -613,6 +630,7 @@ impl BindingMap {
                 );
             }
             return match entity? {
+                NamedEntity::Unresolved(_) => Some(vec![]),
                 NamedEntity::Module(module) => project
                     .get_bindings(module)?
                     .get_completions(project, partial, true),
@@ -944,8 +962,8 @@ impl BindingMap {
         type_name: &str,
         s: &str,
     ) -> compilation::Result<AcornValue> {
-        if let Some(value) = self.evaluate_class_variable(project, module, type_name, s) {
-            return Ok(value);
+        if let Some(potential) = self.evaluate_class_variable(project, module, type_name, s) {
+            return potential.value(token);
         }
 
         if s.len() == 1 {
@@ -959,7 +977,7 @@ impl BindingMap {
         let initial_num =
             self.evaluate_number_with_type(token, project, module, type_name, initial_str)?;
         let read_fn = match self.evaluate_class_variable(project, module, type_name, "read") {
-            Some(f) => f,
+            Some(potential) => potential.value(token)?,
             None => {
                 return Err(token.error(&format!(
                     "{}.read must be defined to read numeric literals",
@@ -978,14 +996,14 @@ impl BindingMap {
         module: ModuleId,
         type_name: &str,
         var_name: &str,
-    ) -> Option<AcornValue> {
+    ) -> Option<PotentialValue> {
         let bindings = if module == self.module {
             &self
         } else {
             project.get_bindings(module).unwrap()
         };
         let constant_name = format!("{}.{}", type_name, var_name);
-        bindings.old_get_constant_value(&constant_name)
+        bindings.get_constant_value(&constant_name)
     }
 
     // Evaluates an expression that is supposed to describe a value, with an empty stack.
@@ -1060,6 +1078,9 @@ impl BindingMap {
     ) -> compilation::Result<NamedEntity> {
         let name = name_token.text();
         match namespace {
+            Some(NamedEntity::Unresolved(_)) => {
+                Err(name_token.error("cannot access members of unresolved types"))
+            }
             Some(NamedEntity::Value(instance)) => {
                 let value = self.evaluate_instance_variable(name_token, project, instance, name)?;
                 Ok(NamedEntity::Value(value))
@@ -1077,7 +1098,10 @@ impl BindingMap {
                         return Ok(NamedEntity::Value(value));
                     }
                     match self.evaluate_class_variable(project, module, &type_name, name) {
-                        Some(value) => Ok(NamedEntity::Value(value)),
+                        Some(PotentialValue::Resolved(value)) => Ok(NamedEntity::Value(value)),
+                        Some(PotentialValue::Unresolved(unresolved)) => {
+                            Ok(NamedEntity::Unresolved(unresolved))
+                        }
                         None => Err(name_token
                             .error(&format!("{} has no member named '{}'", type_name, name))),
                     }
@@ -1275,7 +1299,41 @@ impl BindingMap {
                 self.add_type_alias(&name_token.text(), acorn_type);
                 Ok(())
             }
+            NamedEntity::Unresolved(_) => Err(name_token.error("direct imports of generic constants are not supported; import the module and use a qualified name")),
             NamedEntity::Module(_) => Err(name_token.error("cannot import modules indirectly")),
+        }
+    }
+
+    // Preserve unresolved qualified and grouped function heads during lookup migration.
+    fn evaluate_function_head(
+        &self,
+        stack: &mut Stack,
+        project: &Project,
+        expression: &Expression,
+    ) -> compilation::Result<AcornValue> {
+        if let Expression::Grouping(_, inner, _) = expression {
+            return self.evaluate_function_head(stack, project, inner);
+        }
+        let named_head = match expression {
+            Expression::Singleton(token) => matches!(
+                token.token_type,
+                TokenType::Identifier | TokenType::Numeral | TokenType::SelfToken
+            ),
+            Expression::Binary(_, token, _) => token.token_type == TokenType::Dot,
+            _ => false,
+        };
+        if !named_head {
+            return self.evaluate_value_with_stack(stack, project, expression, None);
+        }
+        let entity = self.evaluate_entity(stack, project, expression)?;
+        match entity {
+            NamedEntity::Unresolved(unresolved) => Ok(AcornValue::Unresolved(
+                unresolved.module_id,
+                unresolved.name,
+                unresolved.generic_type,
+                unresolved.params,
+            )),
+            entity => entity.expect_value(None, expression),
         }
     }
 
@@ -1443,8 +1501,7 @@ impl BindingMap {
                 },
             },
             Expression::Apply(function_expr, args_expr) => {
-                let function =
-                    self.evaluate_value_with_stack(stack, project, function_expr, None)?;
+                let function = self.evaluate_function_head(stack, project, function_expr)?;
                 let function_type = function.get_type();
 
                 let function_type = match function_type {
