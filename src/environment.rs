@@ -9,13 +9,14 @@ use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, Stack};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
+use crate::compilation::{self, Error};
 use crate::fact::Fact;
 use crate::module::ModuleId;
 use crate::project::{LoadError, Project};
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 use crate::statement::{Body, DefineStatement, LetStatement, Statement, StatementInfo};
-use crate::token::{self, Error, Token, TokenIter, TokenType};
+use crate::token::{Token, TokenIter, TokenType};
 
 // Each line has a LineType, to handle line-based user interface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -288,7 +289,7 @@ impl Environment {
         last_line: u32,
         body: &Body,
         if_claim: Option<AcornValue>,
-    ) -> token::Result<Option<AcornValue>> {
+    ) -> compilation::Result<Option<AcornValue>> {
         if body.statements.is_empty() {
             // Conditional blocks with an empty body can just be ignored
             return Ok(None);
@@ -347,7 +348,7 @@ impl Environment {
         class: Option<&str>,
         ls: &LetStatement,
         range: Range,
-    ) -> token::Result<()> {
+    ) -> compilation::Result<()> {
         if class.is_none() && ls.name_token.token_type == TokenType::Numeral {
             return Err(Error::new(
                 &ls.name_token,
@@ -413,7 +414,7 @@ impl Environment {
         class_name: Option<&str>,
         ds: &DefineStatement,
         range: Range,
-    ) -> token::Result<()> {
+    ) -> compilation::Result<()> {
         if ds.name == "new" || ds.name == "self" {
             return Err(Error::new(
                 &ds.name_token,
@@ -493,7 +494,7 @@ impl Environment {
         &mut self,
         project: &mut Project,
         statement: &Statement,
-    ) -> token::Result<()> {
+    ) -> compilation::Result<()> {
         if self.includes_explicit_false {
             return Err(Error::new(
                 &statement.first_token,
@@ -1564,7 +1565,11 @@ impl Environment {
 
     // Parse these tokens and add them to the environment.
     // If project is not provided, we won't be able to handle import statements.
-    pub fn add_tokens(&mut self, project: &mut Project, tokens: Vec<Token>) -> token::Result<()> {
+    pub fn add_tokens(
+        &mut self,
+        project: &mut Project,
+        tokens: Vec<Token>,
+    ) -> compilation::Result<()> {
         let mut tokens = TokenIter::new(tokens);
         loop {
             match Statement::parse(&mut tokens, false) {
