@@ -322,10 +322,11 @@ impl Backend {
         let producer_project = project.clone();
         tokio::spawn(async move {
             tokio::task::block_in_place(move || {
-                let mut builder = Builder::new(move |event| {
-                    // A superseded consumer may already have stopped listening.
-                    let _ = tx.send(event);
-                });
+                let mut builder =
+                    Builder::with_cache(producer_project.cached_build(), move |event| {
+                        // A superseded consumer may already have stopped listening.
+                        let _ = tx.send(event);
+                    });
                 producer_project.build(&mut builder);
                 let seconds =
                     (chrono::Local::now() - start_time).num_milliseconds() as f64 / 1000.0;

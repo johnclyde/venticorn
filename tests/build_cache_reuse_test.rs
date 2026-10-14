@@ -97,11 +97,11 @@ fn logical_identity_survives_changed_load_ids_and_unrelated_targets() {
     reordered.mock("/mock/another.ac", "theorem identity { true }");
     assert_ne!(
         project
-            .get_env_by_ref(&ModuleRef::Name("leaf".into()))
+            .get_env_by_ref(&ModuleRef::Name("main".into()))
             .unwrap()
             .module_id,
         reordered
-            .get_env_by_ref(&ModuleRef::Name("leaf".into()))
+            .get_env_by_ref(&ModuleRef::Name("main".into()))
             .unwrap()
             .module_id
     );

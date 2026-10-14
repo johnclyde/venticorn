@@ -158,6 +158,8 @@ The language server selects its library when the editor initializes the connecti
 
 The extension supplies its installation directory through `--extension-root` and its first local workspace folder through `--workspace-root`. Other clients may omit these flags and use the initialization workspace URI or `VENTICORN_LIBRARY`. Library paths are validated before the backend is created, so configuration failures remain visible through the editor protocol.
 
+Repeated verification within one running server reuses completed proofs for unchanged modules and their verified dependencies. Editing a module or a dependency triggers fresh verification for affected modules. Failed goals are searched again; an interrupted build does not publish partial results. This cache stays in memory and is cleared when the server restarts.
+
 With a library selected, the editor also supports standalone `.ac` files outside that library. Unsaved editor content takes precedence over disk content. Their imports resolve from the selected library. Opening or saving changed content refreshes dependent modules; closing a buffer discards its editor version and restores disk content for any remaining importers. Command-line verification still enumerates the selected library.
 
 An initialization failure is shown once with its cause. The extension does not retry initialization or automatically restart a stopped server; correct the configuration and reload the editor window to try again. Error details remain in the language-client output channel.

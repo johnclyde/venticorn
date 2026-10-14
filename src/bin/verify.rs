@@ -56,7 +56,7 @@ async fn main() -> ExitCode {
     }
 
     // Set up the builder
-    let mut builder = Builder::new(|event| {
+    let mut builder = Builder::with_cache(project.cached_build(), |event| {
         if let Some(m) = event.log_message {
             if let Some(diagnostic) = event.diagnostic {
                 println!(

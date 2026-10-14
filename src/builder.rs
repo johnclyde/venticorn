@@ -111,7 +111,7 @@ pub struct Builder<'a> {
     // Counted up during the loading phase.
     pub goals_total: i32,
 
-    // The number of goals for which the proof search finished.
+    // The number of goals handled by a completed search or verified cache entry.
     // This includes both successful and unsuccessful searches.
     pub goals_done: i32,
 
