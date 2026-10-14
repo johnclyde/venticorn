@@ -79,6 +79,7 @@ impl Monomorphizer {
 
     // Adds a fact that could be either generic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
+        // Directly admitted facts can expose concrete instances needed by definitions.
         self.match_constants(&fact.value);
 
         let i = self.generic_facts.len();
@@ -173,7 +174,9 @@ impl Monomorphizer {
             .zip(monomorph_params.params.iter())
         {
             assert_eq!(i_name, m_name);
-            instance_type.match_instance(monomorph_type, &mut fact_params);
+            if !instance_type.match_instance(monomorph_type, &mut fact_params) {
+                return;
+            }
         }
 
         // We sort because there's no inherently canonical order.
@@ -188,14 +191,13 @@ impl Monomorphizer {
 
         let monomorphic_fact = self.generic_facts[fact_id].instantiate(&fact_params.params);
         if monomorphic_fact.value.is_generic() {
-            // This is a little awkward. Completely monomorphizing this instance
-            // still doesn't monomorphize the whole fact.
-            // TODO: instead of bailing out, partially monomorphize, and continue.
+            // Matching one constant may leave other type variables in the fact unresolved.
+            // Do not emit or remember an incomplete substitution.
             return;
         }
         self.monomorphs_for_fact[fact_id].push(fact_params);
-
-        // This monomorphization might have created new monomorphs, that in turn we need to match.
+        // Definitions can introduce concrete generic calls needed by the current proof.
+        // Record this substitution before following those calls to break repeated demand.
         self.match_constants(&monomorphic_fact.value);
         self.monomorphic_facts.push(monomorphic_fact);
     }

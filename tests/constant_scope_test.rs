@@ -66,3 +66,53 @@ fn generic_block_premises_share_the_bound_argument_type() {
     "#;
     assert_eq!(outcomes(source), vec![Outcome::Success]);
 }
+
+#[test]
+fn concrete_definition_instances_support_generic_axioms() {
+    let declarations = r#"
+        inductive Nat {
+            zero
+            suc(Nat)
+        }
+        define repeat<T>(f: T -> T, value: T, n: Nat) -> T { axiom }
+        axiom repeat_base<T>(f: T -> T, value: T) { repeat(f, value, Nat.zero) = value }
+        class Nat {
+            define add(self, other: Nat) -> Nat { repeat(Nat.suc, self, other) }
+        }
+    "#;
+    assert_eq!(
+        outcomes(&format!(
+            "{declarations} theorem goal(value: Nat) {{ value.add(Nat.zero) = value }}"
+        )),
+        vec![Outcome::Success]
+    );
+    assert_eq!(
+        outcomes(&format!(
+            "{declarations} theorem goal(value: Nat) {{ value.add(Nat.zero) != value }}"
+        )),
+        vec![Outcome::Exhausted]
+    );
+}
+
+#[test]
+fn nested_generic_definitions_preserve_automatic_proofs() {
+    let declarations = r#"
+        define identity<T>(value: T) -> T { value }
+        define nested<T>(value: T) -> T { identity(value) }
+        define outer<T>(value: T) -> T { nested(value) }
+    "#;
+    for name in ["identity", "nested", "outer"] {
+        assert_eq!(
+            outcomes(&format!(
+                "{declarations} theorem goal {{ {name}(true) = true }}"
+            )),
+            vec![Outcome::Success]
+        );
+        assert_eq!(
+            outcomes(&format!(
+                "{declarations} theorem goal {{ {name}(true) = false }}"
+            )),
+            vec![Outcome::Exhausted]
+        );
+    }
+}

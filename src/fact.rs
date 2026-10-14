@@ -24,12 +24,9 @@ impl Fact {
         self.truthiness != Truthiness::Factual
     }
 
-    // Specializes a templated fact.
+    // Substitutes type variables in a fact, preserving any variables not provided.
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> Fact {
         let value = self.value.instantiate(params);
-        if value.is_generic() {
-            panic!("monomorph {} is still parametric", value);
-        }
         let source = match &self.source.source_type {
             SourceType::ConstantDefinition(v) => {
                 let new_type = SourceType::ConstantDefinition(v.instantiate(params));
