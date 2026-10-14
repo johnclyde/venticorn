@@ -17,7 +17,7 @@ use crate::fact::Fact;
 use crate::goal::GoalContext;
 use crate::module::{Module, ModuleId, ModuleRef, FIRST_NORMAL};
 use crate::prover::Prover;
-use crate::token::{self, Token};
+use crate::token::{self, Token, TokenType};
 
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
@@ -786,14 +786,58 @@ impl Project {
         env_line: u32,
         prefix: &str,
     ) -> Option<Vec<CompletionItem>> {
-        let parts: Vec<_> = prefix.split_whitespace().collect();
-        if parts.len() == 4 && parts[0] == "from" && parts[2] == "import" {
-            let module_ref = ModuleRef::Name(parts[1].to_string());
-            let env = self.get_env_by_ref(&module_ref)?;
-            return Some(env.bindings.get_completions(parts[3], true));
+        // Complete only the token at the cursor, never an earlier word or comment text.
+        if prefix.contains("//") || prefix.ends_with(char::is_whitespace) {
+            return None;
         }
-        let word = *parts.last()?;
-        if !word.chars().all(Token::identifierish) || prefix.ends_with(char::is_whitespace) {
+        let word_start = prefix
+            .char_indices()
+            .rev()
+            .find(|(_, ch)| !Token::identifierish(*ch) && *ch != '.')
+            .map_or(0, |(index, ch)| index + ch.len_utf8());
+        let word = &prefix[word_start..];
+        if word.is_empty() {
+            return None;
+        }
+        let parts: Vec<_> = prefix.split_whitespace().collect();
+        if parts.first() == Some(&"from") {
+            // Parse the import prefix without loading paths or accepting punctuation as names.
+            let tokens = Token::scan(prefix);
+            let mut index = 1;
+            let mut components = vec![];
+            loop {
+                let token = tokens.get(index)?;
+                if token.token_type != TokenType::Identifier {
+                    return None;
+                }
+                components.push(token.text());
+                index += 1;
+                match tokens.get(index)?.token_type {
+                    TokenType::Dot => index += 1,
+                    TokenType::Import => {
+                        index += 1;
+                        break;
+                    }
+                    _ => return None,
+                }
+            }
+            loop {
+                if tokens.get(index)?.token_type != TokenType::Identifier {
+                    return None;
+                }
+                index += 1;
+                match tokens.get(index)?.token_type {
+                    TokenType::Comma => index += 1,
+                    TokenType::NewLine if index + 1 == tokens.len() => break,
+                    _ => return None,
+                }
+            }
+            let module_ref = ModuleRef::Name(components.join("."));
+            let env = self.get_env_by_ref(&module_ref)?;
+            return env.bindings.get_completions(self, word, true);
+        }
+        if parts.first() == Some(&"import") {
+            // Module-path discovery is separate from completing names within a loaded module.
             return None;
         }
         let module_ref = self.module_ref_from_path(path).ok()?;
