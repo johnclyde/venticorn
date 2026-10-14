@@ -20,12 +20,12 @@ pub struct DocumentProgress {
 }
 
 // The language server stores one progress struct, and returns it at any time.
-// Build id zero denotes no active result; a completed empty build can also have 0/0 goals.
+// A missing build id denotes no active result; a completed empty build can also have 0/0 goals.
 // When progress is cancelled or interrupted, we should update this so that done = total.
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressResponse {
-    pub build_id: u32,
+    pub build_id: Option<u32>,
     pub done: i32,
     pub total: i32,
     pub docs: HashMap<Url, DocumentProgress>,
@@ -34,7 +34,7 @@ pub struct ProgressResponse {
 impl ProgressResponse {
     pub fn default() -> ProgressResponse {
         ProgressResponse {
-            build_id: 0,
+            build_id: None,
             done: 0,
             total: 0,
             docs: HashMap::new(),

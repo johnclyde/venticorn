@@ -42,11 +42,11 @@ class BuildPublicationTest(unittest.TestCase):
     def progress(self):
         return self.session.request("acorn/progress", {})["result"]
 
-    def wait_for_build(self, previous=0, *, total=1):
+    def wait_for_build(self, previous=None, *, total=1):
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             progress = self.progress()
-            if progress["buildId"] not in (0, previous) and progress["done"] == progress["total"] == total:
+            if progress["buildId"] not in (None, previous) and progress["done"] == progress["total"] == total:
                 return progress
             time.sleep(0.01)
         self.fail(f"build did not finish: {progress}; stderr={''.join(self.session.errors)}")
@@ -73,7 +73,7 @@ class BuildPublicationTest(unittest.TestCase):
         text = "theorem identity { true }\n"
         self.change(4, text)
         progress = self.progress()
-        self.assertEqual(progress["buildId"], 0)
+        self.assertEqual(progress["buildId"], None)
         self.assertEqual(progress["docs"], {})
         self.wait_for_diagnostic(lambda item: item.get("version") == 4 and not item["diagnostics"])
         self.save(text)
