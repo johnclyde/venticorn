@@ -1191,6 +1191,9 @@ impl Statement {
                         };
                         return Ok((Some(s), None));
                     }
+                    TokenType::Typeclass => {
+                        return Err(token.error("typeclass declarations are not supported yet"));
+                    }
                     TokenType::Match => {
                         let keyword = tokens.next().unwrap();
                         let s = parse_match_statement(keyword, tokens)?;
