@@ -356,20 +356,28 @@ impl Expression {
         )
     }
 
+    // Generates prefix notation without changing the operand's grouping.
+    pub fn generate_unary(op: TokenType, mut operand: Expression) -> Expression {
+        if operand.value_precedence() < op.unary_precedence() {
+            operand = Expression::generate_grouping(vec![operand]);
+        }
+        Expression::Unary(op.generate(), Box::new(operand))
+    }
+
     // Generates a binary expression, parenthesizing if necessary according to precedence.
     pub fn generate_binary(
         mut left: Expression,
         op: TokenType,
         mut right: Expression,
     ) -> Expression {
-        if left.value_precedence() < op.value_precedence() {
+        if left.value_precedence() < op.binary_precedence() {
             left = Expression::Grouping(
                 TokenType::LeftParen.generate(),
                 Box::new(left),
                 TokenType::RightParen.generate(),
             );
         }
-        if right.value_precedence() <= op.value_precedence() {
+        if right.value_precedence() <= op.binary_precedence() {
             right = Expression::Grouping(
                 TokenType::LeftParen.generate(),
                 Box::new(right),
@@ -438,10 +446,9 @@ impl Expression {
                 // These expressions never need to be parenthesized.
                 i8::MAX
             }
-            Expression::Unary(token, _) | Expression::Binary(_, token, _) => {
-                token.value_precedence()
-            }
-            Expression::Apply(..) => TokenType::Dot.value_precedence(),
+            Expression::Unary(token, _) => token.unary_precedence(),
+            Expression::Binary(_, token, _) => token.binary_precedence(),
+            Expression::Apply(..) => TokenType::Dot.binary_precedence(),
         }
     }
 
@@ -751,22 +758,18 @@ fn parse_partial_expressions(
 
 // Find the index of the operator that should operate last. (Ie, the root of the tree.)
 // If there are no operators, return None.
-fn find_last_operator(
-    partials: &VecDeque<PartialExpression>,
-    expected_type: ExpressionType,
-) -> Result<Option<usize>> {
-    let is_value = expected_type == ExpressionType::Value;
+fn find_last_operator(partials: &VecDeque<PartialExpression>) -> Result<Option<usize>> {
     let operators = partials.iter().enumerate().filter_map(|(i, partial)| {
         match partial {
             PartialExpression::Unary(token) => {
                 // Only a unary operator at the beginning of the expression can operate last
                 if i == 0 {
-                    Some((-token.token_type.unary_precedence(), i))
+                    Some((-token.unary_precedence(), i))
                 } else {
                     None
                 }
             }
-            PartialExpression::Binary(token) => Some((-token.precedence(is_value), i)),
+            PartialExpression::Binary(token) => Some((-token.binary_precedence(), i)),
             PartialExpression::ImplicitApply(_) => {
                 // Application has the same precedence as dot, so it goes left to right.
                 // This is intuitive if you look at the cases:
@@ -774,7 +777,7 @@ fn find_last_operator(
                 // foo.bar(baz) is parsed as (foo.bar)(baz)
                 // foo(bar).baz is parsed as (foo(bar)).baz
                 // foo(bar)(baz) is parsed as (foo(bar))(baz)
-                Some((-TokenType::Dot.value_precedence(), i))
+                Some((-TokenType::Dot.binary_precedence(), i))
             }
             _ => None,
         }
@@ -836,7 +839,7 @@ fn combine_partial_expressions(
 
     // If there are operators, find the operator that should operate last,
     // and recurse on each of the two sides.
-    if let Some(index) = find_last_operator(&partials, expected_type)? {
+    if let Some(index) = find_last_operator(&partials)? {
         if index == 0 {
             let partial = partials.pop_front().unwrap();
             if let PartialExpression::Unary(token) = partial {

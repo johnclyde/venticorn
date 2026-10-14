@@ -177,12 +177,11 @@ impl TokenType {
     // Higher precedence operators are bound to arguments first.
     // It is an error to not specify the order when the precedence is the same.
     // Only unary and binary operators should have precedences.
-    // There are two precedences: for operators in a value, like 2 + 2, and operators in
-    // a type expression, like (int -> int) -> int.
+    // Type expressions use the same relative order for dot, arrow, colon, and comma.
     // Operators that are not allowed in an expression have a precedence of 0.
     // "Value" expressions also include "declarations" which is why colons are allowed.
     // Function application implicitly has the same precedence as dot.
-    pub fn value_precedence(&self) -> i8 {
+    pub fn binary_precedence(&self) -> i8 {
         match self {
             TokenType::Dot => 13,
             TokenType::Asterisk => 11,
@@ -212,16 +211,6 @@ impl TokenType {
         match self {
             TokenType::Not => 6,
             TokenType::Minus => 12,
-            _ => 0,
-        }
-    }
-
-    pub fn type_precedence(&self) -> i8 {
-        match self {
-            TokenType::Dot => 4,
-            TokenType::RightArrow => 3,
-            TokenType::Colon => 2,
-            TokenType::Comma => 1,
             _ => 0,
         }
     }
@@ -446,20 +435,12 @@ impl Token {
         }
     }
 
-    pub fn value_precedence(&self) -> i8 {
-        self.token_type.value_precedence()
+    pub fn binary_precedence(&self) -> i8 {
+        self.token_type.binary_precedence()
     }
 
-    pub fn type_precedence(&self) -> i8 {
-        self.token_type.type_precedence()
-    }
-
-    pub fn precedence(&self, is_value: bool) -> i8 {
-        if is_value {
-            self.value_precedence()
-        } else {
-            self.type_precedence()
-        }
+    pub fn unary_precedence(&self) -> i8 {
+        self.token_type.unary_precedence()
     }
 
     pub fn identifierish(ch: char) -> bool {
