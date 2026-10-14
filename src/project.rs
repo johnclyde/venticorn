@@ -428,7 +428,13 @@ impl Project {
     // Verifies all goals within this target.
     // Returns the status for this file alone.
     fn verify_target(&self, target: &ModuleRef, env: &Environment, builder: &mut Builder) {
-        builder.module_proving_started(target);
+        let dependencies = env
+            .bindings
+            .direct_dependencies()
+            .into_iter()
+            .map(|id| self.modules[id as usize].0.clone())
+            .collect();
+        builder.module_proving_started_with_dependencies(target, dependencies);
 
         // Fast and slow modes should be interchangeable here.
         // If we run into a bug with fast mode, try using slow mode to debug.

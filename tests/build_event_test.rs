@@ -84,3 +84,19 @@ fn successful_goal_events_cover_the_entire_proof_block() {
         vec![(1, 1), (0, 2)]
     );
 }
+
+#[test]
+fn module_results_keep_their_identity_after_an_earlier_warning() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/afailed.ac", "theorem impossible { false }");
+    project.mock("/mock/zverified.ac", "theorem identity { true }");
+    let (status, events) = project.sync_build();
+    assert_eq!(status, BuildStatus::Warning);
+    let verified: Vec<_> = events
+        .iter()
+        .filter(|event| event.verified.is_some())
+        .collect();
+    assert_eq!(verified.len(), 1);
+    assert_eq!(verified[0].module, ModuleRef::Name("zverified".into()));
+    assert_eq!(events.last().unwrap().progress, Some((2, 2)));
+}
