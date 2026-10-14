@@ -137,6 +137,21 @@ impl PotentialValue {
         }
     }
 
+    // Pending declarations expose their generic signature only to inference.
+    pub fn get_type(&self) -> AcornType {
+        match self {
+            PotentialValue::Unresolved(unresolved) => unresolved.generic_type.clone(),
+            PotentialValue::Resolved(value) => value.get_type(),
+        }
+    }
+
+    fn to_named_entity(self) -> NamedEntity {
+        match self {
+            PotentialValue::Unresolved(unresolved) => NamedEntity::Unresolved(unresolved),
+            PotentialValue::Resolved(value) => NamedEntity::Value(value),
+        }
+    }
+
     pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
         match self {
             PotentialValue::Resolved(value) => Ok(value),
@@ -200,6 +215,19 @@ enum NamedEntity {
 }
 
 impl NamedEntity {
+    fn expect_potential_value(
+        self,
+        expected_type: Option<&AcornType>,
+        source: &dyn ErrorSource,
+    ) -> compilation::Result<PotentialValue> {
+        match self {
+            NamedEntity::Unresolved(unresolved) => Ok(PotentialValue::Unresolved(unresolved)),
+            entity => Ok(PotentialValue::Resolved(
+                entity.expect_value(expected_type, source)?,
+            )),
+        }
+    }
+
     fn expect_value(
         self,
         expected_type: Option<&AcornType>,
@@ -1132,8 +1160,8 @@ impl BindingMap {
                         } else if let Some((i, t)) = stack.get(name) {
                             // This is a stack variable
                             Ok(NamedEntity::Value(AcornValue::Variable(*i, t.clone())))
-                        } else if let Some(value) = self.old_get_constant_value(name) {
-                            Ok(NamedEntity::Value(value))
+                        } else if let Some(potential) = self.get_constant_value(name) {
+                            Ok(potential.to_named_entity())
                         } else {
                             Err(name_token.error(&format!("unknown identifier '{}'", name)))
                         }
@@ -1367,42 +1395,7 @@ impl BindingMap {
         Ok(value)
     }
 
-    // Preserve unresolved qualified and grouped function heads during lookup migration.
-    fn evaluate_function_head(
-        &self,
-        stack: &mut Stack,
-        project: &Project,
-        expression: &Expression,
-    ) -> compilation::Result<AcornValue> {
-        if let Expression::Grouping(_, inner, _) = expression {
-            return self.evaluate_function_head(stack, project, inner);
-        }
-        let named_head = match expression {
-            Expression::Singleton(token) => matches!(
-                token.token_type,
-                TokenType::Identifier | TokenType::Numeral | TokenType::SelfToken
-            ),
-            Expression::Binary(_, token, _) => token.token_type == TokenType::Dot,
-            _ => false,
-        };
-        if !named_head {
-            return self.evaluate_value_with_stack(stack, project, expression, None);
-        }
-        let entity = self.evaluate_entity(stack, project, expression)?;
-        match entity {
-            NamedEntity::Unresolved(unresolved) => Ok(AcornValue::Unresolved(
-                unresolved.module_id,
-                unresolved.name,
-                unresolved.generic_type,
-                unresolved.params,
-            )),
-            entity => entity.expect_value(None, expression),
-        }
-    }
-
-    // Evaluates an expression that describes a value, with a stack given as context.
-    // A value expression could be either a value or an argument list.
-    // Returns the value along with its type.
+    // Evaluate a completed value; unresolved declarations cannot enter nested proof expressions.
     pub fn evaluate_value_with_stack(
         &self,
         stack: &mut Stack,
@@ -1410,7 +1403,23 @@ impl BindingMap {
         expression: &Expression,
         expected_type: Option<&AcornType>,
     ) -> compilation::Result<AcornValue> {
-        match expression {
+        let value = self
+            .evaluate_potential_value(stack, project, expression, expected_type)?
+            .value(expression)?;
+        check_type(expression, expected_type, &value.get_type())?;
+        Ok(value)
+    }
+
+    // Evaluates an expression that describes a value, with a stack given as context.
+    // Only function heads may carry pending generic arguments.
+    fn evaluate_potential_value(
+        &self,
+        stack: &mut Stack,
+        project: &Project,
+        expression: &Expression,
+        expected_type: Option<&AcornType>,
+    ) -> compilation::Result<PotentialValue> {
+        let value = match expression {
             Expression::Singleton(token) => match token.token_type {
                 TokenType::Axiom => {
                     Err(token.error("axiom is only allowed as a complete declaration value"))
@@ -1424,7 +1433,7 @@ impl BindingMap {
                 }
                 TokenType::Identifier | TokenType::Numeral | TokenType::SelfToken => {
                     let entity = self.evaluate_name(token, project, stack, None)?;
-                    Ok(entity.expect_value(expected_type, token)?)
+                    return entity.expect_potential_value(expected_type, expression);
                 }
                 token_type => Err(token.error(&format!(
                     "identifier expression has token type {:?}",
@@ -1547,7 +1556,7 @@ impl BindingMap {
                 }
                 TokenType::Dot => {
                     let entity = self.evaluate_dot_expression(stack, project, left, right)?;
-                    Ok(entity.expect_value(expected_type, token)?)
+                    return entity.expect_potential_value(expected_type, expression);
                 }
                 token_type => match token_type.to_infix_magic_method_name() {
                     Some(name) => self.evaluate_infix(
@@ -1564,7 +1573,8 @@ impl BindingMap {
                 },
             },
             Expression::Apply(function_expr, args_expr) => {
-                let function = self.evaluate_function_head(stack, project, function_expr)?;
+                let function =
+                    self.evaluate_potential_value(stack, project, function_expr, None)?;
                 let function_type = function.get_type();
 
                 let function_type = match function_type {
@@ -1584,22 +1594,21 @@ impl BindingMap {
                     )));
                 }
 
-                // Check if we have to do type inference.
-                if let AcornValue::Unresolved(c_module, c_name, c_type, c_params) = function {
-                    return self.infer_and_apply(
-                        stack,
-                        project,
-                        &**function_expr,
-                        UnresolvedConstant {
-                            module_id: c_module,
-                            name: c_name,
-                            params: c_params,
-                            generic_type: c_type,
-                        },
-                        arg_exprs,
-                        expected_type,
-                    );
-                }
+                let function = match function {
+                    PotentialValue::Unresolved(unresolved) => {
+                        return self
+                            .infer_and_apply(
+                                stack,
+                                project,
+                                &**function_expr,
+                                unresolved,
+                                arg_exprs,
+                                expected_type,
+                            )
+                            .map(PotentialValue::Resolved);
+                    }
+                    PotentialValue::Resolved(function) => function,
+                };
 
                 // Ordinary functions keep the types declared in their current scope.
                 let mut args = vec![];
@@ -1620,7 +1629,7 @@ impl BindingMap {
                 Ok(AcornValue::new_apply(function, args))
             }
             Expression::Grouping(_, e, _) => {
-                self.evaluate_value_with_stack(stack, project, e, expected_type)
+                return self.evaluate_potential_value(stack, project, e, expected_type);
             }
             Expression::Binder(token, args, body, _) => {
                 if args.len() < 1 {
@@ -1729,7 +1738,8 @@ impl BindingMap {
                 }
                 Ok(AcornValue::Match(Box::new(scrutinee), cases))
             }
-        }
+        }?;
+        Ok(PotentialValue::Resolved(value))
     }
 
     // Evaluate an expression that creates a new scope for the value inside it.
