@@ -195,7 +195,6 @@ impl TokenType {
             TokenType::LessThanOrEquals => 8,
             TokenType::Equals => 7,
             TokenType::NotEquals => 7,
-            TokenType::Not => 6,
             TokenType::Or => 5,
             TokenType::And => 5,
             TokenType::LeftRightArrow => 4,

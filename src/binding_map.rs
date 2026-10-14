@@ -2081,12 +2081,11 @@ impl BindingMap {
             AcornValue::Binary(op, left, right) => {
                 let left = self.value_to_expr(left, var_names, next_x, next_k)?;
                 let right = self.value_to_expr(right, var_names, next_x, next_k)?;
-                let token = op.token_type().generate();
-                Ok(Expression::Binary(Box::new(left), token, Box::new(right)))
+                Ok(Expression::generate_binary(left, op.token_type(), right))
             }
             AcornValue::Not(x) => {
                 let x = self.value_to_expr(x, var_names, next_x, next_k)?;
-                Ok(Expression::Unary(TokenType::Not.generate(), Box::new(x)))
+                Ok(Expression::generate_unary(TokenType::Not, x))
             }
             AcornValue::ForAll(quants, value) => self.generate_quantifier_expr(
                 TokenType::ForAll,
