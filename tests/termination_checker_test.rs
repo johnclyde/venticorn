@@ -4,7 +4,7 @@ use venticorn::acorn_value::AcornValue;
 use venticorn::termination_checker::TerminationChecker;
 
 fn recursive() -> AcornValue {
-    AcornValue::Constant(
+    AcornValue::new_constant(
         10,
         "f".into(),
         AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
@@ -26,7 +26,7 @@ fn recursive_values_and_unchanged_calls_are_rejected() {
 
 #[test]
 fn partially_bound_recursion_checks_missing_arguments_without_panicking() {
-    let f = AcornValue::Constant(
+    let f = AcornValue::new_constant(
         10,
         "f".into(),
         AcornType::new_functional(vec![AcornType::Bool, AcornType::Bool], AcornType::Bool),

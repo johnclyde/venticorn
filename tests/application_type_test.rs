@@ -3,7 +3,7 @@ use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
 
 fn identity(t: AcornType) -> AcornValue {
-    AcornValue::Constant(
+    AcornValue::new_constant(
         10,
         "identity".into(),
         AcornType::new_functional(vec![t.clone()], t),
@@ -91,7 +91,7 @@ fn generic_callbacks_use_their_declared_types_without_reinference() {
 #[test]
 fn resolved_simple_constants_keep_their_plain_normalized_identity() {
     use venticorn::normalizer::Normalizer;
-    let resolved = AcornValue::Constant(10, "p".into(), AcornType::Bool, vec![]);
+    let resolved = AcornValue::new_constant(10, "p".into(), AcornType::Bool, vec![]);
     let transitional = AcornValue::Unresolved(10, "p".into(), AcornType::Bool, vec![]);
     assert_eq!(resolved.as_simple_constant(), Some((10, "p")));
     assert!(!Normalizer::new()
@@ -105,7 +105,7 @@ fn resolved_simple_constants_keep_their_plain_normalized_identity() {
     ));
     let generic = AcornType::Variable("T".into(), None);
     let instance =
-        AcornValue::Constant(10, "f".into(), generic, vec![("T".into(), AcornType::Bool)]);
+        AcornValue::new_constant(10, "f".into(), generic, vec![("T".into(), AcornType::Bool)]);
     assert_eq!(instance.as_simple_constant(), None);
 }
 
@@ -113,7 +113,7 @@ fn resolved_simple_constants_keep_their_plain_normalized_identity() {
 fn unresolved_generic_metadata_cannot_bypass_normalization_through_aliases() {
     use venticorn::normalizer::{Normalization, Normalizer};
     let mut normalizer = Normalizer::new();
-    let known = AcornValue::Constant(10, "known".into(), AcornType::Bool, vec![]);
+    let known = AcornValue::new_constant(10, "known".into(), AcornType::Bool, vec![]);
     let known_clauses = normalizer.normalize(&known, true).expect_clauses();
     let pending = AcornValue::Unresolved(10, "pending".into(), AcornType::Bool, vec!["T".into()]);
     assert!(pending.as_simple_constant().is_none());
@@ -121,7 +121,7 @@ fn unresolved_generic_metadata_cannot_bypass_normalization_through_aliases() {
         normalizer.normalize(&AcornValue::new_equals(pending, known), true),
         Normalization::Error(_)
     ));
-    let ordinary = AcornValue::Constant(10, "pending".into(), AcornType::Bool, vec![]);
+    let ordinary = AcornValue::new_constant(10, "pending".into(), AcornType::Bool, vec![]);
     assert_ne!(
         normalizer.normalize(&ordinary, true).expect_clauses(),
         known_clauses,
@@ -197,11 +197,11 @@ fn inference_preserves_declared_parameter_order_instead_of_sorting_names() {
     let AcornValue::Application(app) = value else {
         panic!("expected application")
     };
-    let AcornValue::Constant(_, _, _, params) = *app.function else {
+    let AcornValue::Constant(c) = *app.function else {
         panic!("expected resolved constant")
     };
     assert_eq!(
-        params,
+        c.params,
         vec![("Z".into(), AcornType::Bool), ("A".into(), nat)]
     );
 }
@@ -280,15 +280,16 @@ fn resolved_type_transformations_preserve_declaration_namespaces() {
     );
     let a = AcornType::Variable("A".into(), None);
     let template = AcornType::new_functional(vec![a.clone()], a);
-    let instance = AcornValue::Constant(10, "f".into(), template.clone(), vec![("A".into(), t)]);
+    let instance =
+        AcornValue::new_constant(10, "f".into(), template.clone(), vec![("A".into(), t)]);
     let specialized = instance.instantiate(&[("T".into(), AcornType::Bool)]);
     assert_eq!(specialized.get_type(), identity(AcornType::Bool).get_type());
-    let AcornValue::Constant(_, _, preserved, actuals) = instance.to_arbitrary() else {
+    let AcornValue::Constant(c) = instance.to_arbitrary() else {
         panic!("constant expected")
     };
-    assert_eq!(preserved, template);
+    assert_eq!(c.generic_type, template);
     assert_eq!(
-        actuals,
+        c.params,
         vec![("A".into(), AcornType::Arbitrary("T".into(), None))]
     );
 }
