@@ -5,18 +5,27 @@ use venticorn::project::Project;
 use venticorn::token::Token;
 
 fn assert_error_span(code: &str, text: &str) {
+    assert_diagnostic(code, text, "unknown identifier");
+}
+
+fn assert_diagnostic(code: &str, text: &str, message: &str) {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", code);
     let errors = project.errors();
     assert_eq!(errors.len(), 1);
     let error = errors[0].1;
-    assert!(error.message().contains("unknown identifier"), "{error}");
+    assert!(error.message().contains(message), "{error}");
     let start = code.find(text).unwrap();
-    let first = code[..start].encode_utf16().count() as u32;
-    let last = first + text.encode_utf16().count() as u32;
+    let position = |end: usize| {
+        let prefix = &code[..end];
+        Position::new(
+            prefix.bytes().filter(|byte| *byte == b'\n').count() as u32,
+            prefix.rsplit('\n').next().unwrap().encode_utf16().count() as u32,
+        )
+    };
     assert_eq!(
         error.range(),
-        Range::new(Position::new(0, first), Position::new(0, last))
+        Range::new(position(start), position(start + text.len()))
     );
 }
 
@@ -92,5 +101,14 @@ fn error_ranges_preserve_endpoints_across_lines() {
     assert_eq!(
         error.range(),
         Range::new(Position::new(0, 0), Position::new(1, 7))
+    );
+}
+
+#[test]
+fn numeric_class_type_errors_cover_the_complete_type_expression() {
+    assert_diagnostic(
+        "type Number: axiom\nclass Number {\n let 0: (Bool -> Bool) = axiom\n}",
+        "(Bool -> Bool)",
+        "numeric class variables must be the class type",
     );
 }
