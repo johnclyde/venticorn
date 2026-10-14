@@ -110,4 +110,14 @@ npm install --prefix "$VSCE_TOOLS" @vscode/vsce@4.0.0 --no-audit --no-fund
 VSCE="$VSCE_TOOLS/node_modules/.bin/vsce" ./package.sh
 ```
 
-`package.sh` checks synchronized versions, rebuilds the extension and search UI, and creates `files/release/venticorn-extension-VERSION.vsix`. It then unpacks that archive, verifies runtime dependencies and license notices, excludes node_modules, test modules, development tools, and server binaries, and loads the compiled extension with a VS Code host stub. The command does not publish to a marketplace. Install the two project npm dependency sets before running it, as described in [the development guide](README.md). Generated release files are ignored by Git.
+`package.sh` checks synchronized versions, rebuilds the extension and Assistant UI, and creates `files/release/venticorn-extension-VERSION.vsix`. It then unpacks that archive, verifies runtime dependencies and license notices, excludes node_modules, test modules, development tools, and server binaries, and loads the compiled extension with a VS Code host stub. The command does not publish to a marketplace. Install the two project npm dependency sets before running it, as described in [the development guide](README.md). Generated release files are ignored by Git.
+
+## Install a local build
+
+After packaging, install the generated VSIX into VS Code:
+
+```sh
+code --install-extension "files/release/venticorn-extension-$(cat VERSION).vsix"
+```
+
+Alternatively, choose **Extensions: Install from VSIX** in the Command Palette and select that file. Reload VS Code when prompted. For a local server build, launch VS Code with `SERVER_PATH` set to the built executable as described in [the development guide](README.md); otherwise the extension uses the matching released server. Installing a VSIX does not publish it.
