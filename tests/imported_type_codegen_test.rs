@@ -79,3 +79,29 @@ fn transitive_types_without_an_accessible_name_fail_cleanly() {
         .unwrap_err();
     assert_eq!(error.error_type(), "UnnamedType");
 }
+
+#[test]
+fn unavailable_import_errors_name_the_constant_that_code_generation_needs() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/hidden.ac", "let secret: Bool = axiom");
+    project.mock("/mock/main.ac", "theorem ready { true }");
+    let hidden = project.expect_ok("hidden");
+    let main = project.expect_ok("main");
+    let secret = project
+        .get_env_by_id(hidden)
+        .unwrap()
+        .bindings
+        .get_constant_value("secret")
+        .unwrap();
+    let error = project
+        .get_env_by_id(main)
+        .unwrap()
+        .bindings
+        .value_to_code(&secret)
+        .unwrap_err();
+    assert_eq!(error.error_type(), "UnimportedModule");
+    assert_eq!(
+        error.to_string(),
+        "could not generate code using 'secret' because it is not imported"
+    );
+}
