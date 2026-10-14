@@ -127,6 +127,27 @@ impl ConstantInstance {
         }
     }
 
+    // Substitute types from the surrounding scope. The declaration's formal names
+    // belong to a separate namespace from the actual arguments of a polymorphic instance.
+    pub fn instantiate(&self, substitutions: &[(String, AcornType)]) -> Self {
+        Self {
+            module_id: self.module_id,
+            name: self.name.clone(),
+            generic_type: if self.params.is_empty() {
+                // A plain scoped constant can itself have an outer variable type.
+                self.generic_type.instantiate(substitutions)
+            } else {
+                self.generic_type.clone()
+            },
+            params: self
+                .params
+                .iter()
+                .map(|(name, actual)| (name.clone(), actual.instantiate(substitutions)))
+                .collect(),
+            instance_type: self.instance_type.instantiate(substitutions),
+        }
+    }
+
     // Actual arguments in declaration order, without duplicating the stored mapping.
     pub fn type_arguments(&self) -> impl ExactSizeIterator<Item = &AcornType> {
         self.params.iter().map(|(_, actual)| actual)
@@ -1587,19 +1608,7 @@ impl AcornValue {
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.instantiate(params))),
-            AcornValue::Constant(c) => {
-                let out_params = c
-                    .params
-                    .iter()
-                    .map(|(name, t)| (name.clone(), t.instantiate(params)))
-                    .collect();
-                let output_type = if c.params.is_empty() {
-                    c.generic_type.instantiate(params)
-                } else {
-                    c.generic_type.clone()
-                };
-                AcornValue::new_constant(c.module_id, c.name.clone(), output_type, out_params)
-            }
+            AcornValue::Constant(c) => AcornValue::Constant(c.instantiate(params)),
             AcornValue::Bool(_) => self.clone(),
         }
     }
