@@ -130,6 +130,24 @@ class CompletionTest(unittest.TestCase):
             self.assertEqual(self.complete(2, 1), [])  # Inside the surrogate pair.
             previous = prefix
 
+    def test_untitled_import_completion_never_invents_local_scope(self):
+        self.open()  # Load the imported module through an evaluated file.
+        self.uri = "untitled:Draft"
+        self.open("from nat import N")
+        self.assertEqual(self.complete(0, len("from nat import N")), ["Nat"])
+        self.session.notify("textDocument/didChange", {
+            "textDocument": {"uri": self.uri, "version": 2},
+            "contentChanges": [{"text": "from nat import sav"}],
+        })
+        self.assertEqual(self.complete(0, len("from nat import sav")), ["saved"])
+        self.session.notify("textDocument/didChange", {
+            "textDocument": {"uri": self.uri, "version": 3},
+            "contentChanges": [{"text": "Nat."}],
+        })
+        self.assertEqual(self.complete(0, 4), [])
+        self.session.notify("textDocument/didClose", {"textDocument": {"uri": self.uri}})
+        self.assertEqual(self.complete(0, 4), [])
+
     def test_unknown_documents_and_invalid_positions_have_no_candidates(self):
         self.open("from nat import Nat\n// a😀b\n")
         self.assertEqual(self.complete(1, 5), [])  # Inside the surrogate pair.

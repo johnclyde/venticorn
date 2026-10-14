@@ -738,10 +738,7 @@ impl Backend {
         let _lifecycle = self.lifecycle.lock().await;
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
-        let path = match uri.to_file_path() {
-            Ok(path) => path,
-            Err(_) => return Ok(None),
-        };
+        let path = uri.to_file_path().ok();
         let document = match self.documents.get(&uri) {
             Some(document) => document.value().clone(),
             None => return Ok(None),
@@ -765,7 +762,7 @@ impl Backend {
         };
         let project = self.project.read().await;
         Ok(project
-            .get_completions(&path, env_line, &prefix)
+            .get_completions(path.as_deref(), env_line, &prefix)
             .map(|items| {
                 CompletionResponse::List(CompletionList {
                     is_incomplete: false,
