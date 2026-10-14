@@ -88,9 +88,6 @@ pub struct ConstantInstance {
     pub module_id: ModuleId,
     pub name: String,
 
-    // The original type before any instantiation.
-    pub generic_type: AcornType,
-
     // The parameters that this constant was instantiated with.
     // Can be empty.
     pub params: Vec<(String, AcornType)>,
@@ -121,7 +118,6 @@ impl ConstantInstance {
         Self {
             module_id,
             name,
-            generic_type,
             params,
             instance_type,
         }
@@ -133,12 +129,6 @@ impl ConstantInstance {
         Self {
             module_id: self.module_id,
             name: self.name.clone(),
-            generic_type: if self.params.is_empty() {
-                // A plain scoped constant can itself have an outer variable type.
-                self.generic_type.instantiate(substitutions)
-            } else {
-                self.generic_type.clone()
-            },
             params: self
                 .params
                 .iter()
@@ -1691,12 +1681,12 @@ impl AcornValue {
                     .iter()
                     .map(|(name, t)| (name.clone(), t.parametrize(module, type_names)))
                     .collect();
-                let output_type = if c.params.is_empty() {
-                    c.generic_type.parametrize(module, type_names)
-                } else {
-                    c.generic_type.clone()
-                };
-                AcornValue::new_constant(c.module_id, c.name.clone(), output_type, out_params)
+                AcornValue::Constant(ConstantInstance {
+                    module_id: c.module_id,
+                    name: c.name.clone(),
+                    params: out_params,
+                    instance_type: c.instance_type.parametrize(module, type_names),
+                })
             }
             AcornValue::Bool(_) => self.clone(),
         }
@@ -1721,8 +1711,7 @@ impl AcornValue {
             }
             AcornValue::Not(x) => x.is_generic(),
             AcornValue::Constant(c) => {
-                (c.params.is_empty() && c.generic_type.is_generic())
-                    || c.params.iter().any(|(_, t)| t.is_generic())
+                c.instance_type.is_generic() || c.type_arguments().any(AcornType::is_generic)
             }
             AcornValue::Bool(_) => false,
             AcornValue::Match(scrutinee, cases) => {
@@ -1773,7 +1762,7 @@ impl AcornValue {
             }
             AcornValue::Not(x) => x.find_generic_constants(output),
             AcornValue::Constant(c) => {
-                for (_, t) in &c.params {
+                for t in c.type_arguments() {
                     if t.is_generic() {
                         let key = ConstantKey {
                             module: c.module_id,
@@ -1821,7 +1810,7 @@ impl AcornValue {
             }
             AcornValue::Not(x) => x.find_monomorphic_constants(output),
             AcornValue::Constant(c) => {
-                for (_, t) in &c.params {
+                for t in c.type_arguments() {
                     if t.is_generic() {
                         // This is not a monomorphization
                         return;
@@ -1886,17 +1875,17 @@ impl AcornValue {
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.to_arbitrary())),
             AcornValue::Constant(c) => {
-                let output_type = if c.params.is_empty() {
-                    c.generic_type.to_arbitrary()
-                } else {
-                    c.generic_type.clone()
-                };
                 let output_params = c
                     .params
                     .iter()
                     .map(|(name, t)| (name.clone(), t.to_arbitrary()))
                     .collect();
-                AcornValue::new_constant(c.module_id, c.name.clone(), output_type, output_params)
+                AcornValue::Constant(ConstantInstance {
+                    module_id: c.module_id,
+                    name: c.name.clone(),
+                    params: output_params,
+                    instance_type: c.instance_type.to_arbitrary(),
+                })
             }
             AcornValue::Bool(_) => self.clone(),
         }

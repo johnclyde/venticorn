@@ -68,3 +68,36 @@ fn scoped_plain_constants_follow_the_surrounding_type_substitution() {
     assert_eq!(arbitrary.get_type(), AcornType::Arbitrary("T".into(), None));
     assert!(!arbitrary.is_generic());
 }
+
+#[test]
+fn opaque_scope_types_transform_in_effective_types_and_arguments_together() {
+    let scoped = AcornType::Data(20, "T".into());
+    let instance = first(vec![
+        ("T".into(), scoped.clone()),
+        ("U".into(), AcornType::Bool),
+    ]);
+    let generic = instance.parametrize(20, &["T".into()]);
+    assert_eq!(
+        generic,
+        first(vec![
+            ("T".into(), variable("T")),
+            ("U".into(), AcornType::Bool)
+        ])
+    );
+    assert_eq!(
+        generic.to_arbitrary().get_type(),
+        AcornType::new_functional(
+            vec![AcornType::Arbitrary("T".into(), None), AcornType::Bool],
+            AcornType::Arbitrary("T".into(), None)
+        )
+    );
+    let plain = AcornValue::new_constant(20, "local".into(), scoped, vec![]);
+    let generic_plain = plain.parametrize(20, &["T".into()]);
+    assert!(generic_plain.is_generic());
+    assert_eq!(
+        generic_plain
+            .instantiate(&[("T".into(), AcornType::Bool)])
+            .get_type(),
+        AcornType::Bool
+    );
+}
