@@ -1,8 +1,9 @@
-// Modified for Venticorn.
+// Modified for Venticorn: bounded build identity and version-aware diagnostics.
 
+use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range};
 
 use crate::dataset::Dataset;
 use crate::environment::Environment;
@@ -12,9 +13,15 @@ use crate::module::ModuleRef;
 use crate::prover::{Outcome, Prover};
 use crate::token::Error;
 
-// The build process generates a number of build events
+static NEXT_BUILD_ID: AtomicU32 = AtomicU32::new(1);
+
+// A "build" is when we verify a set of goals, determined by a Project.
+// For each build, we report many  build events.
 #[derive(Debug)]
 pub struct BuildEvent {
+    // Which build this is an event for.
+    pub build_id: u32,
+
     // Current progress is done / total.
     // This is across all modules.
     pub progress: Option<(i32, i32)>,
@@ -25,16 +32,9 @@ pub struct BuildEvent {
     // Whenever we run into a problem, report the module ref, plus the diagnostic itself.
     // Returning None for diagnostic indicates that the module has no diagnostics.
     pub diagnostic: Option<(ModuleRef, Option<Diagnostic>)>,
-}
 
-impl BuildEvent {
-    fn default() -> BuildEvent {
-        BuildEvent {
-            progress: None,
-            log_message: None,
-            diagnostic: None,
-        }
-    }
+    // Whenever we verify a goal, report the module ref, plus the range of the goal.
+    pub verified: Option<(ModuleRef, Range)>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -87,6 +87,9 @@ pub struct Builder<'a> {
 
     pub status: BuildStatus,
 
+    // A unique id for each build.
+    pub id: u32,
+
     // The total number of goals to be verified.
     // Counted up during the loading phase.
     pub goals_total: i32,
@@ -132,6 +135,13 @@ impl<'a> Builder<'a> {
         Builder {
             event_handler,
             status: BuildStatus::Good,
+            id: NEXT_BUILD_ID
+                .fetch_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |id| id.checked_add(1),
+                )
+                .expect("build id exhausted"),
             goals_total: 0,
             goals_done: 0,
             log_when_slow: false,
@@ -143,6 +153,16 @@ impl<'a> Builder<'a> {
             sum_square_activated: 0,
             num_clauses: 0,
             proving_time: 0.0,
+        }
+    }
+
+    fn default_event(&self) -> BuildEvent {
+        BuildEvent {
+            build_id: self.id,
+            progress: None,
+            log_message: None,
+            diagnostic: None,
+            verified: None,
         }
     }
 
@@ -168,18 +188,20 @@ impl<'a> Builder<'a> {
 
     // Called when the entire loading phase is done.
     pub fn loading_phase_complete(&mut self) {
-        (self.event_handler)(BuildEvent {
+        let event = BuildEvent {
             progress: Some((0, self.goals_total)),
-            ..BuildEvent::default()
-        });
+            ..self.default_event()
+        };
+        (self.event_handler)(event);
     }
 
     // Logs an informational message that doesn't change build status.
     pub fn log_info(&mut self, message: String) {
-        (self.event_handler)(BuildEvent {
+        let event = BuildEvent {
             log_message: Some(message),
-            ..BuildEvent::default()
-        });
+            ..self.default_event()
+        };
+        (self.event_handler)(event);
     }
 
     // Logs an error during the loading phase, that can be localized to a particular place.
@@ -190,11 +212,12 @@ impl<'a> Builder<'a> {
             message: error.to_string(),
             ..Diagnostic::default()
         };
-        (self.event_handler)(BuildEvent {
+        let event = BuildEvent {
             log_message: Some(format!("fatal error: {}", error)),
             diagnostic: Some((module_ref.clone(), Some(diagnostic))),
-            ..BuildEvent::default()
-        });
+            ..self.default_event()
+        };
+        (self.event_handler)(event);
         self.status = BuildStatus::Error;
     }
 
@@ -208,10 +231,11 @@ impl<'a> Builder<'a> {
         assert_eq!(self.module(), module);
         if self.current_module_good {
             // Send a no-problems diagnostic, so that the IDE knows to clear squiggles.
-            (self.event_handler)(BuildEvent {
+            let event = BuildEvent {
                 diagnostic: Some((module.clone(), None)),
-                ..BuildEvent::default()
-            });
+                ..self.default_event()
+            };
+            (self.event_handler)(event);
         }
         self.current_module = None;
     }
@@ -256,7 +280,7 @@ impl<'a> Builder<'a> {
                                 &format!("took {}", elapsed_str),
                             );
                         } else {
-                            self.log_proving_success();
+                            self.log_proving_success(&goal_context);
                         }
                     }
 
@@ -296,11 +320,13 @@ impl<'a> Builder<'a> {
     }
 
     // Logs a successful proof.
-    fn log_proving_success(&mut self) {
-        (self.event_handler)(BuildEvent {
+    fn log_proving_success(&mut self, goal_context: &GoalContext) {
+        let event = BuildEvent {
             progress: Some((self.goals_done, self.goals_total)),
-            ..BuildEvent::default()
-        });
+            verified: Some((self.module().clone(), goal_context.goal.range())),
+            ..self.default_event()
+        };
+        (self.event_handler)(event);
     }
 
     // Create a build event for a proof that was other than successful.
@@ -311,7 +337,6 @@ impl<'a> Builder<'a> {
         message: &str,
         sev: DiagnosticSeverity,
     ) -> BuildEvent {
-        let module = self.module().clone();
         let mut full_message = format!("{} {}", goal_context.name, message);
         if let Some(e) = &prover.error {
             full_message.push_str(&format!(": {}", e));
@@ -325,17 +350,19 @@ impl<'a> Builder<'a> {
         BuildEvent {
             progress: Some((self.goals_done, self.goals_total)),
             log_message: Some(full_message),
-            diagnostic: Some((module, Some(diagnostic))),
+            diagnostic: Some((self.module().clone(), Some(diagnostic))),
+            ..self.default_event()
         }
     }
 
     fn log_proving_info(&mut self, prover: &Prover, goal_context: &GoalContext, message: &str) {
-        let event = self.make_event(
+        let mut event = self.make_event(
             prover,
             goal_context,
             message,
             DiagnosticSeverity::INFORMATION,
         );
+        event.verified = Some((self.module().clone(), goal_context.goal.range()));
         (self.event_handler)(event);
     }
 
