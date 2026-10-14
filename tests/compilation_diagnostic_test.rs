@@ -145,3 +145,12 @@ fn pattern_arity_errors_cover_the_argument_group() {
         "expected 1 arguments but got 2",
     );
 }
+
+#[test]
+fn invalid_member_names_cover_the_entire_right_hand_expression() {
+    assert_diagnostic(
+        "type Thing: axiom\nlet x: Thing = axiom\nlet bad: Bool = x.(true and false)",
+        "(true and false)",
+        "expected an identifier after a dot",
+    );
+}
