@@ -29,9 +29,10 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
       },
     },
     ViewColumn: { Two: 2, Three: 3 },
-    Uri: { file: (fsPath) => ({ fsPath }) },
+    Range: class { constructor(line) { this.start = { line }; } },
+    Uri: { parse: value => value, file: (fsPath) => ({ fsPath }) },
     window: {
-      visibleTextEditors: visibleEditors,
+      visibleTextEditors: visibleEditors.map(editor => Object.assign(editor, { setDecorations() {} })),
       activeTextEditor: visibleEditors[0],
       onDidChangeActiveTextEditor: listen(state.activeEditorChanges),
       createWebviewPanel: (...args) => {
@@ -75,6 +76,8 @@ function loadExtension({ failInitialization = false, serverPath = "/server", pla
       workspaceFolders,
       textDocuments,
       createFileSystemWatcher: disposable,
+      onDidChangeTextDocument: disposable,
+      onDidCloseTextDocument: disposable,
       onDidSaveTextDocument: listen(state.save),
       onDidOpenTextDocument: listen(state.open),
     },
