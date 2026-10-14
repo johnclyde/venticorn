@@ -1619,7 +1619,16 @@ mod prover_test {
         let (outcome, generated) = prove_as_main(text, "goal");
         assert_eq!(outcome, Outcome::Success);
         let generated = generated.expect("proof generation failed");
-        assert_eq!(generated, ["exists(k0: Foo) { zero = k0 }"]);
+        // Different scorers can choose either valid route to this conclusion.
+        // Keep the output contract narrow: an empty or unrelated proof is not enough.
+        let expected = [
+            ["exists(k0: Foo) { zero = k0 }"],
+            ["exists(k0: Foo) { mul(three, k0) = zero }"],
+        ];
+        assert!(
+            expected.iter().any(|proof| generated == *proof),
+            "unexpected generated proof: {generated:?}"
+        );
 
         // Parse and verify the emitted proof in its original theorem context.
         // A deliberately false emitted line must also be checked as an obligation.
