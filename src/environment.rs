@@ -1531,6 +1531,10 @@ impl Environment {
                 Ok(())
             }
 
+            StatementInfo::Typeclass(_) => Err(statement
+                .first_token
+                .error("typeclass declarations are not supported yet")),
+
             StatementInfo::Match(ms) => {
                 let scrutinee = self.bindings.evaluate_value(project, &ms.scrutinee, None)?;
                 let scrutinee_type = scrutinee.get_type();

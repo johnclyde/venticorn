@@ -203,6 +203,21 @@ pub struct MatchStatement {
     pub cases: Vec<(Expression, Body)>,
 }
 
+// A theorem that an instance must satisfy before belonging to a typeclass.
+pub struct TypeclassTheorem {
+    pub name: Token,
+    pub args: Vec<Declaration>,
+    pub claim: Expression,
+}
+
+// A typeclass names an instance type and the constants and claims it requires.
+pub struct TypeclassStatement {
+    pub instance_type: Token,
+    pub name: Token,
+    pub constants: Vec<(Token, Expression)>,
+    pub theorems: Vec<TypeclassTheorem>,
+}
+
 // Acorn is a statement-based language. There are several types.
 // Each type has its own struct.
 pub struct Statement {
@@ -236,6 +251,7 @@ pub enum StatementInfo {
     Solve(SolveStatement),
     Problem(Body),
     Match(MatchStatement),
+    Typeclass(TypeclassStatement),
 }
 
 const ONE_INDENT: &str = "    ";
@@ -869,6 +885,55 @@ fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<State
     })
 }
 
+fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
+    let instance_type = tokens.expect_type_name()?;
+    tokens.expect_type(TokenType::Colon)?;
+    let name = tokens.expect_type_name()?;
+    tokens.expect_type(TokenType::LeftBrace)?;
+    let mut constants = vec![];
+    while let Some(token) = tokens.next() {
+        match token.token_type {
+            TokenType::NewLine => continue,
+            TokenType::RightBrace => {
+                if constants.is_empty() {
+                    return Err(token.error("typeclasses must have some constants or theorems"));
+                }
+                return Ok(Statement {
+                    first_token: keyword,
+                    last_token: token,
+                    statement: StatementInfo::Typeclass(TypeclassStatement {
+                        instance_type,
+                        name,
+                        constants,
+                        theorems: vec![],
+                    }),
+                });
+            }
+            TokenType::Identifier => match tokens.peek_type() {
+                Some(TokenType::Colon) => {
+                    tokens.next();
+                    let (type_expr, terminator) = Expression::parse_type(
+                        tokens,
+                        Terminator::Or(TokenType::NewLine, TokenType::RightBrace),
+                    )?;
+                    if terminator.token_type == TokenType::RightBrace {
+                        return Err(
+                            terminator.error("typeclass declarations must end with a newline")
+                        );
+                    }
+                    constants.push((token, type_expr));
+                }
+                Some(TokenType::LeftParen | TokenType::LeftBrace | TokenType::LessThan) => {
+                    return Err(token.error("typeclass theorem members are not supported yet"));
+                }
+                _ => return Err(token.error("expected ':' after name in typeclass statement")),
+            },
+            _ => return Err(token.error("unexpected token in typeclass statement")),
+        }
+    }
+    Err(keyword.error("unterminated typeclass statement"))
+}
+
 fn write_type_params(f: &mut fmt::Formatter, type_params: &[Token]) -> fmt::Result {
     if type_params.len() == 0 {
         return Ok(());
@@ -1060,6 +1125,26 @@ impl Statement {
                 write_block(f, &body.statements, indentation)
             }
 
+            StatementInfo::Typeclass(ts) => {
+                let member_indent = add_indent(indentation);
+                write!(f, "typeclass {}: {} {{\n", ts.instance_type, ts.name)?;
+                for (name, type_expr) in &ts.constants {
+                    writeln!(f, "{}{}: {}", member_indent, name, type_expr)?;
+                }
+                for theorem in &ts.theorems {
+                    write!(f, "{}{}", member_indent, theorem.name)?;
+                    write_args(f, &theorem.args)?;
+                    writeln!(
+                        f,
+                        " {{\n{}{}\n{}}}",
+                        add_indent(&member_indent),
+                        theorem.claim,
+                        member_indent
+                    )?;
+                }
+                write!(f, "{}}}", indentation)
+            }
+
             StatementInfo::Match(ms) => {
                 let case_indentation = add_indent(indentation);
                 write!(f, "match {} {{", ms.scrutinee)?;
@@ -1192,7 +1277,9 @@ impl Statement {
                         return Ok((Some(s), None));
                     }
                     TokenType::Typeclass => {
-                        return Err(token.error("typeclass declarations are not supported yet"));
+                        let keyword = tokens.next().unwrap();
+                        let s = parse_typeclass_statement(keyword, tokens)?;
+                        return Ok((Some(s), None));
                     }
                     TokenType::Match => {
                         let keyword = tokens.next().unwrap();
