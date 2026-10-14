@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::{fmt, io};
 
-use sha2::{Digest, Sha256};
 use tower_lsp::lsp_types::{CompletionItem, Url};
 use walkdir::WalkDir;
 
@@ -17,7 +16,9 @@ use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
 use crate::goal::GoalContext;
-use crate::module::{Module, ModuleHash, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL};
+use crate::module::{
+    Module, ModuleHash, ModuleHasher, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL,
+};
 use crate::prover::Prover;
 use crate::token::{Token, TokenType};
 
@@ -89,39 +90,6 @@ impl fmt::Display for LoadError {
 
 // Preserve the established public fingerprint path.
 pub use crate::module::ModuleFingerprint;
-
-// Hash lengths and variant tags explicitly; neither map iteration order nor
-// transient numeric module IDs participate in logical source identity.
-fn logical_fingerprint(
-    text: &str,
-    mut dependencies: Vec<(&ModuleRef, ModuleFingerprint)>,
-) -> ModuleFingerprint {
-    fn framed(digest: &mut Sha256, bytes: &[u8]) {
-        digest.update((bytes.len() as u64).to_le_bytes());
-        digest.update(bytes);
-    }
-    dependencies.sort_by_key(|(module, _)| *module);
-    dependencies.dedup_by_key(|(module, _)| *module);
-    let mut digest = Sha256::new();
-    digest.update(b"venticorn:module-logic:v1\0");
-    framed(&mut digest, text.as_bytes());
-    digest.update((dependencies.len() as u64).to_le_bytes());
-    for (module, fingerprint) in dependencies {
-        match module {
-            ModuleRef::Anonymous => digest.update([0]),
-            ModuleRef::Name(name) => {
-                digest.update([1]);
-                framed(&mut digest, name.as_bytes());
-            }
-            ModuleRef::File(path) => {
-                digest.update([2]);
-                framed(&mut digest, path.as_os_str().as_encoded_bytes());
-            }
-        }
-        digest.update(fingerprint.0);
-    }
-    ModuleFingerprint(digest.finalize().into())
-}
 
 fn new_modules() -> Vec<ModuleRecord> {
     let mut modules = vec![];
@@ -900,8 +868,7 @@ impl Project {
             Module::Ok(env)
         };
         let fingerprint = if let Module::Ok(env) = &module {
-            // Dependencies are already loaded. Their fingerprints include their own
-            // dependencies, so a changed transitive import changes this fingerprint.
+            // Every imported snapshot contributes its transitive fingerprint.
             env.bindings
                 .direct_dependencies()
                 .into_iter()
@@ -912,12 +879,12 @@ impl Project {
                     ))
                 })
                 .collect::<Option<Vec<_>>>()
-                .map(|deps| {
-                    ModuleHash::new(
-                        logical_fingerprint(&text, deps.clone()),
-                        logical_fingerprint(&text, Vec::new()),
-                        logical_fingerprint("", deps),
-                    )
+                .map(|dependencies| {
+                    let mut hasher = ModuleHasher::new(&text);
+                    for (descriptor, fingerprint) in dependencies {
+                        hasher.add_dependency(descriptor, fingerprint);
+                    }
+                    hasher.finish()
                 })
         } else {
             None
@@ -1617,35 +1584,5 @@ mod tests {
         assert_eq!(fast_count, slow_count);
 
         // I could test more here. But do I need to?
-    }
-}
-
-#[cfg(test)]
-mod fingerprint_tests {
-    use super::*;
-
-    #[test]
-    fn dependency_identity_is_framed_and_ordered_independently_of_ids() {
-        let a = ModuleRef::Name("a".into());
-        let b = ModuleRef::Name("b".into());
-        let file_a = ModuleRef::File(PathBuf::from("a"));
-        let leaf = logical_fingerprint("same source", vec![]);
-        let first = logical_fingerprint("parent", vec![(&a, leaf), (&b, leaf)]);
-        assert_eq!(
-            first,
-            logical_fingerprint("parent", vec![(&b, leaf), (&a, leaf)])
-        );
-        assert_eq!(
-            first,
-            logical_fingerprint("parent", vec![(&a, leaf), (&a, leaf), (&b, leaf)])
-        );
-        assert_ne!(
-            logical_fingerprint("parent", vec![(&a, leaf)]),
-            logical_fingerprint("parent", vec![(&b, leaf)])
-        );
-        assert_ne!(
-            logical_fingerprint("parent", vec![(&a, leaf)]),
-            logical_fingerprint("parent", vec![(&file_a, leaf)])
-        );
     }
 }
