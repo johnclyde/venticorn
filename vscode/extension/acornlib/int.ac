@@ -88,6 +88,12 @@ define negate(a: Int) -> Int {
     }
 }
 
+class Int {
+    define neg(self) -> Int {
+        negate(self)
+    }
+}
+
 theorem neg_zero {
     negate(0) = 0
 }
