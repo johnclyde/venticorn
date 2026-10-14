@@ -637,9 +637,9 @@ impl BindingMap {
                 }
                 _ => Err(token.error("unexpected binary operator in type expression")),
             },
-            Expression::Apply(left, _) => Err(left
-                .token()
-                .error("unexpected function application in type expression")),
+            Expression::Apply(left, _) => {
+                Err(left.error("unexpected function application in type expression"))
+            }
             Expression::Grouping(_, e, _) => self.evaluate_type(project, e),
             Expression::Binder(token, _, _, _) | Expression::IfThenElse(token, _, _, _, _) => {
                 Err(token.error("unexpected token in type expression"))
@@ -787,24 +787,24 @@ impl BindingMap {
         expected_type: &AcornType,
         pattern: &Expression,
     ) -> compilation::Result<(AcornValue, Vec<(String, AcornType)>, usize, usize)> {
-        let token = pattern.token();
         let (fn_exp, args) = match pattern {
             Expression::Apply(function, args) => (function, args),
             _ => {
                 // This could be a no-argument constructor.
                 let constructor = self.evaluate_value(project, pattern, None)?;
                 let (i, total) =
-                    self.expect_constructor(project, expected_type, &constructor, token)?;
+                    self.expect_constructor(project, expected_type, &constructor, pattern)?;
                 let pattern_type = constructor.get_type();
                 if pattern_type.is_functional() {
-                    return Err(token.error("constructor requires arguments"));
+                    return Err(pattern.error("constructor requires arguments"));
                 }
-                check_type(token, Some(expected_type), &pattern_type)?;
+                check_type(pattern, Some(expected_type), &pattern_type)?;
+
                 return Ok((constructor, vec![], i, total));
             }
         };
         let constructor = self.evaluate_value(project, fn_exp, None)?;
-        let (i, total) = self.expect_constructor(project, expected_type, &constructor, token)?;
+        let (i, total) = self.expect_constructor(project, expected_type, &constructor, pattern)?;
         let fn_type = constructor.get_type();
         let arg_types = match fn_type {
             AcornType::Function(f) => {
@@ -1376,7 +1376,7 @@ impl BindingMap {
 
                 // For non-polymorphic functions we are done
                 if mapping.is_empty() {
-                    check_type(function_expr.token(), expected_type, &applied_type)?;
+                    check_type(&**function_expr, expected_type, &applied_type)?;
                     return Ok(AcornValue::new_apply(function, args));
                 }
 
