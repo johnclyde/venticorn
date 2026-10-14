@@ -1350,8 +1350,10 @@ impl AcornValue {
             }
             AcornValue::Constant(module, name, _, params) => {
                 if let Some(replacement) = replacer(*module, name) {
-                    // We do need to replace this
-                    replacement.specialize(params)
+                    // Instantiate in the declaration's type namespace, then place the
+                    // replacement beneath the binders already surrounding this occurrence.
+                    let shifted = replacement.specialize(params).insert_stack(0, stack_size);
+                    shifted.replace_constants_with_values(stack_size, replacer)
                 } else {
                     // We don't need to replace this
                     self.clone()
