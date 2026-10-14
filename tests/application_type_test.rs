@@ -204,3 +204,33 @@ fn inference_preserves_declared_parameter_order_instead_of_sorting_names() {
         vec![("Z".into(), AcornType::Bool), ("A".into(), nat)]
     );
 }
+
+#[test]
+fn ordinary_partial_and_higher_order_calls_check_the_expected_result() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut env = Environment::new_test();
+    env.add("inductive Nat {\n zero\n suc(Nat)\n}");
+    env.add("define keep(first: Bool, second: Bool) -> Bool { first }");
+    env.add("define apply(f: Bool -> Bool, flag: Bool) -> Bool { f(flag) }");
+    env.add("define id_nat(value: Nat) -> Nat { value }");
+    env.add("let partial: Bool -> Bool = keep(true)\nlet full: Bool = partial(false)");
+    for source in [
+        "let bad: Nat = keep(true, false)",
+        "let bad: Bool = keep(true)",
+        "let bad: Nat = apply(partial, true)",
+        "let bad: Nat -> Bool = function(n: Nat) { keep(true) }",
+        "let bad: Nat = id_nat(forall(flag: Bool) { flag = flag })",
+        "let bad: Nat = id_nat(exists(flag: Bool) { flag = flag })",
+    ] {
+        let error = env
+            .add_statement(
+                &mut Project::new_mock(),
+                &Statement::parse_str(source).unwrap(),
+            )
+            .unwrap_err();
+        assert!(error.message().contains("expected type"), "{error}");
+        assert!(!env.bindings.has_identifier("bad"));
+    }
+}
