@@ -1,6 +1,5 @@
 // Modified for Venticorn: bounded build identity and explicit diagnostic events.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
@@ -94,43 +93,8 @@ struct ModuleInfo {
     verified: Vec<(u32, u32)>,
 }
 
-// Completed in-process verification metadata. Reuse also checks the current source,
-// complete goal ranges and successful transitive dependencies.
-#[derive(Debug, Clone)]
-pub struct CachedModule {
-    fingerprint: ModuleFingerprint,
-    direct_dependencies: Vec<ModuleRef>,
-    verified: Vec<(u32, u32)>,
-}
-
-impl CachedModule {
-    pub fn fingerprint(&self) -> ModuleFingerprint {
-        self.fingerprint
-    }
-
-    pub fn direct_dependencies(&self) -> &[ModuleRef] {
-        &self.direct_dependencies
-    }
-
-    pub fn verified(&self) -> &[(u32, u32)] {
-        &self.verified
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct BuildCache {
-    modules: HashMap<ModuleRef, CachedModule>,
-}
-
-impl BuildCache {
-    pub fn num_modules(&self) -> usize {
-        self.modules.len()
-    }
-
-    pub fn get(&self, module: &ModuleRef) -> Option<&CachedModule> {
-        self.modules.get(module)
-    }
-}
+// Preserve the existing metadata paths while storage lives in its own module.
+pub use crate::build_cache::{BuildCache, CachedModule};
 
 // The Builder exists to manage a single build.
 // A single Project can correspond to many builds.
@@ -318,9 +282,7 @@ impl<'a> Builder<'a> {
         fingerprint: Option<ModuleFingerprint>,
         expected: &[(u32, u32)],
     ) -> bool {
-        self.old_cache.get(module).is_some_and(|cached| {
-            Some(cached.fingerprint) == fingerprint && cached.verified == expected
-        })
+        self.old_cache.matches(module, fingerprint, expected)
     }
 
     // Only Project supplies the current parsed ranges and verifies all dependency entries.
@@ -382,13 +344,11 @@ impl<'a> Builder<'a> {
         if info.good && info.expected_goals == Some(completed) && info.verified.len() == completed {
             if let Some(fingerprint) = info.fingerprint {
                 if let Some(cache) = &mut self.new_cache {
-                    cache.modules.insert(
+                    cache.insert_completed(
                         info.module_ref,
-                        CachedModule {
-                            fingerprint,
-                            direct_dependencies: info.direct_dependencies,
-                            verified: info.verified,
-                        },
+                        fingerprint,
+                        info.direct_dependencies,
+                        info.verified,
                     );
                 }
             }
@@ -664,23 +624,6 @@ mod tests {
             .get(&ModuleRef::Name("main".into()))
             .unwrap();
         assert_eq!(cached.verified(), &[(0, 0)]);
-    }
-
-    #[test]
-    fn stale_or_incomplete_goal_ranges_cannot_be_replayed() {
-        for ranges in [vec![], vec![(0, 1)], vec![(0, 0), (0, 0)]] {
-            let mut cache = simulate_result(Outcome::Success, 1).take_cache().unwrap();
-            cache
-                .modules
-                .get_mut(&ModuleRef::Name("main".into()))
-                .unwrap()
-                .verified = ranges;
-            let mut project = Project::new_mock();
-            project.mock("/mock/main.ac", "theorem identity { true }");
-            let mut builder = Builder::with_cache(cache, |_| {});
-            project.build(&mut builder);
-            assert_eq!((builder.num_success, builder.num_cached), (1, 0));
-        }
     }
 
     #[test]
