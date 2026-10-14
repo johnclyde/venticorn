@@ -5,7 +5,7 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
-  import PreSaveHelpView from "./PreSaveHelp.svelte";
+  import HelpView from "./Help.svelte";
   import Goal from "./Goal.svelte";
   import ProofStatus from "./ProofStatus.svelte";
   import ProofStep from "./ProofStep.svelte";
@@ -13,7 +13,7 @@
   // These are updated to reflect the last valid responses from the extension.
   let searchResponse: SearchResponse | null = null;
   let infoResult: InfoResult | null = null;
-  let help: PreSaveHelp = {};
+  let help: AssistantHelp = { state: "inactive" };
 
   function stepsContain(
     steps: Array<ProofStepInfo>,
@@ -133,7 +133,7 @@
 
 <main>
   {#if searchResponse === null || searchResponse.goalName === null}
-    <PreSaveHelpView {help} />
+    <HelpView {help} />
   {:else}
     <Goal {searchResponse} {showLocation} />
     <hr />

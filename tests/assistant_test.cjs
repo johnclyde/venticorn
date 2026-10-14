@@ -145,14 +145,14 @@ test("document edits and editor switches clear proof context immediately", async
   f.document.isDirty = true;
   f.events.change({ document: f.document });
   assert.equal(f.view.currentParams, null);
-  assert.equal(f.messages.at(-1).help.unsaved, true);
+  assert.equal(f.messages.at(-1).help.state, "unsaved");
   f.api.window.activeTextEditor = { document: { languageId: "plaintext" } };
   f.events.active(f.api.window.activeTextEditor);
-  assert.equal(f.messages.at(-1).help.noFile, true);
+  assert.equal(f.messages.at(-1).help.state, "inactive");
   f.api.window.activeTextEditor = f.editor;
   f.document.uri.scheme = "untitled";
   f.events.active();
-  assert.equal(f.messages.at(-1).help.newDocument, true);
+  assert.equal(f.messages.at(-1).help.state, "newDocument");
   assert.equal(f.calls.length, 1);
 });
 
@@ -169,13 +169,13 @@ test("late clause information cannot repopulate an inactive Assistant", async ()
   finish({ searchId, result: { clause: {} } });
   await pending;
   assert.equal(f.messages.filter((message) => message.type === "info").length, 0);
-  assert.equal(f.messages.at(-1).help.noFile, true);
+  assert.equal(f.messages.at(-1).help.state, "inactive");
 });
 
 test("webview readiness resends appropriate unsaved guidance without a search", async () => {
   const f = searchFixture({ scheme: "untitled" });
   await f.view.handleWebviewMessage({ command: "ready" });
-  assert.equal(f.messages.at(-1).help.newDocument, true);
+  assert.equal(f.messages.at(-1).help.state, "newDocument");
   assert.equal(f.calls.length, 0);
 });
 
@@ -214,7 +214,7 @@ test("focusing the Assistant retains its open source and permits proof actions",
   f.events.close(f.document);
   await f.view.handleWebviewMessage(insert);
   assert.equal(inserted, 1);
-  assert.equal(f.messages.at(-1).help.noFile, true);
+  assert.equal(f.messages.at(-1).help.state, "inactive");
 });
 
 test("queued insertion from another goal in the same file is rejected", async () => {
@@ -257,12 +257,21 @@ test("new-proof guidance remains for blank, comment-only, and import-only files"
     f.document.lineCount = lines.length;
     f.document.lineAt = (line) => ({ text: lines[line] });
     f.view.chooseHelp();
-    assert.equal(f.messages.at(-1).help.newDocument, true);
+    assert.equal(f.messages.at(-1).help.state, "newDocument");
   }
   for (const text of ["theorem goal { true }", "let imported: Bool = true", "fromage"]) {
     f.document.lineCount = 1;
     f.document.lineAt = () => ({ text });
     f.view.chooseHelp();
-    assert.equal(f.messages.at(-1).help.newDocument, undefined);
+    assert.equal(f.messages.at(-1).help.state, "noSelection");
   }
+});
+
+test("a failed selection clears its identity so selecting again can retry", async () => {
+  const f = searchFixture({ sendRequest: () => ({ failure: "no goal at this line" }) });
+  await f.view.searchOnSelection(false);
+  assert.equal(f.view.currentParams, null);
+  assert.equal(f.messages.at(-1).help.state, "noSelection");
+  await f.view.searchOnSelection(false);
+  assert.equal(f.calls.length, 2);
 });
