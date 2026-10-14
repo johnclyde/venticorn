@@ -78,3 +78,28 @@ fn multiple_parameters_keep_invalid_declarations_and_arguments_rejected() {
     // Named theorem declarations still have their separate current syntax limit.
     assert!(Statement::parse_str("theorem same<T, U>(left: T, right: U) { left = left }").is_err());
 }
+
+#[test]
+fn type_parameter_lists_are_separate_from_value_argument_lists() {
+    for source in [
+        "define witness<T> -> T { axiom }",
+        "define lower<t>(value: t) -> t { value }",
+        "theorem identity<T> { true }",
+        "axiom<T> { true }",
+        "typeclass T: Reflect {\n reflexive { true }\n}",
+    ] {
+        let formatted = Statement::parse_str(source).unwrap().to_string();
+        assert_eq!(
+            Statement::parse_str(&formatted).unwrap().to_string(),
+            formatted
+        );
+    }
+    for source in [
+        "forall<T>(flag: Bool) { true }",
+        "typeclass T: Reflect {\n reflexive<U>(value: U) { value = value }\n}",
+        "define bad<T, U(value: T) -> T { value }",
+        "theorem bad<T,>(value: T) { value = value }",
+    ] {
+        assert!(Statement::parse_str(source).is_err(), "{source}");
+    }
+}

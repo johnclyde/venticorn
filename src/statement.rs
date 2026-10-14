@@ -301,48 +301,36 @@ fn parse_block(tokens: &mut TokenIter) -> Result<(Vec<Statement>, Token)> {
     }
 }
 
-// Parse some arguments.
-// The first element is an optional template. For example, the <T> in:
-// <T>(a: T, f: T -> T)
-// The second element is an optional parenthesized list of arguments.
-// Finally we have the terminator token. This should appear after the closing paren.
-// Returns the type params, the arguments, and the terminator token.
-fn parse_args(
-    tokens: &mut TokenIter,
-    terminator: TokenType,
-) -> Result<(Vec<Token>, Vec<Declaration>, Token)> {
-    let mut token = tokens.expect_token()?;
-    if token.token_type == terminator {
-        return Ok((vec![], vec![], token));
+// Parse optional type parameters separately from value arguments.
+fn parse_params(tokens: &mut TokenIter) -> Result<Vec<Token>> {
+    if tokens.peek_type() != Some(TokenType::LessThan) {
+        return Ok(vec![]);
     }
-    let mut type_params = vec![];
-    if token.token_type == TokenType::LessThan {
-        loop {
-            let token = tokens.expect_type(TokenType::Identifier)?;
-            type_params.push(token);
-            let token = tokens.expect_token()?;
-            match token.token_type {
-                TokenType::GreaterThan => {
-                    break;
-                }
-                TokenType::Comma => {
-                    continue;
-                }
-                _ => {
-                    return Err(token.error("expected '>' or ',' in template type list"));
-                }
-            }
+    tokens.next();
+    let mut params = vec![];
+    loop {
+        params.push(tokens.expect_type(TokenType::Identifier)?);
+        let token = tokens.expect_token()?;
+        match token.token_type {
+            TokenType::GreaterThan => return Ok(params),
+            TokenType::Comma => {}
+            _ => return Err(token.error("expected '>' or ',' in type parameters")),
         }
-        token = tokens.expect_token()?;
+    }
+}
+
+// Parse an optional parenthesized argument list, then consume the terminator.
+fn parse_args(tokens: &mut TokenIter, terminator: TokenType) -> Result<(Vec<Declaration>, Token)> {
+    let token = tokens.expect_token()?;
+    if token.token_type == terminator {
+        return Ok((vec![], token));
     }
     if token.token_type != TokenType::LeftParen {
         return Err(token.error("expected an argument list"));
     }
-
-    // Parse the arguments list
     let declarations = Declaration::parse_list(tokens)?;
     let terminator = tokens.expect_type(terminator)?;
-    return Ok((type_params, declarations, terminator));
+    Ok((declarations, terminator))
 }
 
 // Parses a by block if that's the next thing in the token stream.
@@ -389,7 +377,8 @@ fn parse_theorem_statement(
         Some(TokenType::LeftParen) | Some(TokenType::LeftBrace) | Some(TokenType::LessThan) => None,
         _ => Some(tokens.expect_variable_name(false)?.text().to_string()),
     };
-    let (type_params, args, _) = parse_args(tokens, TokenType::LeftBrace)?;
+    let type_params = parse_params(tokens)?;
+    let (args, _) = parse_args(tokens, TokenType::LeftBrace)?;
     if type_params.len() > 1 {
         return Err(type_params[1].error("only one type parameter is supported"));
     }
@@ -443,7 +432,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stateme
         Some(token) => {
             if token.token_type == TokenType::LeftParen {
                 // This is a parenthesized let..satisfy.
-                let (_, declarations, _) = parse_args(tokens, TokenType::Satisfy)?;
+                let (declarations, _) = parse_args(tokens, TokenType::Satisfy)?;
                 return complete_variable_satisfy(keyword, tokens, declarations);
             }
         }
@@ -509,7 +498,8 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stateme
 // Parses a define statement where the "define" keyword has already been found.
 fn parse_define_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let name_token = tokens.expect_variable_name(false)?;
-    let (type_params, args, _) = parse_args(tokens, TokenType::RightArrow)?;
+    let type_params = parse_params(tokens)?;
+    let (args, _) = parse_args(tokens, TokenType::RightArrow)?;
     let (return_type, _) = Expression::parse_type(tokens, Terminator::Is(TokenType::LeftBrace))?;
     let (return_value, last_token) =
         Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
@@ -550,7 +540,7 @@ fn parse_type_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statem
 
 // Parses a forall statement where the "forall" keyword has already been found.
 fn parse_forall_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
-    let (_, quantifiers, left_brace) = parse_args(tokens, TokenType::LeftBrace)?;
+    let (quantifiers, left_brace) = parse_args(tokens, TokenType::LeftBrace)?;
     let (statements, right_brace) = parse_block(tokens)?;
     let body = Body {
         left_brace,
@@ -922,12 +912,7 @@ fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
                     constants.push((token, type_expr));
                 }
                 Some(TokenType::LeftParen | TokenType::LeftBrace) => {
-                    let (type_params, args, _) = parse_args(tokens, TokenType::LeftBrace)?;
-                    if let Some(param) = type_params.first() {
-                        return Err(
-                            param.error("typeclass theorem type parameters are not supported")
-                        );
-                    }
+                    let (args, _) = parse_args(tokens, TokenType::LeftBrace)?;
                     let (claim, _) =
                         Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
                     theorems.push(TypeclassTheorem {
