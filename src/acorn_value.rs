@@ -84,7 +84,7 @@ impl fmt::Display for BinaryOp {
 }
 
 // An instance of a constant. Could be generic or not.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct ConstantInstance {
     pub module_id: ModuleId,
     pub name: String,
@@ -98,6 +98,17 @@ pub struct ConstantInstance {
 
     // The effective type after applying the ordered argument mapping.
     pub instance_type: AcornType,
+}
+
+impl fmt::Display for ConstantInstance {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if !self.params.is_empty() {
+            let types: Vec<_> = self.type_arguments().map(ToString::to_string).collect();
+            write!(f, "<{}>", types.join(", "))?;
+        }
+        Ok(())
+    }
 }
 
 impl ConstantInstance {
@@ -204,13 +215,7 @@ impl fmt::Display for Subvalue<'_> {
             }
             AcornValue::ForAll(args, body) => fmt_binder(f, "forall", args, body, self.stack_size),
             AcornValue::Exists(args, body) => fmt_binder(f, "exists", args, body, self.stack_size),
-            AcornValue::Constant(c) => {
-                if c.params.is_empty() {
-                    return write!(f, "{}", c.name);
-                }
-                let types: Vec<_> = c.type_arguments().map(|t| t.to_string()).collect();
-                write!(f, "{}<{}>", c.name, types.join(", "))
-            }
+            AcornValue::Constant(c) => write!(f, "{}", c),
             AcornValue::Bool(b) => write!(f, "{}", b),
             AcornValue::IfThenElse(cond, if_value, else_value) => write!(
                 f,
