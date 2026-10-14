@@ -790,7 +790,7 @@ fn check_partial_expressions(partials: &VecDeque<PartialExpression>) -> Result<(
             (PartialExpression::Binary(a), PartialExpression::Binary(b))
             | (PartialExpression::Unary(a), PartialExpression::Binary(b)) => {
                 return Err(Error::new(
-                    left.token(),
+                    right.token(),
                     &format!(
                         "the '{}' operator cannot be followed by the '{}' operator",
                         a, b
@@ -812,7 +812,7 @@ fn combine_partial_expressions(
     iter: &mut TokenIter,
 ) -> Result<Expression> {
     if partials.len() == 0 {
-        return Err(iter.error("no partial expressions to combine"));
+        return Err(iter.error("expected an expression here"));
     }
     if partials.len() == 1 {
         let partial = partials.pop_back().unwrap();
@@ -1076,12 +1076,12 @@ mod tests {
         for (input, operator, message) in [
             (
                 "a + and b",
-                "+",
+                "and",
                 "the '+' operator cannot be followed by the 'and' operator",
             ),
             (
                 "not = b",
-                "not",
+                "=",
                 "the 'not' operator cannot be followed by the '=' operator",
             ),
         ] {

@@ -251,11 +251,10 @@ struct Backend {
     progress: Arc<Mutex<ProgressResponse>>,
 
     // Maps each URI to the most recently saved document text.
-    documents: DashMap<Url, Arc<LiveDocument>>,
+    documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
 
-    // Maps uri to the most recent version of a document the user has.
-    // This can be ahead of the saved text while the user is typing.
-    live_versions: DashMap<Url, i32>,
+    // Serialize lifecycle transitions and request setup, never long-running proof work.
+    lifecycle: Mutex<()>,
 
     // The current search task, if any
     search_task: Arc<RwLock<Option<SearchTask>>>,
@@ -271,7 +270,7 @@ impl Backend {
             client,
             progress: Arc::new(Mutex::new(ProgressResponse::default())),
             documents: DashMap::new(),
-            live_versions: DashMap::new(),
+            lifecycle: Mutex::new(()),
             search_task: Arc::new(RwLock::new(None)),
             diagnostic_map: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -364,20 +363,58 @@ impl Backend {
         });
     }
 
-    fn update_live_version(&self, url: Url, version: i32) {
-        self.live_versions.insert(url, version);
-    }
-
-    async fn update_text(&self, url: Url, text: String, event: &str) {
-        let version = match self.live_versions.get(&url) {
-            Some(v) => *v,
-            None => 0,
+    // Opening provides a version; saving commits the last accepted live version.
+    // A lifecycle lock keeps document, project, and search identity changes ordered.
+    async fn set_full_text(&self, url: Url, text: String, version: Option<i32>) {
+        let _lifecycle = self.lifecycle.lock().await;
+        let path = match url.to_file_path() {
+            Ok(path) => path,
+            Err(_) => {
+                log(&format!("document ignored for non-file URI: {}", url));
+                return;
+            }
         };
-
-        if self.update_doc_in_backend(url.clone(), text, version, event) {
-            self.update_doc_in_project(&url).await;
-            self.spawn_build();
+        let version = match version {
+            Some(version) => {
+                if self.documents.contains_key(&url) {
+                    log(&format!("duplicate open ignored for {}", url));
+                    return;
+                }
+                let doc = LiveDocument::new(&text, version);
+                self.documents
+                    .insert(url.clone(), Arc::new(RwLock::new(doc)));
+                version
+            }
+            None => {
+                let doc = match self.documents.get(&url) {
+                    Some(doc) => Arc::clone(doc.value()),
+                    None => {
+                        log(&format!("save ignored for closed document: {}", url));
+                        return;
+                    }
+                };
+                let mut doc = doc.write().await;
+                if doc.live_version() == doc.saved_version() {
+                    if doc.text() != text {
+                        log(&format!(
+                            "save ignored without a corresponding change: {}",
+                            url
+                        ));
+                    }
+                    return;
+                }
+                doc.save(&text)
+            }
+        };
+        self.set_search_task(None).await;
+        let mut project = self.stop_build_and_get_project().await;
+        log_with_doc(&url, version, "updating saved text");
+        match project.update_file(path, &text, version) {
+            Ok(()) => {}
+            Err(error) => log(&format!("update failed: {:?}", error)),
         }
+        drop(project);
+        self.spawn_build();
     }
 
     // If there is a build happening, stops it.
@@ -392,68 +429,6 @@ impl Backend {
         let mut project = self.project.write().await;
         project.allow_build();
         project
-    }
-
-    // This updates a document in the backend, but not in the project.
-    // Returns whether this is actually an update, or if we already had this.
-    // The backend tracks every single change; the project only gets them when we want it to use them.
-    // This means that typing a little bit doesn't necessarily cancel an ongoing build.
-    fn update_doc_in_backend(&self, url: Url, text: String, version: i32, event: &str) -> bool {
-        let new_doc = LiveDocument::new(text, version);
-        if let Some(old_doc) = self.documents.get(&url) {
-            if old_doc.saved_version() == version {
-                log_with_doc(&url, version, "unchanged");
-                return false;
-            }
-            log_with_doc(
-                &url,
-                old_doc.saved_version(),
-                &format!("replaced with v{}", version),
-            );
-        } else {
-            log_with_doc(&url, version, event);
-        }
-        self.documents.insert(url.clone(), Arc::new(new_doc));
-        true
-    }
-
-    // This updates a document in the project, based on the state in the backend.
-    async fn update_doc_in_project(&self, url: &Url) {
-        let document = match self.documents.get(url) {
-            Some(doc) => doc,
-            None => {
-                log("no text available for update_doc_in_project");
-                return;
-            }
-        };
-        let path = match url.to_file_path() {
-            Ok(path) => path,
-            Err(_) => {
-                log(&format!(
-                    "cannot update document; no path available for {}",
-                    url
-                ));
-                return;
-            }
-        };
-        {
-            // Check if the project already has this document state.
-            // If the update is a no-op, there's no need to stop the build.
-            let project = self.project.read().await;
-            if project.has_version(&path, document.saved_version()) {
-                return;
-            }
-        }
-        let mut project = self.stop_build_and_get_project().await;
-        log(&format!(
-            "updating {} with {} bytes",
-            path.display(),
-            document.text().len()
-        ));
-        match project.update_file(path, document.text(), document.saved_version()) {
-            Ok(()) => {}
-            Err(e) => log(&format!("update failed: {:?}", e)),
-        }
     }
 
     fn search_fail(&self, params: SearchParams, message: &str) -> jsonrpc::Result<SearchResponse> {
@@ -495,12 +470,23 @@ impl Backend {
     }
 
     async fn handle_search_request(&self, params: SearchParams) -> jsonrpc::Result<SearchResponse> {
+        let _lifecycle = self.lifecycle.lock().await;
         let doc = match self.documents.get(&params.uri) {
-            Some(doc) => doc,
-            None => {
-                return self.search_fail(params, "no text available");
-            }
+            Some(doc) => Arc::clone(doc.value()),
+            None => return self.search_fail(params, "no text available"),
         };
+        let doc = doc.read().await;
+        if params.version != doc.live_version() {
+            return self.search_fail(params, "requested document version is not current");
+        }
+        if params.version != doc.saved_version() {
+            return Ok(SearchResponse {
+                loading: true,
+                ..SearchResponse::new(params)
+            });
+        }
+        let version = doc.saved_version();
+        drop(doc);
 
         // Check if this request matches our current task, based on the selected line.
         // This is less general than checking the full path, but we don't have the
@@ -596,7 +582,7 @@ impl Backend {
         let new_task = SearchTask {
             project: self.project.clone(),
             url: params.uri.clone(),
-            version: doc.saved_version(),
+            version,
             prover: Arc::new(RwLock::new(prover)),
             module_ref,
             selected_line: params.selected_line,
@@ -629,6 +615,7 @@ impl Backend {
     }
 
     async fn handle_info_request(&self, params: InfoParams) -> jsonrpc::Result<InfoResponse> {
+        let _lifecycle = self.lifecycle.lock().await;
         let locked_task = self.search_task.read().await;
 
         let task = match locked_task.as_ref() {
@@ -671,41 +658,49 @@ impl Backend {
                 return;
             }
         };
-        self.update_text(uri, text, "save").await;
+        self.set_full_text(uri, text, None).await;
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
         let version = params.text_document.version;
-        self.update_live_version(uri.clone(), version);
-        self.update_text(uri, text, "open").await;
+        self.set_full_text(uri, text, Some(version)).await;
     }
 
-    // Just updates the current version, doesn't rebuild anything
+    // Edits invalidate proof searches, but a save is required to rebuild the project.
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        let uri = params.text_document.uri;
-        let version = params.text_document.version;
-        self.update_live_version(uri, version);
+        let _lifecycle = self.lifecycle.lock().await;
+        let url = params.text_document.uri;
+        let doc = match self.documents.get(&url) {
+            Some(doc) => Arc::clone(doc.value()),
+            None => return,
+        };
+        let result = doc
+            .write()
+            .await
+            .advance_version(params.text_document.version);
+        match result {
+            Ok(()) => self.set_search_task(None).await,
+            Err(error) => log(&format!("change ignored for {}: {}", url, error)),
+        }
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        let _lifecycle = self.lifecycle.lock().await;
         let uri = params.text_document.uri;
         let path = match uri.to_file_path() {
             Ok(path) => path,
-            Err(_) => {
-                log(&format!("close ignored for non-file URI: {}", uri));
-                return;
-            }
+            Err(_) => return,
         };
-        if let Some(old_doc) = self.documents.get(&uri) {
-            log_with_doc(&uri, old_doc.saved_version(), "closed");
+        if self.documents.remove(&uri).is_none() {
+            return;
         }
-        self.documents.remove(&uri);
+        self.set_search_task(None).await;
         let mut project = self.stop_build_and_get_project().await;
         match project.close_file(path) {
             Ok(()) => {}
-            Err(e) => log(&format!("close failed: {:?}", e)),
+            Err(error) => log(&format!("close failed: {:?}", error)),
         }
     }
 
@@ -719,13 +714,12 @@ impl Backend {
         params: SemanticTokensParams,
     ) -> jsonrpc::Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri;
+        let _lifecycle = self.lifecycle.lock().await;
         let doc = match self.documents.get(&uri) {
-            Some(doc) => doc,
-            None => {
-                log("no text available for semantic_tokens_full");
-                return Ok(None);
-            }
+            Some(doc) => Arc::clone(doc.value()),
+            None => return Ok(None),
         };
+        let doc = doc.read().await;
         log_with_doc(&uri, doc.saved_version(), "semantic_tokens_full");
         let tokens = Token::scan(doc.text());
 
