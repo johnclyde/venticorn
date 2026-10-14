@@ -12,7 +12,7 @@ use walkdir::WalkDir;
 
 use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
-use crate::builder::{BuildEvent, BuildStatus, Builder};
+use crate::builder::{BuildCache, BuildEvent, BuildStatus, Builder};
 use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
@@ -20,6 +20,18 @@ use crate::goal::GoalContext;
 use crate::module::{Module, ModuleId, ModuleRef, FIRST_NORMAL};
 use crate::prover::Prover;
 use crate::token::{Token, TokenType};
+
+// A synchronous build's actual proof counts and completed metadata. The cache is
+// absent if the build was interrupted or had a fatal error, even if a final event
+// displayed complete progress. It is not used to skip subsequent verification.
+pub struct BuildReport {
+    pub status: BuildStatus,
+    pub events: Vec<BuildEvent>,
+    pub num_success: i32,
+    pub goals_done: i32,
+    pub goals_total: i32,
+    pub cache: Option<BuildCache>,
+}
 
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
@@ -581,13 +593,31 @@ impl Project {
 
     // Does the build and returns all events when it's done, rather than asynchronously.
     pub fn sync_build(&self) -> (BuildStatus, Vec<BuildEvent>) {
+        let report = self.sync_build_report();
+        (report.status, report.events)
+    }
+
+    pub fn sync_build_report(&self) -> BuildReport {
         let mut events = vec![];
-        let status = {
+        let (status, num_success, goals_done, goals_total, cache) = {
             let mut builder = Builder::new(|event| events.push(event));
             self.build(&mut builder);
-            builder.status
+            let stats = (
+                builder.status,
+                builder.num_success,
+                builder.goals_done,
+                builder.goals_total,
+            );
+            (stats.0, stats.1, stats.2, stats.3, builder.into_cache())
         };
-        (status, events)
+        BuildReport {
+            status,
+            events,
+            num_success,
+            goals_done,
+            goals_total,
+            cache,
+        }
     }
 
     // Set the file content. This has priority over the actual filesystem.

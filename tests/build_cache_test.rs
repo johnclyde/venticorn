@@ -84,3 +84,52 @@ fn zero_goal_modules_are_complete_but_canceled_empty_builds_are_not_cacheable() 
     project.build(&mut canceled);
     assert!(canceled.cache().is_none());
 }
+
+#[test]
+fn synchronous_reports_preserve_events_and_actual_completion_counts() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/one.ac", "theorem one { true }");
+    project.mock("/mock/two.ac", "theorem two { true }");
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!(
+        (report.num_success, report.goals_done, report.goals_total),
+        (2, 2, 2)
+    );
+    assert_eq!(report.events.last().unwrap().progress, Some((2, 2)));
+    assert_eq!(report.cache.unwrap().num_modules(), 2);
+    // The established API still reports the same status and verified goal ranges.
+    let (status, events) = project.sync_build();
+    assert_eq!(status, BuildStatus::Good);
+    assert_eq!(events.iter().filter(|e| e.verified.is_some()).count(), 2);
+}
+
+#[test]
+fn synchronous_reports_distinguish_empty_failed_and_interrupted_builds() {
+    let empty = Project::new_mock().sync_build_report();
+    assert_eq!((empty.goals_done, empty.goals_total), (0, 0));
+    assert_eq!(empty.events.last().unwrap().progress, Some((0, 0)));
+    assert_eq!(empty.cache.unwrap().num_modules(), 0);
+
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", "theorem impossible { false }");
+    let failed = project.sync_build_report();
+    assert_eq!(failed.status, BuildStatus::Warning);
+    assert_eq!(
+        (failed.num_success, failed.goals_done, failed.goals_total),
+        (0, 1, 1)
+    );
+    assert_eq!(failed.events.last().unwrap().progress, Some((1, 1)));
+    assert_eq!(failed.cache.unwrap().num_modules(), 0);
+
+    project.stop_build();
+    assert!(project.sync_build_report().cache.is_none());
+    project.allow_build();
+    assert!(project.sync_build_report().cache.is_some());
+
+    project.mock("/mock/broken.ac", "theorem broken {");
+    let invalid = project.sync_build_report();
+    assert_eq!(invalid.status, BuildStatus::Error);
+    assert_eq!(invalid.goals_done, 0);
+    assert!(invalid.cache.is_none());
+}

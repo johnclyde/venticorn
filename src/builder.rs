@@ -41,7 +41,7 @@ pub struct BuildEvent {
     pub verified: Option<(u32, u32)>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildStatus {
     // No problems of any kind
     Good,
@@ -331,6 +331,10 @@ impl<'a> Builder<'a> {
 
     pub fn cache(&self) -> Option<&BuildCache> {
         self.cache_ready.then_some(&self.new_cache)
+    }
+
+    pub fn into_cache(self) -> Option<BuildCache> {
+        self.cache_ready.then_some(self.new_cache)
     }
 
     // Called when a single proof search completes.
