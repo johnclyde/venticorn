@@ -523,7 +523,7 @@ impl Project {
             };
             builder.has_cached_module(
                 &self.modules[id as usize].descriptor,
-                self.get_hash(id),
+                self.get_module_hash(id),
                 &Self::goal_ranges(dependency),
             )
         });

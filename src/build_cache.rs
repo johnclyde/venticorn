@@ -1,5 +1,5 @@
 // Modified for Venticorn: completed verification metadata with a read-only public API.
-use crate::module::ModuleRef;
+use crate::module::{ModuleHash, ModuleRef};
 use crate::project::ModuleFingerprint;
 use std::collections::HashMap;
 
@@ -7,14 +7,18 @@ use std::collections::HashMap;
 // complete goal ranges and successful transitive dependencies.
 #[derive(Debug, Clone)]
 pub struct CachedModule {
-    fingerprint: ModuleFingerprint,
+    hash: ModuleHash,
     direct_dependencies: Vec<ModuleRef>,
     verified: Vec<(u32, u32)>,
 }
 
 impl CachedModule {
     pub fn fingerprint(&self) -> ModuleFingerprint {
-        self.fingerprint
+        self.hash.fingerprint()
+    }
+
+    pub fn module_hash(&self) -> &ModuleHash {
+        &self.hash
     }
 
     pub fn direct_dependencies(&self) -> &[ModuleRef] {
@@ -48,26 +52,25 @@ impl BuildCache {
     pub(crate) fn matches(
         &self,
         module: &ModuleRef,
-        fingerprint: Option<ModuleFingerprint>,
+        hash: Option<&ModuleHash>,
         expected: &[(u32, u32)],
     ) -> bool {
-        self.get(module).is_some_and(|cached| {
-            Some(cached.fingerprint) == fingerprint && cached.verified == expected
-        })
+        self.get(module)
+            .is_some_and(|cached| Some(&cached.hash) == hash && cached.verified == expected)
     }
 
     // Called only after Builder verifies every expected goal in the module.
     pub(crate) fn insert_completed(
         &mut self,
         module: ModuleRef,
-        fingerprint: ModuleFingerprint,
+        hash: ModuleHash,
         direct_dependencies: Vec<ModuleRef>,
         verified: Vec<(u32, u32)>,
     ) {
         self.modules.insert(
             module,
             CachedModule {
-                fingerprint,
+                hash,
                 direct_dependencies,
                 verified,
             },
