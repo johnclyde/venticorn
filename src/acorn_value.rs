@@ -1472,11 +1472,8 @@ impl AcornValue {
 
     fn validate_against_stack(&self, stack: &mut Vec<AcornType>) -> Result<(), String> {
         match self {
-            AcornValue::Unresolved(_, _, _, params) => {
-                if params.is_empty() {
-                    return Ok(());
-                }
-                Err("there should be no unresolved values during validation".to_string())
+            AcornValue::Unresolved(..) => {
+                Err("generic type arguments could not be inferred".to_string())
             }
             AcornValue::Variable(i, var_type) => match stack.get(*i as usize) {
                 Some(t) => {
@@ -1639,7 +1636,12 @@ impl AcornValue {
                     .iter()
                     .map(|(name, t)| (name.clone(), t.specialize(params)))
                     .collect();
-                AcornValue::Constant(*module, name.clone(), base_type.clone(), out_params)
+                let output_type = if in_params.is_empty() {
+                    base_type.specialize(params)
+                } else {
+                    base_type.clone()
+                };
+                AcornValue::Constant(*module, name.clone(), output_type, out_params)
             }
             AcornValue::Bool(_) => self.clone(),
         }
@@ -1718,12 +1720,16 @@ impl AcornValue {
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.parametrize(module, type_names))),
             AcornValue::Constant(c_module, c_name, c_type, params) => {
-                // New way
                 let mut out_params = vec![];
                 for (param_name, t) in params {
                     out_params.push((param_name.clone(), t.parametrize(module, type_names)));
                 }
-                AcornValue::Constant(*c_module, c_name.clone(), c_type.clone(), out_params)
+                let output_type = if params.is_empty() {
+                    c_type.parametrize(module, type_names)
+                } else {
+                    c_type.clone()
+                };
+                AcornValue::Constant(*c_module, c_name.clone(), output_type, out_params)
             }
             AcornValue::Bool(_) => self.clone(),
         }
@@ -1747,7 +1753,10 @@ impl AcornValue {
                 cond.is_parametric() || if_value.is_parametric() || else_value.is_parametric()
             }
             AcornValue::Not(x) => x.is_parametric(),
-            AcornValue::Constant(_, _, _, params) => params.iter().any(|(_, t)| t.is_generic()),
+            AcornValue::Constant(_, _, base_type, params) => {
+                (params.is_empty() && base_type.is_generic())
+                    || params.iter().any(|(_, t)| t.is_generic())
+            }
             AcornValue::Bool(_) => false,
             AcornValue::Match(scrutinee, cases) => {
                 scrutinee.is_parametric()
@@ -1903,7 +1912,19 @@ impl AcornValue {
                 AcornValue::Match(Box::new(new_scrutinee), new_cases)
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.to_placeholder())),
-            AcornValue::Constant(_, _, _, _) | AcornValue::Bool(_) => self.clone(),
+            AcornValue::Constant(module, name, base_type, params) => {
+                let output_type = if params.is_empty() {
+                    base_type.to_arbitrary()
+                } else {
+                    base_type.clone()
+                };
+                let output_params = params
+                    .iter()
+                    .map(|(name, t)| (name.clone(), t.to_arbitrary()))
+                    .collect();
+                AcornValue::Constant(*module, name.clone(), output_type, output_params)
+            }
+            AcornValue::Bool(_) => self.clone(),
         }
     }
 
@@ -1982,9 +2003,6 @@ impl AcornValue {
                 } else {
                     None
                 }
-            }
-            AcornValue::Unresolved(module, name, _, params) if params.is_empty() => {
-                Some((*module, name))
             }
             _ => None,
         }
