@@ -71,6 +71,7 @@ function searchFixture({ dirty = false, scheme = "file", sendRequest } = {}) {
   const listen = (name) => (handler) => { events[name] = handler; return disposable(); };
   const disposable = () => ({ dispose() {} });
   const document = { languageId: "acorn", isDirty: dirty, version: 1,
+    lineCount: 1, lineAt: () => ({ text: "theorem goal { true }" }),
     uri: { scheme, toString: () => `${scheme}:test.ac` } };
   const editor = { document, selection: { start: { line: 0 } }, setDecorations() {} };
   const api = {
@@ -248,4 +249,20 @@ test("insertion revalidates document lifetime after awaiting editor focus", asyn
   focus(replacement);
   await pending;
   assert.equal(edits, 0);
+});
+
+test("new-proof guidance remains for blank, comment-only, and import-only files", () => {
+  const f = searchFixture();
+  for (const lines of [[""], [" // introduction", "  "], ["from nat import Nat", "import int", "// ready"]]) {
+    f.document.lineCount = lines.length;
+    f.document.lineAt = (line) => ({ text: lines[line] });
+    f.view.chooseHelp();
+    assert.equal(f.messages.at(-1).help.newDocument, true);
+  }
+  for (const text of ["theorem goal { true }", "let imported: Bool = true", "fromage"]) {
+    f.document.lineCount = 1;
+    f.document.lineAt = () => ({ text });
+    f.view.chooseHelp();
+    assert.equal(f.messages.at(-1).help.newDocument, undefined);
+  }
 });

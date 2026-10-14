@@ -109,7 +109,15 @@ export class Assistant implements Disposable {
     } else if (document.isDirty) {
       this.sendHelp({ unsaved: true });
     } else {
-      this.sendHelp({});
+      let hasProofText = false;
+      for (let line = 0; line < document.lineCount; line++) {
+        const text = document.lineAt(line).text.trim();
+        if (text.length > 0 && !text.startsWith("//") && !/^(from|import)\b/.test(text)) {
+          hasProofText = true;
+          break;
+        }
+      }
+      this.sendHelp(hasProofText ? {} : { newDocument: true });
     }
   }
 
@@ -149,7 +157,7 @@ export class Assistant implements Disposable {
         return;
       }
 
-      this.sendHelp({});
+      this.chooseHelp();
       let id = this.currentSearchId + 1;
       let params: SearchParams = { uri, selectedLine, version, id };
 
