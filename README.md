@@ -123,7 +123,8 @@ export VENTICORN_LIBRARY=/absolute/path/to/your/library
 
 # Verify all modules, or one module without its .ac suffix.
 cargo run --locked --release --bin verify
-cargo run --locked --release --bin verify -- --module hello
+cargo run --locked --release --bin verify -- hello
+cargo run --locked --release --bin verify -- path/to/proof.ac
 
 # Search for the proposition on a one-based source line.
 cargo run --locked --release --bin search -- hello 1
@@ -132,7 +133,7 @@ cargo run --locked --release --bin search -- hello 1
 cargo run --locked --release --bin verify -- --dataset
 ```
 
-Use dotted module names for subdirectories, such as `algebra.groups`. `verify` exits unsuccessfully when loading or verification fails. `search` prints its outcome and is intended for interactive investigation. Release builds are recommended for larger libraries. The `fastdev` profile uses release optimization while keeping debug symbols for local debugging and profiling; ordinary release builds omit those symbols. For example, run `cargo build --locked --profile fastdev --bin profile_prover`.
+Use dotted module names for subdirectories, such as `algebra.groups`, or a relative or absolute `.ac` file path. The `--module hello` form remains supported. A file outside the library can import from the selected library. `verify` exits unsuccessfully when loading or verification fails. `search` prints its outcome and is intended for interactive investigation. Release builds are recommended for larger libraries. The `fastdev` profile uses release optimization while keeping debug symbols for local debugging and profiling; ordinary release builds omit those symbols. For example, run `cargo build --locked --profile fastdev --bin profile_prover`.
 
 ## Run the VS Code extension from source
 

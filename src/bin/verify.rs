@@ -6,6 +6,7 @@
 // Try:
 //   cargo build --release --bin=verify; time ~/venticorn/target/release/verify
 
+use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -14,8 +15,11 @@ use venticorn::project::Project;
 
 #[derive(Parser)]
 struct Args {
-    // Just verify a single module.
-    #[clap(long)]
+    /// Verify one module name or .ac file; omit to verify the library.
+    target: Option<String>,
+
+    /// Verify one module (compatible with the positional module argument).
+    #[clap(long, conflicts_with = "target")]
     module: Option<String>,
 
     // Create a dataset from the prover logs.
@@ -33,7 +37,16 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Some(module_name) = args.module {
+    if let Some(target) = args.target {
+        if target.ends_with(".ac") {
+            if let Err(error) = project.add_target_by_path(Path::new(&target)) {
+                eprintln!("error loading file: {}", error);
+                return ExitCode::FAILURE;
+            }
+        } else {
+            project.add_target_by_name(&target);
+        }
+    } else if let Some(module_name) = args.module {
         project.add_target_by_name(&module_name);
     } else {
         if let Err(error) = project.add_all_targets() {
