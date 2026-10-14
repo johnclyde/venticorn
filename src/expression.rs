@@ -456,7 +456,7 @@ impl Expression {
         match self {
             Expression::Grouping(_, e, _) => e.premise(),
             Expression::Binary(left, token, _) => {
-                if token.token_type == TokenType::RightArrow {
+                if matches!(token.token_type, TokenType::RightArrow | TokenType::Implies) {
                     Some(left)
                 } else {
                     None
