@@ -141,8 +141,16 @@ pub struct StructureStatement {
     // Each field contains a field name-token and a type expression
     pub fields: Vec<(Token, Expression)>,
 
+    // The token that ends the first part of the structure statement
+    pub first_right_brace: Token,
+
     // The constraint on the structure, if there is one.
     pub constraint: Option<Expression>,
+
+    // The body is a proof that some value satisfies the constraint.
+    // We need to prove this because every type must be inhabited.
+    // If there's no constraint, there cannot be a body.
+    pub body: Option<Body>,
 }
 
 // Inductive statements define a new type by defining a set of constructors.
@@ -614,22 +622,24 @@ fn parse_structure_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
                     return Err(token.error("structs must have at least one field"));
                 }
                 let right_brace = tokens.next().unwrap();
+                let first_right_brace = right_brace.clone();
 
                 // Check for a constraint
-                let (constraint, last_token) = match tokens.peek() {
+                let (constraint, body, last_token) = match tokens.peek() {
                     Some(token) => match token.token_type {
                         TokenType::Constraint => {
                             tokens.next();
                             tokens.expect_type(TokenType::LeftBrace)?;
-                            let (constraint, terminator) = Expression::parse_value(
+                            let (constraint, right_brace) = Expression::parse_value(
                                 tokens,
                                 Terminator::Is(TokenType::RightBrace),
                             )?;
-                            (Some(constraint), terminator)
+                            let (body, last_token) = parse_by_block(right_brace, tokens)?;
+                            (Some(constraint), body, last_token)
                         }
-                        _ => (None, right_brace),
+                        _ => (None, None, right_brace),
                     },
-                    None => (None, right_brace),
+                    None => (None, None, right_brace),
                 };
 
                 return Ok(Statement {
@@ -639,7 +649,9 @@ fn parse_structure_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
                         name: name_token.to_string(),
                         name_token,
                         fields,
+                        first_right_brace,
                         constraint,
+                        body,
                     }),
                 });
             }
@@ -995,6 +1007,10 @@ impl Statement {
                         " constraint {{\n{}{}\n{}}}",
                         new_indentation, constraint, indentation
                     )?;
+                }
+                if let Some(body) = &ss.body {
+                    write!(f, " by")?;
+                    write_block(f, &body.statements, indentation)?;
                 }
                 Ok(())
             }
@@ -1775,6 +1791,19 @@ mod tests {
             baz: Nat
         } constraint {
             bar > baz
+        }"});
+    }
+
+    #[test]
+    fn test_parsing_structure_with_constraint_and_by() {
+        ok(indoc! {"
+        structure Foo {
+            bar: Nat
+            baz: Nat
+        } constraint {
+            bar > baz
+        } by {
+            1 > 0
         }"});
     }
 }
