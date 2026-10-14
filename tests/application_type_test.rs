@@ -165,3 +165,42 @@ fn generic_imports_have_a_clear_limit_and_qualified_calls_remain_supported() {
             .unwrap();
     }
 }
+
+#[test]
+fn inference_preserves_declared_parameter_order_instead_of_sorting_names() {
+    use venticorn::environment::Environment;
+    use venticorn::expression::Expression;
+    use venticorn::project::Project;
+    let mut env = Environment::new_test();
+    env.add("inductive Nat {\n zero\n suc(Nat)\n}");
+    let z = AcornType::Variable("Z".into(), None);
+    let a = AcornType::Variable("A".into(), None);
+    env.bindings.add_constant(
+        "choose",
+        vec!["Z".into(), "A".into()],
+        AcornType::new_functional(vec![z, a.clone()], a),
+        None,
+        None,
+    );
+    let value = env
+        .bindings
+        .evaluate_value(
+            &Project::new_mock(),
+            &Expression::expect_value("choose(true, Nat.zero)"),
+            None,
+        )
+        .unwrap();
+    value.validate().unwrap();
+    let nat = AcornType::Data(env.module_id, "Nat".into());
+    assert_eq!(value.get_type(), nat);
+    let AcornValue::Application(app) = value else {
+        panic!("expected application")
+    };
+    let AcornValue::Constant(_, _, _, params) = *app.function else {
+        panic!("expected resolved constant")
+    };
+    assert_eq!(
+        params,
+        vec![("Z".into(), AcornType::Bool), ("A".into(), nat)]
+    );
+}
