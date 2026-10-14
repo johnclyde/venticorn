@@ -371,23 +371,26 @@ impl Node {
             assert!(block.is_none());
         }
 
-        let value = proposition
-            .value
-            .replace_constants_with_values(0, &|module_id, name| {
-                let bindings = if env.module_id == module_id {
-                    &env.bindings
-                } else {
-                    &project
-                        .get_env_by_id(module_id)
-                        .expect("missing module during add_proposition")
-                        .bindings
-                };
-                if bindings.is_theorem(name) {
-                    bindings.get_definition(name).clone()
-                } else {
-                    None
-                }
-            });
+        let value = proposition.value.replace_constants(0, &|c, depth| {
+            let bindings = if env.module_id == c.module_id {
+                &env.bindings
+            } else {
+                &project
+                    .get_env_by_id(c.module_id)
+                    .expect("missing module during add_proposition")
+                    .bindings
+            };
+            if !bindings.is_theorem(&c.name) {
+                return None;
+            }
+            let (definition, params) = bindings.get_definition_and_params(&c.name)?;
+            let pairs: Vec<_> = params
+                .iter()
+                .cloned()
+                .zip(c.type_arguments().cloned())
+                .collect();
+            Some(definition.instantiate(&pairs).insert_stack(0, depth))
+        });
         let claim = proposition.with_value(value);
         Node {
             structural,
