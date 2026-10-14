@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
 use crate::acorn_type::{AcornType, TypeClass};
-use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
+use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
 use crate::compilation::{self, Error, ErrorSource};
@@ -1411,7 +1411,6 @@ impl BindingMap {
                         }
                         args.push(arg_value);
                     }
-                    let applied_type = function_type.applied_type(arg_exprs.len());
 
                     // Extract the parameters for the unresolved function
                     let mut params = vec![];
@@ -1427,17 +1426,10 @@ impl BindingMap {
                         }
                     }
 
-                    if expected_type.is_some() {
-                        // Check the applied type
-                        let specialized_type = applied_type.specialize(&params);
-                        check_type(&**function_expr, expected_type, &specialized_type)?;
-                    }
-
-                    let specialized = AcornValue::Constant(c_module, c_name, c_type, params);
-                    return Ok(AcornValue::Application(FunctionApplication {
-                        function: Box::new(specialized),
-                        args,
-                    }));
+                    let instance_fn = AcornValue::Constant(c_module, c_name, c_type, params);
+                    let value = AcornValue::new_apply(instance_fn, args);
+                    check_type(&**function_expr, expected_type, &value.get_type())?;
+                    return Ok(value);
                 }
 
                 // Ordinary functions keep the types declared in their current scope.
