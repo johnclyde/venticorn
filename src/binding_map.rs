@@ -1193,7 +1193,9 @@ impl BindingMap {
     ) -> compilation::Result<AcornValue> {
         match expression {
             Expression::Singleton(token) => match token.token_type {
-                TokenType::Axiom => panic!("axiomatic values should be handled elsewhere"),
+                TokenType::Axiom => {
+                    Err(token.error("axiom is only allowed as a complete declaration value"))
+                }
                 TokenType::ForAll | TokenType::Exists | TokenType::Function => {
                     return Err(token.error("binder keywords cannot be used as values"));
                 }
@@ -1644,7 +1646,7 @@ impl BindingMap {
                 AcornType::new_functional(generic_arg_types.clone(), generic_value_type.clone());
             self.add_constant(name, type_param_names.clone(), function_type, None, None);
         }
-        let generic_value = if value_expr.token().token_type == TokenType::Axiom {
+        let generic_value = if value_expr.is_axiom() {
             None
         } else {
             let specific_value = self.evaluate_value_with_stack(
