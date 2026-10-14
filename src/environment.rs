@@ -350,35 +350,34 @@ impl Environment {
         range: Range,
     ) -> compilation::Result<()> {
         if class.is_none() && ls.name_token.token_type == TokenType::Numeral {
-            return Err(Error::new(
-                &ls.name_token,
-                "numeric literals may not be defined outside of a class",
-            ));
+            return Err(ls
+                .name_token
+                .error("numeric literals may not be defined outside of a class"));
         }
         if ls.name == "self"
             || ls.name == "new"
             || ls.name == "read"
             || (class.is_some() && TokenType::from_magic_method_name(&ls.name).is_some())
         {
-            return Err(Error::new(
-                &ls.name_token,
-                &format!("'{}' is a reserved word. use a different name", ls.name),
-            ));
+            return Err(ls.name_token.error(&format!(
+                "'{}' is a reserved word. use a different name",
+                ls.name
+            )));
         }
         let name = match class {
             Some(c) => format!("{}.{}", c, ls.name),
             None => ls.name.clone(),
         };
         if self.bindings.name_in_use(&name) {
-            return Err(Error::new(
-                &ls.name_token,
-                &format!("constant name '{}' already defined in this scope", name),
-            ));
+            return Err(ls.name_token.error(&format!(
+                "constant name '{}' already defined in this scope",
+                name
+            )));
         }
         let acorn_type = self.bindings.evaluate_type(project, &ls.type_expr)?;
         if ls.name_token.token_type == TokenType::Numeral {
             if acorn_type != AcornType::Data(self.module_id, class.unwrap().to_string()) {
-                return Err(Error::new(
+                return Err(Error::old(
                     &ls.type_expr.token(),
                     "numeric class variables must be the class type",
                 ));
@@ -416,7 +415,7 @@ impl Environment {
         range: Range,
     ) -> compilation::Result<()> {
         if ds.name == "new" || ds.name == "self" {
-            return Err(Error::new(
+            return Err(Error::old(
                 &ds.name_token,
                 &format!("'{}' is a reserved word. use a different name", ds.name),
             ));
@@ -426,7 +425,7 @@ impl Environment {
             None => ds.name.clone(),
         };
         if self.bindings.name_in_use(&name) {
-            return Err(Error::new(
+            return Err(Error::old(
                 &ds.name_token,
                 &format!("function name '{}' already defined in this scope", name),
             ));
@@ -447,7 +446,7 @@ impl Environment {
         if let Some(class_name) = class_name {
             let class_type = AcornType::Data(self.module_id, class_name.to_string());
             if arg_types[0] != class_type {
-                return Err(Error::new(
+                return Err(Error::old(
                     ds.args[0].token(),
                     "self must be the class type",
                 ));
@@ -455,7 +454,7 @@ impl Environment {
 
             if ds.name == "read" {
                 if arg_types.len() != 2 || arg_types[1] != class_type || value_type != class_type {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &ds.name_token,
                         &format!(
                             "{}.read should be type ({}, {}) -> {}",
@@ -496,7 +495,7 @@ impl Environment {
         statement: &Statement,
     ) -> compilation::Result<()> {
         if self.includes_explicit_false {
-            return Err(Error::new(
+            return Err(Error::old(
                 &statement.first_token,
                 "an explicit 'false' may not be followed by other statements",
             ));
@@ -505,7 +504,7 @@ impl Environment {
             StatementInfo::Type(ts) => {
                 self.add_other_lines(statement);
                 if self.bindings.name_in_use(&ts.name) {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &ts.type_expr.token(),
                         &format!("type name '{}' already defined in this scope", ts.name),
                     ));
@@ -534,14 +533,14 @@ impl Environment {
             StatementInfo::Theorem(ts) => {
                 if let Some(name) = &ts.name {
                     if self.bindings.name_in_use(name) {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             &statement.first_token,
                             &format!("theorem name '{}' already defined in this scope", name),
                         ));
                     }
                 }
                 if ts.axiomatic && ts.body.is_some() {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &statement.first_token,
                         "axioms cannot have proof blocks",
                     ));
@@ -567,12 +566,12 @@ impl Environment {
                     )?;
 
                 let unbound_claim = value.ok_or_else(|| {
-                    Error::new(&statement.first_token, "theorems must have values")
+                    Error::old(&statement.first_token, "theorems must have values")
                 })?;
 
                 let is_citation = self.bindings.is_citation(project, &unbound_claim);
                 if is_citation && ts.body.is_some() {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &statement.first_token,
                         "citations do not need proof blocks",
                     ));
@@ -607,7 +606,7 @@ impl Environment {
                 let mut staged = self.child(statement.first_line(), true);
                 if let Some(name) = &ts.name {
                     if arg_names.contains(name) || type_params.contains(name) {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             &statement.first_token,
                             "theorem name conflicts with a parameter",
                         ));
@@ -805,13 +804,13 @@ impl Environment {
 
             StatementInfo::FunctionSatisfy(fss) => {
                 if fss.name == "new" || fss.name == "self" {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &fss.name_token,
                         &format!("'{}' is a reserved word. use a different name", fss.name),
                     ));
                 }
                 if self.bindings.name_in_use(&fss.name) {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &statement.first_token,
                         &format!("function name '{}' already defined in this scope", fss.name),
                     ));
@@ -839,9 +838,9 @@ impl Environment {
                     )?;
 
                 let unbound_condition = condition
-                    .ok_or_else(|| Error::new(&statement.first_token, "missing condition"))?;
+                    .ok_or_else(|| Error::old(&statement.first_token, "missing condition"))?;
                 if unbound_condition.get_type() != AcornType::Bool {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &fss.condition.token(),
                         "condition must be a boolean",
                     ));
@@ -906,7 +905,7 @@ impl Environment {
             StatementInfo::Structure(ss) => {
                 self.add_other_lines(statement);
                 if self.bindings.has_type_name(&ss.name) {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &statement.first_token,
                         "type name already defined in this scope",
                     ));
@@ -920,7 +919,7 @@ impl Environment {
                     let field_type = self.bindings.evaluate_type(project, &field_type_expr)?;
                     field_types.push(field_type.clone());
                     if TokenType::from_magic_method_name(&field_name_token.text()).is_some() {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             field_name_token,
                             &format!(
                                 "'{}' is a reserved word. use a different name",
@@ -1034,7 +1033,7 @@ impl Environment {
             StatementInfo::Inductive(is) => {
                 self.add_other_lines(statement);
                 if self.bindings.has_type_name(&is.name) {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &statement.first_token,
                         "type name already defined in this scope",
                     ));
@@ -1064,7 +1063,7 @@ impl Environment {
                         field != &inductive_type && field.refers_to(self.module_id, &is.name)
                     }) {
                         self.bindings.remove_data_type(&is.name);
-                        return Err(Error::new(
+                        return Err(Error::old(
                             name_token,
                             "recursive constructor fields must use the inductive type directly",
                         ));
@@ -1077,7 +1076,7 @@ impl Environment {
                     constructors.push((member_name, type_list));
                 }
                 if !has_base {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &statement.first_token,
                         "inductive type must have a base case",
                     ));
@@ -1307,7 +1306,7 @@ impl Environment {
                 // Give a local name to the imported module
                 let local_name = is.components.last().unwrap();
                 if self.bindings.name_in_use(local_name) {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &statement.first_token,
                         &format!(
                             "imported name '{}' already defined in this scope",
@@ -1320,7 +1319,7 @@ impl Environment {
                     Ok(module_id) => module_id,
                     Err(LoadError(s)) => {
                         // The error is with the import statement itself, like a circular import.
-                        return Err(Error::new(
+                        return Err(Error::old(
                             &statement.first_token,
                             &format!("import error: {}", s),
                         ));
@@ -1353,26 +1352,26 @@ impl Environment {
                 match self.bindings.get_type_for_name(&cs.name) {
                     Some(AcornType::Data(module, name)) => {
                         if module != &self.module_id {
-                            return Err(Error::new(
+                            return Err(Error::old(
                                 &cs.name_token,
                                 "we can only bind members to types in the current module",
                             ));
                         }
                         if name != &cs.name {
-                            return Err(Error::new(
+                            return Err(Error::old(
                                 &cs.name_token,
                                 "we cannot bind members to type aliases",
                             ));
                         }
                     }
                     Some(_) => {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             &cs.name_token,
                             &format!("we can only bind members to data types"),
                         ));
                     }
                     None => {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             &cs.name_token,
                             &format!("undefined type name '{}'", cs.name),
                         ));
@@ -1397,7 +1396,7 @@ impl Environment {
                             )?;
                         }
                         _ => {
-                            return Err(Error::new(
+                            return Err(Error::old(
                                 &substatement.first_token,
                                 "only let and define statements are allowed in class bodies",
                             ));
@@ -1414,7 +1413,7 @@ impl Environment {
                     self.bindings.set_default(module, typename);
                     Ok(())
                 } else {
-                    Err(Error::new(
+                    Err(Error::old(
                         &ds.type_expr.token(),
                         "numerals type must be a data type",
                     ))
@@ -1497,7 +1496,7 @@ impl Environment {
                         self.bindings
                             .evaluate_pattern(project, &scrutinee_type, pattern)?;
                     if indices.contains(&index) {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             pattern.token(),
                             "duplicate pattern in match statement",
                         ));
@@ -1509,7 +1508,7 @@ impl Environment {
                     cases.push((constructor, args, pattern, body));
                 }
                 if !all_cases {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         ms.scrutinee.token(),
                         "not all cases are covered in match statement",
                     ));
