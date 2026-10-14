@@ -152,7 +152,11 @@ fn rejected_typeclasses_leave_the_environment_unchanged() {
     env.add("let kept: Bool = true");
     let nodes = env.nodes.len();
     let last_line = env.last_line();
-    let kept = env.bindings.old_get_constant_value("kept").unwrap();
+    let kept = env
+        .bindings
+        .get_constant_value("kept")
+        .and_then(|potential| potential.resolved())
+        .unwrap();
     let statement =
         Statement::parse_str("typeclass T: Example {\n value: T\n identity { value = value }\n}")
             .unwrap();
@@ -164,7 +168,13 @@ fn rejected_typeclasses_leave_the_environment_unchanged() {
         .contains("typeclass declarations are not supported yet"));
     assert_eq!(env.nodes.len(), nodes);
     assert_eq!(env.last_line(), last_line);
-    assert_eq!(env.bindings.old_get_constant_value("kept").unwrap(), kept);
+    assert_eq!(
+        env.bindings
+            .get_constant_value("kept")
+            .and_then(|potential| potential.resolved())
+            .unwrap(),
+        kept
+    );
     for name in ["T", "Example", "value"] {
         assert!(!env.bindings.has_identifier(name));
     }

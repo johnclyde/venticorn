@@ -345,41 +345,6 @@ impl BindingMap {
         );
     }
 
-    // Returns an AcornValue representing this name, if there is one.
-    // This can return an unresolved value.
-    // Returns None if this name does not refer to a constant.
-    pub fn old_get_constant_value(&self, name: &str) -> Option<AcornValue> {
-        let constant_type = self.identifier_types.get(name)?.clone();
-
-        // Aliases
-        if let Some((canonical_module, canonical_name)) = self.alias_to_canonical.get(name) {
-            return Some(AcornValue::new_constant(
-                *canonical_module,
-                canonical_name.clone(),
-                vec![],
-                constant_type,
-            ));
-        }
-
-        // Constants defined here
-        let params = self.constants.get(name)?.params.clone();
-        if params.is_empty() {
-            Some(AcornValue::new_constant(
-                self.module,
-                name.to_string(),
-                vec![],
-                constant_type,
-            ))
-        } else {
-            Some(AcornValue::Unresolved(
-                self.module,
-                name.to_string(),
-                constant_type,
-                params,
-            ))
-        }
-    }
-
     // Look up a constant without treating a pending generic declaration as a proof value.
     pub fn get_constant_value(&self, name: &str) -> Option<PotentialValue> {
         let constant_type = self.identifier_types.get(name)?.clone();
@@ -1067,8 +1032,8 @@ impl BindingMap {
                 project.get_bindings(module).unwrap()
             };
             let constant_name = format!("{}.{}", type_name, name);
-            let function = match bindings.old_get_constant_value(&constant_name) {
-                Some(value) => value,
+            let function = match bindings.get_constant_value(&constant_name) {
+                Some(potential) => potential.value(source)?,
                 None => {
                     return Err(
                         source.error(&format!("unknown instance variable '{}'", constant_name))
@@ -1307,9 +1272,6 @@ impl BindingMap {
         let entity = bindings.evaluate_name(name_token, project, &Stack::new(), None)?;
         match entity {
             NamedEntity::Value(value) => {
-                if matches!(&value, AcornValue::Unresolved(_, _, _, params) if !params.is_empty()) {
-                    return Err(name_token.error("direct imports of generic constants are not supported; import the module and use a qualified name"));
-                }
                 // Add a local alias that mirrors this constant's name in the imported module.
                 if let Some((ext_module, ext_name)) = value.as_simple_constant() {
                     self.add_alias(
@@ -2436,7 +2398,10 @@ mod tests {
         assert_eq!((index, total), (1, 2));
         assert_eq!(
             constructor,
-            env.bindings.old_get_constant_value("Foo.pair").unwrap()
+            env.bindings
+                .get_constant_value("Foo.pair")
+                .and_then(|potential| potential.resolved())
+                .unwrap()
         );
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
@@ -2490,7 +2455,10 @@ mod tests {
         assert_eq!((index, total), (1, 2));
         assert_eq!(
             constructor,
-            env.bindings.old_get_constant_value("Foo.pair").unwrap()
+            env.bindings
+                .get_constant_value("Foo.pair")
+                .and_then(|potential| potential.resolved())
+                .unwrap()
         );
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
