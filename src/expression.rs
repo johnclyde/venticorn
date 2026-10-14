@@ -241,20 +241,6 @@ impl Terminator {
 }
 
 impl Expression {
-    // This is not the first token or the last token, but the "conceptually top level" token.
-    pub fn token(&self) -> &Token {
-        match self {
-            Expression::Singleton(token) => token,
-            Expression::Unary(token, _) => token,
-            Expression::Binary(_, token, _) => token,
-            Expression::Apply(left, _) => left.token(),
-            Expression::Grouping(left_paren, _, _) => left_paren,
-            Expression::Binder(token, _, _, _) => token,
-            Expression::IfThenElse(token, _, _, _, _) => token,
-            Expression::Match(token, _, _, _) => token,
-        }
-    }
-
     pub fn first_token(&self) -> &Token {
         match self {
             Expression::Singleton(token) => token,
@@ -278,6 +264,13 @@ impl Expression {
             Expression::Binder(_, _, _, right_brace) => right_brace,
             Expression::IfThenElse(_, _, _, _, right_brace) => right_brace,
             Expression::Match(_, _, _, right_brace) => right_brace,
+        }
+    }
+
+    pub fn is_axiom(&self) -> bool {
+        match self {
+            Expression::Singleton(token) => token.token_type == TokenType::Axiom,
+            _ => false,
         }
     }
 
@@ -589,17 +582,6 @@ impl fmt::Display for PartialExpression {
     }
 }
 
-impl PartialExpression {
-    fn token(&self) -> &Token {
-        match self {
-            PartialExpression::Expression(e) => e.token(),
-            PartialExpression::Unary(token)
-            | PartialExpression::Binary(token)
-            | PartialExpression::ImplicitApply(token) => token,
-        }
-    }
-}
-
 impl ErrorSource for PartialExpression {
     fn error(&self, message: &str) -> Error {
         match &self {
@@ -800,8 +782,9 @@ fn find_last_operator(partials: &VecDeque<PartialExpression>) -> Result<Option<u
     match operators.max() {
         Some((neg_precedence, index)) => {
             if neg_precedence == 0 {
-                let token = partials[index].token();
-                return Err(token.error(&format!("operator {} has precedence 0", token)));
+                return Err(partials[index].error(&format!(
+                    "the parser did not expect a precedence-zero thing here"
+                )));
             }
             Ok(Some(index))
         }

@@ -213,3 +213,58 @@ fn application_result_type_errors_cover_the_function_expression() {
         "expected type Thing",
     );
 }
+
+#[test]
+fn nested_and_applied_axioms_are_errors_without_retained_bindings() {
+    use venticorn::environment::Environment;
+    use venticorn::statement::Statement;
+    for source in [
+        "let bad: Bool = axiom(true)",
+        "let bad: Bool = not axiom",
+        "let bad: Bool = (axiom)",
+        "define bad(x: Bool) -> Bool { axiom(true) }",
+        "define bad(x: Bool) -> Bool { not axiom }",
+        "define bad<T>(x: T) -> Bool { axiom(true) }",
+    ] {
+        let mut env = Environment::new_test();
+        let statement = Statement::parse_str(source).unwrap();
+        let error = env
+            .add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "axiom is only allowed as a complete declaration value"
+        );
+        let start = source.find("axiom").unwrap() as u32;
+        assert_eq!(
+            error.range(),
+            Range::new(Position::new(0, start), Position::new(0, start + 5))
+        );
+        assert!(!env.bindings.has_identifier("bad"));
+        assert!(!env.bindings.has_identifier("x"));
+        assert!(!env.bindings.has_type_name("T"));
+        assert!(env.nodes.is_empty());
+        env.add("let bad: Bool = axiom");
+        assert!(env.bindings.has_identifier("bad"));
+    }
+}
+
+#[test]
+fn axiomatic_types_require_a_bare_axiom_and_valid_declarations_still_work() {
+    use venticorn::environment::Environment;
+    use venticorn::statement::Statement;
+    for source in ["type Bad: axiom(Bool)", "type Bad: (axiom)"] {
+        let mut env = Environment::new_test();
+        let statement = Statement::parse_str(source).unwrap();
+        env.add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert!(!env.bindings.has_type_name("Bad"));
+    }
+    let mut env = Environment::new_test();
+    env.add(
+        "type Thing: axiom\nlet thing: Thing = axiom\ndefine identity(x: Thing) -> Thing { axiom }",
+    );
+    assert!(env.bindings.has_type_name("Thing"));
+    assert!(env.bindings.has_identifier("thing"));
+    assert!(env.bindings.has_identifier("identity"));
+}
