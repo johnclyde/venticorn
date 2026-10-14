@@ -1436,7 +1436,10 @@ impl BindingMap {
                 let mut args = vec![];
                 for (i, arg_expr) in arg_exprs.iter().enumerate() {
                     let arg_type = &function_type.arg_types[i];
-                    let arg = self.evaluate_value_with_stack(stack, project, arg_expr, None)?;
+                    let arg =
+                        self.evaluate_value_with_stack(stack, project, arg_expr, Some(arg_type))?;
+                    // Some expression forms do not use the expectation while evaluating.
+                    // Enforce the argument type at the application boundary as well.
                     check_type(*arg_expr, Some(arg_type), &arg.get_type())?;
                     args.push(arg);
                 }
