@@ -177,3 +177,21 @@ fn conflicting_type_definitions_cover_the_full_statement() {
         "type name 'Thing' already defined",
     );
 }
+
+#[test]
+fn invalid_numeral_defaults_cover_the_complete_type_expression() {
+    assert_diagnostic(
+        "numerals (Bool -> Bool)",
+        "(Bool -> Bool)",
+        "numerals type must be a data type",
+    );
+}
+
+#[test]
+fn import_resolution_errors_cover_the_whole_statement() {
+    assert_diagnostic(
+        "import missing.module",
+        "import missing.module",
+        "import error",
+    );
+}
