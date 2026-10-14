@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
 use crate::acorn_type::{AcornType, TypeClass};
-use crate::acorn_value::{AcornValue, BinaryOp};
+use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
 use crate::compilation::{self, Error, ErrorSource};
@@ -1104,7 +1104,7 @@ impl BindingMap {
             }
             Some(NamedEntity::Module(module)) => {
                 if let Some(bindings) = project.get_bindings(module) {
-                    bindings.evaluate_name(name_token, project, stack, None)
+                    bindings.evaluate_name(name_token, project, &Stack::new(), None)
                 } else {
                     Err(name_token.error("could not load bindings for module"))
                 }
@@ -1535,25 +1535,47 @@ impl BindingMap {
                 },
             },
             Expression::Apply(function_expr, args_expr) => {
-                if let Expression::Grouping(left, _, _) = args_expr.as_ref() {
-                    if left.token_type == TokenType::LessThan {
-                        return Err(
-                            args_expr.error("explicit type arguments are not supported yet")
-                        );
-                    }
-                }
                 let function =
                     self.evaluate_potential_value(stack, project, function_expr, None)?;
-                let function_type = function.get_type();
-
-                let function_type = match function_type {
-                    AcornType::Function(f) => f,
-                    _ => {
-                        return Err(function_expr.error("expected a function"));
+                let arg_exprs = match args_expr.as_ref() {
+                    Expression::Grouping(delimiter, arguments, _) => {
+                        let arguments = arguments.flatten_comma_separated_list();
+                        if delimiter.token_type == TokenType::LessThan {
+                            let PotentialValue::Unresolved(unresolved) = function else {
+                                return Err(args_expr.error("unexpected type argument list"));
+                            };
+                            if arguments.len() != unresolved.params.len() {
+                                return Err(args_expr.error(&format!(
+                                    "expected {} type arguments, but got {}",
+                                    unresolved.params.len(),
+                                    arguments.len()
+                                )));
+                            }
+                            let mut named_arguments = vec![];
+                            let mut actual_arguments = vec![];
+                            for (name, argument) in unresolved.params.iter().zip(arguments) {
+                                let actual = self.evaluate_type(project, argument)?;
+                                named_arguments.push((name.clone(), actual.clone()));
+                                actual_arguments.push(actual);
+                            }
+                            let instance_type =
+                                unresolved.generic_type.instantiate(&named_arguments);
+                            check_type(expression, expected_type, &instance_type)?;
+                            return Ok(PotentialValue::Resolved(AcornValue::new_constant(
+                                unresolved.module_id,
+                                unresolved.name,
+                                actual_arguments,
+                                instance_type,
+                            )));
+                        }
+                        arguments
                     }
+                    _ => return Err(args_expr.error("expected a grouped argument list")),
                 };
-
-                let arg_exprs = args_expr.flatten_list(false)?;
+                let function_type = match function.get_type() {
+                    AcornType::Function(function) => function,
+                    _ => return Err(function_expr.error("expected a function")),
+                };
 
                 if function_type.arg_types.len() < arg_exprs.len() {
                     return Err(args_expr.error(&format!(
@@ -1791,21 +1813,6 @@ impl BindingMap {
         let mut stack = Stack::new();
         let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_name)?;
 
-        // Check for possible errors in the specification.
-        // Each type has to be used by some argument so that we know how to
-        // monomorphize the template.
-        for (i, type_param_name) in type_param_names.iter().enumerate() {
-            if !arg_types
-                .iter()
-                .any(|a| a.has_type_variable(type_param_name))
-            {
-                return Err(type_param_tokens[i].error(&format!(
-                    "type parameter {} is not used in the function arguments",
-                    type_param_names[i]
-                )));
-            }
-        }
-
         if let Some(name) = function_name {
             if self.name_in_use(name) {
                 return Err(value_expr.error("function name conflicts with a type parameter"));
@@ -1911,7 +1918,7 @@ impl BindingMap {
             for arg_type in &ft.arg_types {
                 args.push(self.type_to_expr(arg_type)?);
             }
-            let lhs = if args.len() == 1 {
+            let lhs = if args.len() == 1 && !matches!(ft.arg_types[0], AcornType::Function(_)) {
                 args.pop().unwrap()
             } else {
                 Expression::generate_grouping(args)
@@ -2078,6 +2085,29 @@ impl BindingMap {
         ))
     }
 
+    // Omit explicit arguments only when this application supplies enough typed
+    // arguments to infer every formal parameter in the local declaration.
+    fn can_infer_type_arguments(&self, constant: &ConstantInstance, supplied: usize) -> bool {
+        if constant.module_id != self.module {
+            return false;
+        }
+        let Some(info) = self.constants.get(&constant.name) else {
+            return false;
+        };
+        let Some(AcornType::Function(function)) = self.identifier_types.get(&constant.name) else {
+            return false;
+        };
+        info.params.len() == constant.params.len()
+            && supplied <= function.arg_types.len()
+            && info.params.iter().all(|name| {
+                function
+                    .arg_types
+                    .iter()
+                    .take(supplied)
+                    .any(|t| t.has_type_variable(name))
+            })
+    }
+
     // Convert an AcornValue to an Expression.
     fn value_to_expr(
         &self,
@@ -2096,7 +2126,15 @@ impl BindingMap {
                     args.push(self.value_to_expr(arg, var_names, next_x, next_k)?);
                 }
 
-                if let Some(name) = fa.function.is_member(&fa.args[0].get_type()) {
+                // Generic instance-style members are not supported by the evaluator.
+                // Keep their class-qualified head and explicit receiver argument.
+                let member = if matches!(fa.function.as_ref(), AcornValue::Constant(c) if !c.params.is_empty())
+                {
+                    None
+                } else {
+                    fa.function.is_member(&fa.args[0].get_type())
+                };
+                if let Some(name) = member {
                     // Keep partial or function-valued methods in member notation so
                     // subsequent application cannot change the prefix grouping.
                     if args.len() == 1 && !matches!(value.get_type(), AcornType::Function(_)) {
@@ -2145,7 +2183,15 @@ impl BindingMap {
                     }
                 }
 
-                let f = self.value_to_expr(&fa.function, var_names, next_x, next_k)?;
+                let f = match fa.function.as_ref() {
+                    AcornValue::Constant(c)
+                        if !c.params.is_empty()
+                            && self.can_infer_type_arguments(c, fa.args.len()) =>
+                    {
+                        self.name_to_expr(c.module_id, &c.name)?
+                    }
+                    _ => self.value_to_expr(&fa.function, var_names, next_x, next_k)?,
+                };
                 let grouped_args = Expression::generate_grouping(args);
                 Ok(Expression::Apply(Box::new(f), Box::new(grouped_args)))
             }
@@ -2194,10 +2240,26 @@ impl BindingMap {
                 Ok(Expression::Singleton(token))
             }
             AcornValue::Constant(c) => {
-                // Here we are assuming that the context will be enough to disambiguate
-                // the type of the templated name.
-                // I'm not sure if this is a good assumption.
-                self.name_to_expr(c.module_id, &c.name)
+                let name = self.name_to_expr(c.module_id, &c.name)?;
+                if c.params.is_empty() {
+                    return Ok(name);
+                }
+                let args = c
+                    .params
+                    .iter()
+                    .map(|t| self.type_to_expr(t))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let Expression::Grouping(_, args, _) = Expression::generate_grouping(args) else {
+                    unreachable!("generate_grouping returns a grouping");
+                };
+                Ok(Expression::Apply(
+                    Box::new(name),
+                    Box::new(Expression::Grouping(
+                        TokenType::LessThan.generate(),
+                        args,
+                        TokenType::GreaterThan.generate(),
+                    )),
+                ))
             }
             AcornValue::IfThenElse(condition, if_value, else_value) => {
                 let condition = self.value_to_expr(condition, var_names, next_x, next_k)?;

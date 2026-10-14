@@ -428,6 +428,12 @@ impl Environment {
             )));
         }
 
+        if class_name.is_some() && ds.args.is_empty() {
+            return Err(ds
+                .name_token
+                .error("a member function must have a 'self' argument"));
+        }
+
         // Calculate the function value
         let (param_names, _, arg_types, unbound_value, value_type) =
             self.bindings.evaluate_scoped_value(
