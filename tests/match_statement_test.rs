@@ -53,8 +53,8 @@ fn nullary_match_case_blocks_assume_the_constructor_equality() {
     use venticorn::block::{Block, BlockParams};
 
     let env = fixture();
-    let value = env.bindings.get_constant_value("f").unwrap();
-    let constructor = env.bindings.get_constant_value("Foo.baz").unwrap();
+    let value = env.bindings.old_get_constant_value("f").unwrap();
+    let constructor = env.bindings.old_get_constant_value("Foo.baz").unwrap();
     let params =
         BlockParams::MatchCase(value.clone(), constructor.clone(), vec![], Range::default());
     let block = Block::new(
@@ -147,7 +147,7 @@ fn pattern_evaluation_returns_the_nullary_constructor() {
         .unwrap();
     assert_eq!(
         constructor,
-        env.bindings.get_constant_value("Foo.baz").unwrap()
+        env.bindings.old_get_constant_value("Foo.baz").unwrap()
     );
     assert!(args.is_empty());
     assert_eq!((index, total), (1, 2));
@@ -167,7 +167,7 @@ fn match_case_blocks_keep_variables_local_and_retain_body_goals() {
         panic!("expected match fixture");
     };
     let (pattern, body) = &ms.cases[0];
-    let value = env.bindings.get_constant_value("f").unwrap();
+    let value = env.bindings.old_get_constant_value("f").unwrap();
     let (constructor, args, _, _) = env
         .bindings
         .evaluate_pattern(&Project::new_mock(), &value.get_type(), pattern)
@@ -184,7 +184,7 @@ fn match_case_blocks_keep_variables_local_and_retain_body_goals() {
         Some(body),
     )
     .unwrap();
-    let local = block.env.bindings.get_constant_value("b").unwrap();
+    let local = block.env.bindings.old_get_constant_value("b").unwrap();
     assert_eq!(
         block.env.nodes[0].claim.value,
         AcornValue::new_equals(value, AcornValue::new_apply(constructor, vec![local]))

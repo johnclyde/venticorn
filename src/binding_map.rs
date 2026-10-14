@@ -111,6 +111,32 @@ pub struct BindingMap {
     theorems: HashSet<String>,
 }
 
+// A named declaration may still need type arguments before it becomes a proof value.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PotentialValue {
+    Unresolved(ModuleId, String, AcornType, Vec<String>),
+    Resolved(AcornValue),
+}
+
+impl PotentialValue {
+    // Internal callers use this only after introducing a constant with no type parameters.
+    pub fn resolved(self) -> Option<AcornValue> {
+        match self {
+            PotentialValue::Resolved(value) => Some(value),
+            PotentialValue::Unresolved(..) => None,
+        }
+    }
+
+    pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
+        match self {
+            PotentialValue::Resolved(value) => Ok(value),
+            PotentialValue::Unresolved(_, name, _, _) => {
+                Err(source.error(&format!("name {} has unresolved type", name)))
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 struct ConstantInfo {
     // The names of the type parameters this constant was defined with, if any.
@@ -277,7 +303,7 @@ impl BindingMap {
     // Returns an AcornValue representing this name, if there is one.
     // This can return an unresolved value.
     // Returns None if this name does not refer to a constant.
-    pub fn get_constant_value(&self, name: &str) -> Option<AcornValue> {
+    pub fn old_get_constant_value(&self, name: &str) -> Option<AcornValue> {
         let constant_type = self.identifier_types.get(name)?.clone();
 
         // Aliases
@@ -301,6 +327,39 @@ impl BindingMap {
             ))
         } else {
             Some(AcornValue::Unresolved(
+                self.module,
+                name.to_string(),
+                constant_type,
+                params,
+            ))
+        }
+    }
+
+    // Look up a constant without treating a pending generic declaration as a proof value.
+    pub fn get_constant_value(&self, name: &str) -> Option<PotentialValue> {
+        let constant_type = self.identifier_types.get(name)?.clone();
+
+        // Aliases
+        if let Some((canonical_module, canonical_name)) = self.alias_to_canonical.get(name) {
+            return Some(PotentialValue::Resolved(AcornValue::new_constant(
+                *canonical_module,
+                canonical_name.clone(),
+                vec![],
+                constant_type,
+            )));
+        }
+
+        // Constants defined here
+        let params = self.constants.get(name)?.params.clone();
+        if params.is_empty() {
+            Some(PotentialValue::Resolved(AcornValue::new_constant(
+                self.module,
+                name.to_string(),
+                vec![],
+                constant_type,
+            )))
+        } else {
+            Some(PotentialValue::Unresolved(
                 self.module,
                 name.to_string(),
                 constant_type,
@@ -926,7 +985,7 @@ impl BindingMap {
             project.get_bindings(module).unwrap()
         };
         let constant_name = format!("{}.{}", type_name, var_name);
-        bindings.get_constant_value(&constant_name)
+        bindings.old_get_constant_value(&constant_name)
     }
 
     // Evaluates an expression that is supposed to describe a value, with an empty stack.
@@ -962,7 +1021,7 @@ impl BindingMap {
                 project.get_bindings(module).unwrap()
             };
             let constant_name = format!("{}.{}", type_name, name);
-            let function = match bindings.get_constant_value(&constant_name) {
+            let function = match bindings.old_get_constant_value(&constant_name) {
                 Some(value) => value,
                 None => {
                     return Err(
@@ -1049,7 +1108,7 @@ impl BindingMap {
                         } else if let Some((i, t)) = stack.get(name) {
                             // This is a stack variable
                             Ok(NamedEntity::Value(AcornValue::Variable(*i, t.clone())))
-                        } else if let Some(value) = self.get_constant_value(name) {
+                        } else if let Some(value) = self.old_get_constant_value(name) {
                             Ok(NamedEntity::Value(value))
                         } else {
                             Err(name_token.error(&format!("unknown identifier '{}'", name)))
@@ -2272,7 +2331,7 @@ mod tests {
         assert_eq!((index, total), (1, 2));
         assert_eq!(
             constructor,
-            env.bindings.get_constant_value("Foo.pair").unwrap()
+            env.bindings.old_get_constant_value("Foo.pair").unwrap()
         );
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
@@ -2326,7 +2385,7 @@ mod tests {
         assert_eq!((index, total), (1, 2));
         assert_eq!(
             constructor,
-            env.bindings.get_constant_value("Foo.pair").unwrap()
+            env.bindings.old_get_constant_value("Foo.pair").unwrap()
         );
         assert!(!env.bindings.has_identifier("left"));
         assert!(!env.bindings.has_identifier("right"));
