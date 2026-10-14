@@ -81,6 +81,13 @@ impl BuildStatus {
     }
 }
 
+// State belongs to a module reference, not a numeric ID that can change after reload.
+struct ModuleInfo {
+    module_ref: ModuleRef,
+    direct_dependencies: Vec<ModuleRef>,
+    good: bool,
+}
+
 // The Builder exists to manage a single build.
 // A single Project can correspond to many builds.
 // A single logger is used across all modules.
@@ -104,10 +111,7 @@ pub struct Builder<'a> {
     pub log_when_slow: bool,
 
     // The current module we are proving. Not set when we are loading.
-    current_module: Option<ModuleRef>,
-
-    // Whether the current module is good so far.
-    current_module_good: bool,
+    current_module: Option<ModuleInfo>,
 
     // If dataset is not None, we are gathering data for training.
     pub dataset: Option<Dataset>,
@@ -148,7 +152,6 @@ impl<'a> Builder<'a> {
             goals_done: 0,
             log_when_slow: false,
             current_module: None,
-            current_module_good: true,
             dataset: None,
             num_success: 0,
             num_activated: 0,
@@ -173,7 +176,7 @@ impl<'a> Builder<'a> {
     fn module(&self) -> &ModuleRef {
         match self.current_module {
             None => &ModuleRef::Anonymous,
-            Some(ref m) => m,
+            Some(ref m) => &m.module_ref,
         }
     }
 
@@ -227,8 +230,21 @@ impl<'a> Builder<'a> {
 
     // Called when we start proving a module.
     pub fn module_proving_started(&mut self, module: &ModuleRef) {
-        self.current_module = Some(module.clone());
-        self.current_module_good = true;
+        self.module_proving_started_with_dependencies(module, Vec::new());
+    }
+
+    pub(crate) fn module_proving_started_with_dependencies(
+        &mut self,
+        module: &ModuleRef,
+        mut direct_dependencies: Vec<ModuleRef>,
+    ) {
+        direct_dependencies.sort();
+        direct_dependencies.dedup();
+        self.current_module = Some(ModuleInfo {
+            module_ref: module.clone(),
+            direct_dependencies,
+            good: true,
+        });
     }
 
     pub fn module_proving_complete(&mut self, module: &ModuleRef) {
@@ -366,7 +382,9 @@ impl<'a> Builder<'a> {
     fn log_proving_warning(&mut self, prover: &Prover, goal_context: &GoalContext, message: &str) {
         let event = self.make_event(prover, goal_context, message, DiagnosticSeverity::WARNING);
         (self.event_handler)(event);
-        self.current_module_good = false;
+        if let Some(module) = &mut self.current_module {
+            module.good = false;
+        }
         self.status.warn();
     }
 
@@ -377,7 +395,9 @@ impl<'a> Builder<'a> {
         // Set progress as complete, because an error will halt the build
         event.progress = Some((self.goals_total, self.goals_total));
         (self.event_handler)(event);
-        self.current_module_good = false;
+        if let Some(module) = &mut self.current_module {
+            module.good = false;
+        }
         self.status = BuildStatus::Error;
     }
 
