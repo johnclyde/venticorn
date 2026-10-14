@@ -7,7 +7,6 @@
 
 use std::process::ExitCode;
 
-use venticorn::builder::Builder;
 use venticorn::project::Project;
 
 fn main() -> ExitCode {
@@ -22,7 +21,7 @@ fn main() -> ExitCode {
         assert!(project.add_target_by_name("nat"));
         assert!(project.add_target_by_name("nat_gcd"));
         assert!(project.add_target_by_name("int"));
-        let mut logger = Builder::with_cache(project.cached_build(), |event| {
+        let mut logger = project.builder(|event| {
             if let Some(m) = event.log_message {
                 println!("{}", m);
             }
