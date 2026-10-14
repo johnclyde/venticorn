@@ -45,3 +45,50 @@ fn errors_and_missing_modules_have_no_usable_fingerprint() {
     let cycle = project.load_module_by_name("cycle").unwrap();
     assert!(project.get_hash(cycle).is_none());
 }
+
+#[test]
+fn fingerprints_include_transitive_dependencies_but_ignore_unrelated_files() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/leaf.ac", "let value: Bool = true");
+    project.mock(
+        "/mock/middle.ac",
+        "import leaf\nlet value: Bool = leaf.value",
+    );
+    project.mock(
+        "/mock/main.ac",
+        "import middle\ntheorem identity { middle.value = middle.value }",
+    );
+    let first = fingerprint(&mut project, "main");
+    let first_id = project.load_module_by_name("main").unwrap();
+    project.mock("/mock/unrelated.ac", "theorem other { true }");
+    assert_ne!(first_id, project.load_module_by_name("main").unwrap());
+    assert_eq!(first, fingerprint(&mut project, "main"));
+    project
+        .update_file(PathBuf::from("/mock/leaf.ac"), "let value: Bool = false", 1)
+        .unwrap();
+    assert_ne!(first, fingerprint(&mut project, "main"));
+    project
+        .update_file(PathBuf::from("/mock/leaf.ac"), "let value: Bool = true", 2)
+        .unwrap();
+    assert_eq!(first, fingerprint(&mut project, "main"));
+}
+
+#[test]
+fn failed_transitive_dependency_cannot_retain_an_old_fingerprint() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/leaf.ac", "let value: Bool = true");
+    project.mock("/mock/middle.ac", "import leaf");
+    project.mock("/mock/main.ac", "import middle");
+    let original = fingerprint(&mut project, "main");
+    project
+        .update_file(PathBuf::from("/mock/leaf.ac"), "theorem broken {", 1)
+        .unwrap();
+    for name in ["leaf", "middle", "main"] {
+        let id = project.load_module_by_name(name).unwrap();
+        assert!(project.get_hash(id).is_none(), "{name}");
+    }
+    project
+        .update_file(PathBuf::from("/mock/leaf.ac"), "let value: Bool = true", 2)
+        .unwrap();
+    assert_eq!(original, fingerprint(&mut project, "main"));
+}

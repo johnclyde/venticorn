@@ -86,11 +86,36 @@ impl fmt::Display for LoadError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModuleFingerprint([u8; 32]);
 
-fn source_fingerprint(text: &str) -> ModuleFingerprint {
+// Hash lengths and variant tags explicitly; neither map iteration order nor
+// transient numeric module IDs participate in logical source identity.
+fn logical_fingerprint(
+    text: &str,
+    mut dependencies: Vec<(&ModuleRef, ModuleFingerprint)>,
+) -> ModuleFingerprint {
+    fn framed(digest: &mut Sha256, bytes: &[u8]) {
+        digest.update((bytes.len() as u64).to_le_bytes());
+        digest.update(bytes);
+    }
+    dependencies.sort_by_key(|(module, _)| *module);
+    dependencies.dedup_by_key(|(module, _)| *module);
     let mut digest = Sha256::new();
-    digest.update(b"venticorn:module-source:v1\0");
-    digest.update((text.len() as u64).to_le_bytes());
-    digest.update(text.as_bytes());
+    digest.update(b"venticorn:module-logic:v1\0");
+    framed(&mut digest, text.as_bytes());
+    digest.update((dependencies.len() as u64).to_le_bytes());
+    for (module, fingerprint) in dependencies {
+        match module {
+            ModuleRef::Anonymous => digest.update([0]),
+            ModuleRef::Name(name) => {
+                digest.update([1]);
+                framed(&mut digest, name.as_bytes());
+            }
+            ModuleRef::File(path) => {
+                digest.update([2]);
+                framed(&mut digest, path.as_os_str().as_encoded_bytes());
+            }
+        }
+        digest.update(fingerprint.0);
+    }
     ModuleFingerprint(digest.finalize().into())
 }
 
@@ -819,7 +844,18 @@ impl Project {
         } else {
             Module::Ok(env)
         };
-        let fingerprint = matches!(module, Module::Ok(_)).then(|| source_fingerprint(&text));
+        let fingerprint = if let Module::Ok(env) = &module {
+            // Dependencies are already loaded. Their fingerprints include their own
+            // dependencies, so a changed transitive import changes this fingerprint.
+            env.bindings
+                .direct_dependencies()
+                .into_iter()
+                .map(|id| Some((&self.modules.get(id as usize)?.0, self.get_hash(id)?)))
+                .collect::<Option<Vec<_>>>()
+                .map(|deps| logical_fingerprint(&text, deps))
+        } else {
+            None
+        };
         self.modules[module_id as usize].1 = module;
         self.modules[module_id as usize].2 = fingerprint;
 
@@ -1516,5 +1552,35 @@ mod tests {
         assert_eq!(fast_count, slow_count);
 
         // I could test more here. But do I need to?
+    }
+}
+
+#[cfg(test)]
+mod fingerprint_tests {
+    use super::*;
+
+    #[test]
+    fn dependency_identity_is_framed_and_ordered_independently_of_ids() {
+        let a = ModuleRef::Name("a".into());
+        let b = ModuleRef::Name("b".into());
+        let file_a = ModuleRef::File(PathBuf::from("a"));
+        let leaf = logical_fingerprint("same source", vec![]);
+        let first = logical_fingerprint("parent", vec![(&a, leaf), (&b, leaf)]);
+        assert_eq!(
+            first,
+            logical_fingerprint("parent", vec![(&b, leaf), (&a, leaf)])
+        );
+        assert_eq!(
+            first,
+            logical_fingerprint("parent", vec![(&a, leaf), (&a, leaf), (&b, leaf)])
+        );
+        assert_ne!(
+            logical_fingerprint("parent", vec![(&a, leaf)]),
+            logical_fingerprint("parent", vec![(&b, leaf)])
+        );
+        assert_ne!(
+            logical_fingerprint("parent", vec![(&a, leaf)]),
+            logical_fingerprint("parent", vec![(&file_a, leaf)])
+        );
     }
 }
