@@ -56,3 +56,15 @@ fn repeated_actual_types_retain_both_parameter_positions() {
     application.validate().unwrap();
     assert_eq!(application.get_type(), AcornType::Bool);
 }
+
+#[test]
+fn scoped_plain_constants_follow_the_surrounding_type_substitution() {
+    let local = AcornValue::new_constant(10, "local".into(), variable("T"), vec![]);
+    let concrete = local.instantiate(&[("T".into(), AcornType::Bool)]);
+    concrete.validate().unwrap();
+    assert_eq!(concrete.get_type(), AcornType::Bool);
+    assert!(!concrete.is_generic());
+    let arbitrary = local.to_arbitrary();
+    assert_eq!(arbitrary.get_type(), AcornType::Arbitrary("T".into(), None));
+    assert!(!arbitrary.is_generic());
+}
