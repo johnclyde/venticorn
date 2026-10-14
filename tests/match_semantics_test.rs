@@ -117,7 +117,7 @@ fn malformed_match_values_report_validation_errors() {
     use venticorn::acorn_type::AcornType;
     use venticorn::acorn_value::AcornValue;
     let item_type = AcornType::Data(0, "Item".to_string());
-    let item = AcornValue::Unresolved(0, "Item.empty".to_string(), item_type, vec![]);
+    let item = AcornValue::Constant(0, "Item.empty".to_string(), item_type, vec![]);
     let empty = AcornValue::Match(Box::new(item.clone()), vec![]);
     assert!(empty.validate().unwrap_err().contains("at least one case"));
     let inconsistent = AcornValue::Match(

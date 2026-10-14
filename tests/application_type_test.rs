@@ -3,7 +3,7 @@ use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
 
 fn identity(t: AcornType) -> AcornValue {
-    AcornValue::Unresolved(
+    AcornValue::Constant(
         10,
         "identity".into(),
         AcornType::new_functional(vec![t.clone()], t),
@@ -94,14 +94,15 @@ fn resolved_simple_constants_keep_their_plain_normalized_identity() {
     let resolved = AcornValue::Constant(10, "p".into(), AcornType::Bool, vec![]);
     let transitional = AcornValue::Unresolved(10, "p".into(), AcornType::Bool, vec![]);
     assert_eq!(resolved.as_simple_constant(), Some((10, "p")));
-    assert_eq!(
-        Normalizer::new()
-            .normalize(&resolved, true)
-            .expect_clauses(),
-        Normalizer::new()
-            .normalize(&transitional, true)
-            .expect_clauses()
-    );
+    assert!(!Normalizer::new()
+        .normalize(&resolved, true)
+        .expect_clauses()
+        .is_empty());
+    assert!(transitional.validate().is_err());
+    assert!(matches!(
+        Normalizer::new().normalize(&transitional, true),
+        venticorn::normalizer::Normalization::Error(_)
+    ));
     let generic = AcornType::Variable("T".into(), None);
     let instance =
         AcornValue::Constant(10, "f".into(), generic, vec![("T".into(), AcornType::Bool)]);
@@ -232,5 +233,93 @@ fn ordinary_partial_and_higher_order_calls_check_the_expected_result() {
             .unwrap_err();
         assert!(error.message().contains("expected type"), "{error}");
         assert!(!env.bindings.has_identifier("bad"));
+    }
+}
+
+#[test]
+fn pending_generic_values_are_rejected_before_declaration_admission() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut env = Environment::new_test();
+    env.add("define identity<T>(value: T) -> T { value }");
+    for source in [
+        "theorem bad { identity = identity }",
+        "define bad<T>(value: T) -> (T -> T) { identity }",
+        "define bad<T>(value: T) -> Bool { identity = identity }",
+    ] {
+        let node_count = env.nodes.len();
+        let error = env
+            .add_statement(
+                &mut Project::new_mock(),
+                &Statement::parse_str(source).unwrap(),
+            )
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("generic type arguments could not be inferred"),
+            "{error}"
+        );
+        assert!(error.range().end.character > error.range().start.character);
+        assert!(!env.bindings.has_identifier("bad"));
+        assert!(!env.bindings.has_type_name("T"));
+        assert_eq!(env.nodes.len(), node_count);
+    }
+    env.add("let good: Bool = identity(true)");
+}
+
+#[test]
+fn resolved_type_transformations_preserve_declaration_namespaces() {
+    let t = AcornType::Variable("T".into(), None);
+    let plain = identity(t.clone());
+    assert!(plain.is_parametric());
+    assert_eq!(
+        plain.to_placeholder().get_type(),
+        identity(AcornType::Arbitrary("T".into(), None)).get_type()
+    );
+    let a = AcornType::Variable("A".into(), None);
+    let template = AcornType::new_functional(vec![a.clone()], a);
+    let instance = AcornValue::Constant(10, "f".into(), template.clone(), vec![("A".into(), t)]);
+    let specialized = instance.specialize(&[("T".into(), AcornType::Bool)]);
+    assert_eq!(specialized.get_type(), identity(AcornType::Bool).get_type());
+    let AcornValue::Constant(_, _, preserved, actuals) = instance.to_placeholder() else {
+        panic!("constant expected")
+    };
+    assert_eq!(preserved, template);
+    assert_eq!(
+        actuals,
+        vec![("A".into(), AcornType::Arbitrary("T".into(), None))]
+    );
+}
+
+#[test]
+fn quantified_function_bodies_must_match_the_declared_result() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut env = Environment::new_test();
+    env.add("type Nat: axiom");
+    for source in [
+        "let bad: Nat = forall(flag: Bool) { flag = flag }",
+        "let bad: Nat = exists(flag: Bool) { flag = flag }",
+        "define bad(value: Nat) -> Nat { forall(flag: Bool) { flag = flag } }",
+        "define bad(value: Nat) -> Nat { exists(flag: Bool) { flag = flag } }",
+    ] {
+        let count = env.nodes.len();
+        let error = env
+            .add_statement(
+                &mut Project::new_mock(),
+                &Statement::parse_str(source).unwrap(),
+            )
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("expected type Nat, but this is Bool"),
+            "{error}"
+        );
+        assert!(!env.bindings.has_identifier("bad"));
+        assert_eq!(env.nodes.len(), count);
     }
 }

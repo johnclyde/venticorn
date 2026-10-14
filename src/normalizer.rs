@@ -201,21 +201,6 @@ impl Normalizer {
                 let type_id = self.type_map.add_type(var_type);
                 Ok(Term::new(type_id, type_id, Atom::Variable(*i), vec![]))
             }
-            AcornValue::Unresolved(module, name, t, params) => {
-                if !params.is_empty() {
-                    return Err(NormalizationError(
-                        "cannot normalize an unresolved generic constant".to_string(),
-                    ));
-                }
-                let type_id = self.type_map.add_type(t);
-                let constant_atom = if *module == SKOLEM {
-                    // Hacky. Turn the s-name back to an int
-                    Atom::Skolem(name[1..].parse().unwrap())
-                } else {
-                    self.constant_map.add_constant(*module, name, local)
-                };
-                Ok(Term::new(type_id, type_id, constant_atom, vec![]))
-            }
             AcornValue::Application(application) => {
                 Ok(self.term_from_application(application, local)?)
             }
@@ -633,7 +618,7 @@ mod tests {
 
     #[test]
     fn boolean_literal_comparisons_preserve_truth() {
-        let variable = AcornValue::Unresolved(
+        let variable = AcornValue::Constant(
             crate::module::FIRST_NORMAL,
             "p".to_string(),
             AcornType::Bool,

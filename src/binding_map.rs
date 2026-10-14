@@ -930,7 +930,13 @@ impl BindingMap {
         expression: &Expression,
         expected_type: Option<&AcornType>,
     ) -> compilation::Result<AcornValue> {
-        self.evaluate_value_with_stack(&mut Stack::new(), project, expression, expected_type)
+        let value =
+            self.evaluate_value_with_stack(&mut Stack::new(), project, expression, expected_type)?;
+        check_type(expression, expected_type, &value.get_type())?;
+        value
+            .validate()
+            .map_err(|message| expression.error(&message))?;
+        Ok(value)
     }
 
     // Evaluates a variable attached to an instance like foo.bar.
@@ -1686,6 +1692,10 @@ impl BindingMap {
                         .error("the termination checker could not prove that this terminates"));
                 }
             }
+            check_type(value_expr, Some(&value_type), &value.get_type())?;
+            AcornValue::new_lambda(arg_types.clone(), value.clone())
+                .validate()
+                .map_err(|message| value_expr.error(&message))?;
             Some(value)
         };
 
