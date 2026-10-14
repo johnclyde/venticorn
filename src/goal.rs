@@ -42,7 +42,7 @@ pub struct GoalContext {
     pub goal: Goal,
 
     // The zero-based line where we would insert a proof for this goal.
-    // None if we do not want to insert a proof for this goal.
+    // The last line of a proof block, or the first line of a blockless claim.
     pub proof_insertion_line: u32,
 
     // Whether we need to insert a block, if we do insert a proof.
@@ -51,10 +51,20 @@ pub struct GoalContext {
     // Whether it's okay if we discover an inconsistency in the provided facts.
     // If it's not okay, we warn the user.
     pub inconsistency_okay: bool,
+
+    // Inclusive source bounds, including the entire proof block.
+    pub first_line: u32,
+    pub last_line: u32,
 }
 
 impl GoalContext {
-    pub fn new(env: &Environment, goal: Goal, proof_insertion_line: u32) -> GoalContext {
+    pub fn new(
+        env: &Environment,
+        goal: Goal,
+        proof_insertion_line: u32,
+        first_line: u32,
+        last_line: u32,
+    ) -> GoalContext {
         let name = match &goal {
             Goal::Prove(proposition) => match proposition.name() {
                 Some(name) => name.to_string(),
@@ -77,6 +87,8 @@ impl GoalContext {
             proof_insertion_line,
             insert_block: env.implicit,
             inconsistency_okay: env.includes_explicit_false,
+            first_line,
+            last_line,
         }
     }
 }

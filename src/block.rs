@@ -527,12 +527,16 @@ impl<'a> NodeCursor<'a> {
                 &block.env,
                 goal.clone(),
                 block.env.last_line(),
+                block.env.first_line(),
+                block.env.last_line(),
             ))
         } else {
             return Ok(GoalContext::new(
                 self.env(),
                 Goal::Prove(node.claim.clone()),
                 node.claim.source.range.start.line,
+                node.claim.source.range.start.line,
+                node.claim.source.range.end.line,
             ));
         }
     }
