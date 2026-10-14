@@ -88,9 +88,8 @@ pub struct ConstantInstance {
     pub module_id: ModuleId,
     pub name: String,
 
-    // The parameters that this constant was instantiated with.
-    // Can be empty.
-    pub params: Vec<(String, AcornType)>,
+    // Actual type arguments in declaration order. Empty for ordinary constants.
+    pub params: Vec<AcornType>,
 
     // The effective type after applying the ordered argument mapping.
     pub instance_type: AcornType,
@@ -118,7 +117,7 @@ impl ConstantInstance {
         Self {
             module_id,
             name,
-            params,
+            params: params.into_iter().map(|(_, actual)| actual).collect(),
             instance_type,
         }
     }
@@ -132,7 +131,7 @@ impl ConstantInstance {
             params: self
                 .params
                 .iter()
-                .map(|(name, actual)| (name.clone(), actual.instantiate(substitutions)))
+                .map(|actual| actual.instantiate(substitutions))
                 .collect(),
             instance_type: self.instance_type.instantiate(substitutions),
         }
@@ -149,9 +148,9 @@ impl ConstantInstance {
         }
     }
 
-    // Actual arguments in declaration order, without duplicating the stored mapping.
+    // Actual arguments in declaration order.
     pub fn type_arguments(&self) -> impl ExactSizeIterator<Item = &AcornType> {
-        self.params.iter().map(|(_, actual)| actual)
+        self.params.iter()
     }
 }
 
@@ -1690,7 +1689,7 @@ impl AcornValue {
                 let out_params = c
                     .params
                     .iter()
-                    .map(|(name, t)| (name.clone(), t.parametrize(module, type_names)))
+                    .map(|t| t.parametrize(module, type_names))
                     .collect();
                 AcornValue::Constant(ConstantInstance {
                     module_id: c.module_id,
@@ -1828,11 +1827,7 @@ impl AcornValue {
             }
             AcornValue::Not(x) => AcornValue::Not(Box::new(x.to_arbitrary())),
             AcornValue::Constant(c) => {
-                let output_params = c
-                    .params
-                    .iter()
-                    .map(|(name, t)| (name.clone(), t.to_arbitrary()))
-                    .collect();
+                let output_params = c.params.iter().map(AcornType::to_arbitrary).collect();
                 AcornValue::Constant(ConstantInstance {
                     module_id: c.module_id,
                     name: c.name.clone(),
