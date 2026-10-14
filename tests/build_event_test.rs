@@ -18,7 +18,7 @@ fn builds_have_distinct_ids_and_preserve_verified_goal_identity() {
         .collect();
     assert_eq!(verified.len(), 1);
     assert_eq!(verified[0].module, ModuleRef::Name("main".to_string()));
-    assert_eq!(verified[0].verified.unwrap().start.line, 0);
+    assert_eq!(verified[0].verified.unwrap().0, 0);
     let (_, second) = project.sync_build();
     assert!(second
         .iter()
@@ -63,6 +63,24 @@ fn slow_success_keeps_its_verified_range() {
     assert_eq!(events.len(), 1);
     assert!(events[0].log_message.as_ref().unwrap().contains("took"));
     assert_eq!(events[0].module, module);
-    assert_eq!(events[0].verified.unwrap(), goal.goal.range());
+    assert_eq!(
+        events[0].verified.unwrap(),
+        (goal.first_line, goal.last_line)
+    );
     assert_eq!(events[0].progress, Some((1, 1)));
+}
+
+#[test]
+fn successful_goal_events_cover_the_entire_proof_block() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", "theorem outer { true } by {\n true\n}\n");
+    let (status, events) = project.sync_build();
+    assert_eq!(status, BuildStatus::Good);
+    assert_eq!(
+        events
+            .iter()
+            .filter_map(|event| event.verified)
+            .collect::<Vec<_>>(),
+        vec![(1, 1), (0, 2)]
+    );
 }

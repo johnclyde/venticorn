@@ -120,9 +120,9 @@ impl BuildInfo {
         if !doc.publish {
             return None;
         }
-        if let Some(range) = &event.verified {
-            if !doc.verified.contains(&range.start.line) {
-                doc.verified.push(range.start.line);
+        if let Some((first, _)) = &event.verified {
+            if !doc.verified.contains(first) {
+                doc.verified.push(*first);
             }
         }
         if let Some(diagnostic) = &event.diagnostic {
@@ -179,7 +179,7 @@ mod tests {
     use crate::builder::BuildEvent;
     use crate::module::ModuleRef;
     use std::collections::HashMap;
-    use tower_lsp::lsp_types::{Diagnostic, Position, Range, Url};
+    use tower_lsp::lsp_types::{Diagnostic, Range, Url};
 
     fn url() -> Url {
         Url::parse("file:///proof.ac").unwrap()
@@ -193,7 +193,7 @@ mod tests {
             module: ModuleRef::Anonymous,
             progress: Some((1, 1)),
             log_message: None,
-            verified: Some(Range::new(Position::new(4, 0), Position::new(4, 8))),
+            verified: Some((4, 4)),
             diagnostic: Some(Diagnostic {
                 severity: Some(tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION),
                 ..Diagnostic::new_simple(Range::default(), "timing".to_string())

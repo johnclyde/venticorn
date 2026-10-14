@@ -3,7 +3,7 @@
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Range};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use crate::dataset::Dataset;
 use crate::environment::Environment;
@@ -36,7 +36,7 @@ pub struct BuildEvent {
     pub diagnostic: Option<Diagnostic>,
 
     // Whenever we verify a goal, report the range of the goal.
-    pub verified: Option<Range>,
+    pub verified: Option<(u32, u32)>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -319,7 +319,7 @@ impl<'a> Builder<'a> {
     fn log_proving_success(&mut self, goal_context: &GoalContext) {
         let event = BuildEvent {
             progress: Some((self.goals_done, self.goals_total)),
-            verified: Some(goal_context.goal.range()),
+            verified: Some((goal_context.first_line, goal_context.last_line)),
             ..self.default_event()
         };
         (self.event_handler)(event);
@@ -358,7 +358,7 @@ impl<'a> Builder<'a> {
             message,
             DiagnosticSeverity::INFORMATION,
         );
-        event.verified = Some(goal_context.goal.range());
+        event.verified = Some((goal_context.first_line, goal_context.last_line));
         (self.event_handler)(event);
     }
 
