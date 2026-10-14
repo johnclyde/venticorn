@@ -2026,6 +2026,15 @@ impl BindingMap {
                 }
 
                 if let Some(name) = fa.function.is_member(&fa.args[0].get_type()) {
+                    // Keep partial or function-valued methods in member notation so
+                    // subsequent application cannot change the prefix grouping.
+                    if args.len() == 1 && !matches!(value.get_type(), AcornType::Function(_)) {
+                        if let Some(op) = TokenType::from_magic_method_name(&name)
+                            .filter(|op| op.to_prefix_magic_method_name() == Some(name.as_str()))
+                        {
+                            return Ok(Expression::generate_unary(op, args.pop().unwrap()));
+                        }
+                    }
                     if args.len() == 2 {
                         // Infix operators
                         if let Some(op) = TokenType::from_magic_method_name(&name)
