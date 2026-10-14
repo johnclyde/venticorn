@@ -64,6 +64,7 @@ pub enum TokenType {
     Match,
     Todo,
     Constraint,
+    Implies,
 }
 
 // Add a new token here if there's an alphabetical name for it.
@@ -100,6 +101,7 @@ pub fn keyword_map() -> &'static BTreeMap<&'static str, TokenType> {
             ("match", TokenType::Match),
             ("todo", TokenType::Todo),
             ("constraint", TokenType::Constraint),
+            ("implies", TokenType::Implies),
         ])
     })
 }
@@ -150,7 +152,7 @@ impl TokenType {
         match self {
             TokenType::Plus => true,
             TokenType::Minus => true,
-            TokenType::RightArrow => true,
+            TokenType::RightArrow | TokenType::Implies => true,
             TokenType::Or => true,
             TokenType::And => true,
             TokenType::LeftRightArrow => true,
@@ -202,7 +204,7 @@ impl TokenType {
             TokenType::Or => 5,
             TokenType::And => 5,
             TokenType::LeftRightArrow => 4,
-            TokenType::RightArrow => 3,
+            TokenType::RightArrow | TokenType::Implies => 3,
             TokenType::Colon => 2,
             TokenType::Comma => 1,
             _ => 0,
@@ -342,6 +344,7 @@ impl TokenType {
             TokenType::Match => "match",
             TokenType::Todo => "todo",
             TokenType::Constraint => "constraint",
+            TokenType::Implies => "implies",
         }
     }
 
@@ -490,7 +493,8 @@ impl Token {
             | TokenType::Inductive
             | TokenType::Match
             | TokenType::Todo
-            | TokenType::Constraint => Some(SemanticTokenType::KEYWORD),
+            | TokenType::Constraint
+            | TokenType::Implies => Some(SemanticTokenType::KEYWORD),
 
             TokenType::NewLine => {
                 // Comments are encoded as newlines because syntactically they act like newlines.
@@ -769,7 +773,7 @@ mod tests {
                 TokenType::Identifier
             );
         }
-        assert_eq!(keyword_map().len(), 29);
+        assert_eq!(keyword_map().len(), 30);
     }
 
     #[test]

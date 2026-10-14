@@ -207,10 +207,11 @@ from other import imported\n";
     };
     for prefix in ["Fut", "fut", "oth", "imp"] {
         let actual = labels(&project, "/mock/main.ac", line("before later"), prefix);
-        assert!(
-            actual.is_empty() || actual == ["import"],
-            "{prefix}: {actual:?}"
-        );
+        if prefix == "imp" {
+            assert_eq!(actual, ["implies", "import"]);
+        } else {
+            assert!(actual.is_empty(), "{prefix}: {actual:?}");
+        }
     }
     assert!(labels(&project, "/mock/main.ac", line("before local"), "loc").is_empty());
     assert_eq!(
