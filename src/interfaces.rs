@@ -11,6 +11,14 @@ use tower_lsp::lsp_types::{Range, Url};
 
 use crate::prover::{Outcome, Prover};
 
+// Verification results belong to an exact editor document version.
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentProgress {
+    pub version: i32,
+    pub verified: Vec<u32>,
+}
+
 // The language server stores one progress struct, and returns it at any time.
 // Build id zero denotes no active result; a completed empty build can also have 0/0 goals.
 // When progress is cancelled or interrupted, we should update this so that done = total.
@@ -20,7 +28,7 @@ pub struct ProgressResponse {
     pub build_id: u32,
     pub done: i32,
     pub total: i32,
-    pub verified: HashMap<Url, Vec<u32>>,
+    pub docs: HashMap<Url, DocumentProgress>,
 }
 
 impl ProgressResponse {
@@ -29,7 +37,7 @@ impl ProgressResponse {
             build_id: 0,
             done: 0,
             total: 0,
-            verified: HashMap::new(),
+            docs: HashMap::new(),
         }
     }
 }

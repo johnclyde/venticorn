@@ -74,15 +74,16 @@ class BuildPublicationTest(unittest.TestCase):
         self.change(4, text)
         progress = self.progress()
         self.assertEqual(progress["buildId"], 0)
-        self.assertEqual(progress["verified"], {})
+        self.assertEqual(progress["docs"], {})
         self.wait_for_diagnostic(lambda item: item.get("version") == 4 and not item["diagnostics"])
         self.save(text)
         current = self.wait_for_build(old["buildId"])
-        self.assertEqual(current["verified"][self.uri], [0])
+        self.assertEqual(current["docs"][self.uri]["verified"], [0])
+        self.assertEqual(current["docs"][self.uri]["version"], 4)
         self.change(5, "")
         self.save("")
         empty = self.wait_for_build(current["buildId"], total=0)
-        self.assertEqual(empty["verified"][self.uri], [])
+        self.assertEqual(empty["docs"][self.uri]["verified"], [])
         self.wait_for_diagnostic(lambda item: item.get("version") == 5 and not item["diagnostics"])
 
     def test_close_and_same_version_reopen_get_new_build_identity(self):
@@ -95,7 +96,7 @@ class BuildPublicationTest(unittest.TestCase):
         first_new = len(self.session.notifications)
         self.open("theorem reopened { true }\n", 7)
         current = self.wait_for_build(old["buildId"])
-        self.assertEqual(current["verified"][self.uri], [0])
+        self.assertEqual(current["docs"][self.uri]["verified"], [0])
         later = self.session.notifications[first_new:]
         self.assertFalse(any(message.get("method") == "textDocument/publishDiagnostics"
                              and message["params"]["diagnostics"] for message in later))
@@ -106,8 +107,8 @@ class BuildPublicationTest(unittest.TestCase):
         self.change(2, "theorem changed { false }\n")
         self.open("theorem other { true }\n", 1, self.other)
         current = self.wait_for_build(old["buildId"], total=2)
-        self.assertNotIn(self.uri, current["verified"])
-        self.assertEqual(current["verified"][self.other], [0])
+        self.assertNotIn(self.uri, current["docs"])
+        self.assertEqual(current["docs"][self.other], {"version": 1, "verified": [0]})
         self.wait_for_diagnostic(lambda item: item.get("version") == 2 and not item["diagnostics"])
 
     def test_unsaved_edit_keeps_other_saved_document_searchable(self):
@@ -143,7 +144,7 @@ class BuildPublicationTest(unittest.TestCase):
         self.change(2, "theorem latest { true }\n")
         self.save("theorem latest { true }\n")
         current = self.wait_for_build()
-        self.assertEqual(current["verified"][self.uri], [0])
+        self.assertEqual(current["docs"][self.uri]["verified"], [0])
         for _ in range(3):
             self.assertEqual(self.progress(), current)
         self.wait_for_diagnostic(lambda item: item.get("version") == 2 and not item["diagnostics"])

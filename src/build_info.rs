@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tower_lsp::lsp_types::{Diagnostic, Url};
 
 use crate::builder::BuildEvent;
-use crate::interfaces::ProgressResponse;
+use crate::interfaces::{DocumentProgress, ProgressResponse};
 
 #[derive(Debug, PartialEq)]
 pub struct DiagnosticUpdate {
@@ -139,11 +139,21 @@ impl BuildInfo {
             build_id: self.id,
             done: self.done,
             total: self.total,
-            verified: self
+            docs: self
                 .docs
                 .iter()
-                .filter(|(_, doc)| doc.publish && doc.version.is_some())
-                .map(|(url, doc)| (url.clone(), doc.verified.clone()))
+                .filter(|(_, doc)| doc.publish)
+                .filter_map(|(url, doc)| {
+                    doc.version.map(|version| {
+                        (
+                            url.clone(),
+                            DocumentProgress {
+                                version,
+                                verified: doc.verified.clone(),
+                            },
+                        )
+                    })
+                })
                 .collect(),
         }
     }
@@ -198,14 +208,14 @@ mod tests {
         assert_ne!(old, reopened);
         assert!(info.handle_event(old, Some(url()), &event(1)).is_none());
         assert_eq!(info.progress().build_id, 0);
-        assert!(info.progress().verified[&url()].is_empty());
+        assert!(info.progress().docs[&url()].verified.is_empty());
         info.handle_event(reopened, Some(url()), &event(2));
         assert!(info.handle_event(old, Some(url()), &event(1)).is_none());
         assert!(info
             .handle_event(reopened, Some(url()), &event(1))
             .is_none());
         assert_eq!(info.progress().build_id, 2);
-        assert_eq!(info.progress().verified[&url()], vec![4]);
+        assert_eq!(info.progress().docs[&url()].verified, vec![4]);
     }
 
     #[test]
@@ -221,7 +231,7 @@ mod tests {
         assert!(info
             .handle_event(info.generation(), Some(url()), &event(2))
             .is_none());
-        assert!(!info.progress().verified.contains_key(&url()));
+        assert!(!info.progress().docs.contains_key(&url()));
         info.reset(versions(4), versions(4));
         let published = info
             .handle_event(info.generation(), Some(url()), &event(3))
@@ -237,7 +247,7 @@ mod tests {
             .handle_event(info.generation(), Some(url()), &event(1))
             .unwrap();
         assert_eq!(published.version, None);
-        assert!(info.progress().verified.is_empty());
+        assert!(info.progress().docs.is_empty());
     }
 
     #[test]
@@ -247,7 +257,7 @@ mod tests {
         let generation = info.generation();
         info.handle_event(generation, Some(url()), &event(1));
         info.handle_event(generation, Some(url()), &event(1));
-        assert_eq!(info.progress().verified[&url()], vec![4]);
+        assert_eq!(info.progress().docs[&url()].verified, vec![4]);
         info.reset(versions(2), versions(2));
         let mut empty = event(2);
         empty.progress = Some((0, 0));
@@ -257,6 +267,6 @@ mod tests {
         assert_eq!(info.progress().build_id, 2);
         assert_eq!(info.progress().done, 0);
         assert_eq!(info.progress().total, 0);
-        assert!(info.progress().verified[&url()].is_empty());
+        assert!(info.progress().docs[&url()].verified.is_empty());
     }
 }
