@@ -127,3 +127,41 @@ fn unresolved_generic_metadata_cannot_bypass_normalization_through_aliases() {
         "rejected pending metadata must not register a constant alias"
     );
 }
+
+#[test]
+fn generic_imports_have_a_clear_limit_and_qualified_calls_remain_supported() {
+    use venticorn::module::Module;
+    use venticorn::project::Project;
+    let mut project = Project::new_mock();
+    project.mock(
+        "/mock/generic.ac",
+        "define identity<T>(value: T) -> T { value }",
+    );
+    project.mock(
+        "/mock/direct.ac",
+        "from generic import identity\ntheorem goal { identity(true) = true }",
+    );
+    let id = project.load_module_by_name("direct").unwrap();
+    match project.get_module_by_id(id) {
+        Module::Error(error) => assert!(
+            error
+                .message()
+                .contains("direct imports of generic constants are not supported"),
+            "{error}"
+        ),
+        _ => panic!("generic import must be rejected before losing its parameter metadata"),
+    }
+    project.mock(
+        "/mock/qualified.ac",
+        "import generic\ntheorem goal { generic.identity(true) = true }",
+    );
+    let id = project.expect_ok("qualified");
+    for node in project.get_env_by_id(id).unwrap().iter_goals() {
+        node.goal_context()
+            .unwrap()
+            .goal
+            .value()
+            .validate()
+            .unwrap();
+    }
+}
