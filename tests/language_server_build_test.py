@@ -83,6 +83,29 @@ class BuildPublicationTest(unittest.TestCase):
         self.assertEqual(current["docs"][self.uri]["verified"], [[1, 1]])
         self.wait_for_diagnostic(lambda item: item.get("version") == 3 and item["diagnostics"])
 
+    def test_constrained_structure_marks_include_the_body_and_reject_a_failed_subgoal(self):
+        text = "structure Flag {\n value: Bool\n} constraint {\n value = value\n} by {\n true\n}\n"
+        self.open(text)
+        current = self.wait_for_build(total=2)
+        deadline = time.monotonic() + 10
+        while current["docs"].get(self.uri, {}).get("verified") != [[0, 6]]:
+            self.assertLess(time.monotonic(), deadline, current)
+            time.sleep(0.01)
+            current = self.progress()
+        selected = self.session.request("acorn/search", {
+            "uri": self.uri, "version": 1, "selectedLine": 3, "id": 95,
+        })["result"]
+        self.assertIsNone(selected["failure"])
+        self.assertIn("exists", selected["goalName"])
+        bad = text.replace(" true\n", " false\n")
+        self.change(2, bad)
+        self.save(bad)
+        self.wait_for_build(current["buildId"], total=2)
+        self.wait_for_diagnostic(lambda item: item.get("version") == 2 and any(
+            diagnostic["range"]["start"]["line"] == 5 for diagnostic in item["diagnostics"]))
+        verified = self.progress()["docs"][self.uri]["verified"]
+        self.assertNotIn([0, 6], verified)
+
     def test_compilation_diagnostics_use_utf16_columns(self):
         for version, (text, token) in enumerate([
             ("let x𐐀é: Bool = missing", "missing"),

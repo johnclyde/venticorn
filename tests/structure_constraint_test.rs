@@ -166,3 +166,20 @@ fn a_constraint_cannot_prove_its_own_nonemptiness() {
         vec![Outcome::Exhausted]
     );
 }
+
+#[test]
+fn constraint_and_body_lines_select_the_correct_scoped_goals() {
+    use venticorn::block::NodeCursor;
+    for (body, end) in [("", 4), (" by {\n true\n}", 6)] {
+        let source =
+            format!("structure Flag {{\n value: Bool\n}} constraint {{\n value = value\n}}{body}");
+        let mut env = Environment::new_test();
+        env.add(&source);
+        let path = env.path_for_line(3).unwrap();
+        let context = NodeCursor::from_path(&env, &path).goal_context().unwrap();
+        assert_eq!((context.first_line, context.last_line), (0, end));
+        assert_eq!(env.path_for_line(end).unwrap(), path);
+        assert!(env.path_for_line(end + 1).is_err());
+        env.check_lines();
+    }
+}
