@@ -301,7 +301,7 @@ test("untitled Acorn documents do not request verification before saving", async
 
 function acornEditor(scheme = "file", name = "proof.ac") {
   return {
-    document: { languageId: "acorn", version: 1, uri: { scheme, toString: () => `${scheme}:///${name}` } },
+    document: { languageId: "acorn", version: 1, lineCount: 1, lineAt: () => ({ text: "theorem goal { true }" }), uri: { scheme, toString: () => `${scheme}:///${name}` } },
     selection: { start: { line: 0 } }, viewColumn: 1, setDecorations() {},
   };
 }
