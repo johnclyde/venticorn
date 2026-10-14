@@ -46,7 +46,7 @@ class BuildPublicationTest(unittest.TestCase):
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             progress = self.progress()
-            if progress["buildId"] not in (None, previous) and progress["done"] == progress["total"] == total:
+            if progress["buildId"] not in (None, previous) and progress["done"] == progress["total"] == total and progress["finished"]:
                 return progress
             time.sleep(0.01)
         self.fail(f"build did not finish: {progress}; stderr={''.join(self.session.errors)}")
@@ -128,8 +128,11 @@ class BuildPublicationTest(unittest.TestCase):
             self.assertIn("unknown identifier", diagnostic["message"])
 
     def test_empty_open_then_edit_and_save_gets_a_fresh_verification(self):
+        initial = self.progress()
+        self.assertEqual((initial["done"], initial["total"], initial["finished"]), (0, 0, False))
         self.open("", 1)
         empty = self.wait_for_build(total=0)
+        self.assertEqual((empty["done"], empty["total"], empty["finished"]), (0, 0, True))
         text = "theorem ready { true }\n"
         self.change(2, text)
         self.assertIsNone(self.progress()["buildId"])
@@ -153,6 +156,7 @@ class BuildPublicationTest(unittest.TestCase):
         self.change(4, text)
         progress = self.progress()
         self.assertEqual(progress["buildId"], None)
+        self.assertFalse(progress["finished"])
         self.assertEqual(progress["docs"], {})
         self.wait_for_diagnostic(lambda item: item.get("version") == 4 and not item["diagnostics"])
         self.save(text)

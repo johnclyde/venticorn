@@ -30,7 +30,7 @@ function host(responses) {
   });
   return { tracker, state };
 }
-const progress = (done, total = 2) => ({ buildId: 1, done, total, docs: {} });
+const progress = (done, total = 2) => ({ buildId: 1, done, total, finished: done >= total, docs: {} });
 
 test("overlapping triggers share one polling loop and notification", async () => {
   const { tracker, state } = host([progress(0), progress(1), progress(2)]);
@@ -68,7 +68,7 @@ function editor(state, version = 1) {
     lines: [], setDecorations(_type, values) { this.lines = Array.from(values, value => value.range.start.line); } };
   state.editors.push(value); return value;
 }
-const marked = (buildId = 1, version = 1) => ({ buildId, done: 1, total: 1, docs: { "file:///proof.ac": { version, verified: [[0, 0]] } } });
+const marked = (buildId = 1, version = 1) => ({ buildId, done: 1, total: 1, finished: true, docs: { "file:///proof.ac": { version, verified: [[0, 0]] } } });
 test("markers clear immediately on edit and reject a mismatched editor version", async () => {
   const { tracker, state } = host([marked(), marked(2, 1), marked(3, 2)]);
   const view = editor(state); await tracker.getProgress(); assert.deepEqual(view.lines, [0]);
@@ -142,7 +142,7 @@ test("a completed proof range creates one marker at its first line", async () =>
 });
 
 test("an empty document gets fresh markers only after its edited text is saved", async () => {
-  const empty = { buildId: 1, done: 0, total: 0, docs: { "file:///proof.ac": { version: 1, verified: [] } } };
+  const empty = { buildId: 1, done: 0, total: 0, finished: true, docs: { "file:///proof.ac": { version: 1, verified: [] } } };
   const { tracker, state } = host([empty, empty, marked(2, 2)]);
   const view = editor(state);
   state.events.open(view.document);
@@ -154,4 +154,32 @@ test("an empty document gets fresh markers only after its edited text is saved",
   assert.deepEqual(view.lines, []);
   await tracker.getProgress();
   assert.deepEqual(view.lines, [0]);
+});
+
+
+test("polling keeps the final range even when counts finish before publication", async () => {
+  const pending = { ...progress(0, 0), finished: false };
+  const counted = { ...progress(1, 1), finished: false };
+  const { tracker, state } = host([pending, counted, marked()]);
+  const view = editor(state);
+  await tracker.track();
+  assert.equal(state.calls, 3);
+  assert.deepEqual(view.lines, [0]);
+  assert.ok(state.reports.every(report => Number.isFinite(report.increment)));
+});
+
+test("an initial zero count waits for an explicitly finished empty build", async () => {
+  const initial = { buildId: null, done: 0, total: 0, finished: false, docs: {} };
+  const { tracker, state } = host([initial, { ...progress(0, 0), finished: false }, progress(0, 0)]);
+  await tracker.track();
+  assert.equal(state.calls, 3); assert.equal(state.windows, 1);
+  assert.deepEqual(state.reports, []);
+});
+
+test("an unsaved edit without a replacement build stops the active poll", async () => {
+  const { tracker, state } = host([progress(0), { buildId: null, done: 0, total: 0, finished: false, docs: {} }]);
+  await tracker.track();
+  assert.equal(state.calls, 2);
+  assert.equal(state.windows, 1);
+  assert.equal(state.logs.length, 0);
 });

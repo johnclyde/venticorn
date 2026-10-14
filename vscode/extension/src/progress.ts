@@ -122,22 +122,26 @@ export class ProgressTracker {
   private async trackHelper() {
     const initialBuildId = this.buildId;
     let response = await this.getProgress();
-    while (response && (response.buildId === null || (response.buildId === initialBuildId && response.done >= response.total))) {
+    while (response && (response.buildId === null || (response.buildId === initialBuildId && response.finished))) {
       if (this.clock.now() - this.startTime >= 2000) return;
       await this.clock.pause(100);
       response = await this.getProgress();
     }
-    if (!response || response.done >= response.total) return;
+    if (!response || response.finished) return;
     await window.withProgress({
       location: ProgressLocation.Notification,
       title: "Venticorn Verification",
       cancellable: false,
     }, async (progress) => {
       let previous = 0;
-      while (response && response.done < response.total) {
-        const percent = Math.max(previous, Math.min(100, Math.floor(100 * response.done / response.total)));
-        progress.report({ increment: percent - previous });
-        previous = percent;
+      // An unsaved edit cancels without starting a replacement build. Its null
+      // identity stops polling; a later save supplies a new tracking trigger.
+      while (response && response.buildId !== null && !response.finished) {
+        if (response.total > 0) {
+          const percent = Math.max(previous, Math.min(100, Math.floor(100 * response.done / response.total)));
+          progress.report({ increment: percent - previous });
+          previous = percent;
+        }
         await this.clock.pause(100);
         response = await this.getProgress();
       }
