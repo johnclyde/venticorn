@@ -2,7 +2,7 @@ use crate::atom::{Atom, AtomId};
 use crate::term::Term;
 use crate::type_map::TypeId;
 
-// A Specializer finds substitutions that specialize, to turn a more general term
+// A Specializer finds substitutions that instantiate, to turn a more general term
 // into a more specific one.
 pub struct Specializer {
     map: Vec<Option<Term>>,
@@ -74,7 +74,7 @@ impl Specializer {
         true
     }
 
-    pub fn specialize(&self, term: &Term) -> Term {
+    pub fn instantiate(&self, term: &Term) -> Term {
         // First apply to the head
         let mut answer = match &term.head {
             Atom::Variable(i) => {
@@ -94,7 +94,7 @@ impl Specializer {
 
         // Recurse on the arguments
         for arg in &term.args {
-            answer.push_arg(self.specialize(arg));
+            answer.push_arg(self.instantiate(arg));
         }
 
         answer

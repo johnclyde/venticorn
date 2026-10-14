@@ -25,9 +25,9 @@ fn match_case_binders_follow_type_transformations() {
         panic!("expected a match")
     };
     assert_eq!(cases[0].0, vec![AcornType::Variable("T".to_string(), None)]);
-    let specialized = parameterized.specialize(&[("T".to_string(), AcornType::Bool)]);
+    let specialized = parameterized.instantiate(&[("T".to_string(), AcornType::Bool)]);
     assert_eq!(specialized, bound_match(AcornType::Bool));
-    let placeholder = parameterized.to_placeholder();
+    let placeholder = parameterized.to_arbitrary();
     assert_eq!(
         placeholder,
         bound_match(AcornType::Arbitrary("T".to_string(), None))

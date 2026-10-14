@@ -187,7 +187,7 @@ impl Prover {
         // We don't need to add the goal as as polymorphic fact since goals themselves
         // cannot be polymorphic.
         self.monomorphizer
-            .match_monomorphs(&goal_context.goal.value());
+            .match_constants(&goal_context.goal.value());
         for fact in self.monomorphizer.take_facts() {
             self.add_monomorphic_fact(fact);
         }
@@ -195,7 +195,7 @@ impl Prover {
         match &goal_context.goal {
             Goal::Prove(prop) => {
                 // Negate the goal and add it as a counterfactual assumption.
-                let (hypo, counter) = prop.value.to_placeholder().negate_goal();
+                let (hypo, counter) = prop.value.to_arbitrary().negate_goal();
                 if let Some(hypo) = hypo {
                     self.add_monomorphic_fact(Fact::new(
                         prop.with_value(hypo),

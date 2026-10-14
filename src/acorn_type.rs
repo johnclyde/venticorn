@@ -256,8 +256,8 @@ impl AcornType {
         }
     }
 
-    // Replaces type parameters in the provided list with the corresponding type.
-    pub fn specialize(&self, params: &[(String, AcornType)]) -> AcornType {
+    // Replaces type variables in the provided list with the corresponding type.
+    pub fn instantiate(&self, params: &[(String, AcornType)]) -> AcornType {
         match self {
             AcornType::Variable(name, None) => {
                 for (param_name, param_type) in params {
@@ -271,20 +271,20 @@ impl AcornType {
                 function_type
                     .arg_types
                     .iter()
-                    .map(|t| t.specialize(params))
+                    .map(|t| t.instantiate(params))
                     .collect(),
-                function_type.return_type.specialize(params),
+                function_type.return_type.instantiate(params),
             ),
             _ => self.clone(),
         }
     }
 
-    // Figures out whether it is possible to specialize self to get specialized.
+    // Figures out whether it is possible to instantiate self to get specialized.
     // Fills in a mapping for any parametric types that need to be specified, in order to make it match.
-    // This will include "Foo" -> Parameter("Foo") mappings for types that should remain the same.
+    // This will include "Foo" -> Variable("Foo", None) mappings for types that should remain the same.
     // Every parameter used in self will get a mapping entry.
     // Returns whether it was successful.
-    pub fn match_specialized(
+    pub fn match_instance(
         &self,
         specialized: &AcornType,
         mapping: &mut HashMap<String, AcornType>,
@@ -302,11 +302,11 @@ impl AcornType {
                 if f.arg_types.len() != g.arg_types.len() {
                     return false;
                 }
-                if !f.return_type.match_specialized(&g.return_type, mapping) {
+                if !f.return_type.match_instance(&g.return_type, mapping) {
                     return false;
                 }
                 for (f_arg_type, g_arg_type) in f.arg_types.iter().zip(&g.arg_types) {
-                    if !f_arg_type.match_specialized(g_arg_type, mapping) {
+                    if !f_arg_type.match_instance(g_arg_type, mapping) {
                         return false;
                     }
                 }
@@ -386,9 +386,9 @@ mod tests {
         let fixed = signature.to_arbitrary();
         assert!(fixed.is_normalized());
         assert!(!fixed.is_generic());
-        assert_eq!(fixed.specialize(&[("T".into(), AcornType::Bool)]), fixed);
+        assert_eq!(fixed.instantiate(&[("T".into(), AcornType::Bool)]), fixed);
         assert_eq!(
-            signature.specialize(&[("T".into(), AcornType::Bool)]),
+            signature.instantiate(&[("T".into(), AcornType::Bool)]),
             AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool)
         );
     }

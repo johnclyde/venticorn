@@ -108,7 +108,7 @@ impl Block {
 
         // Inside the block, the arguments are constants.
         for (arg_name, generic_arg_type) in &args {
-            let specific_arg_type = generic_arg_type.specialize(&param_pairs);
+            let specific_arg_type = generic_arg_type.instantiate(&param_pairs);
             subenv
                 .bindings
                 .add_constant(&arg_name, vec![], specific_arg_type, None, None);
@@ -140,7 +140,10 @@ impl Block {
                 if let Some((unbound_premise, premise_range)) = premise {
                     // Add the premise to the environment, when proving the theorem.
                     // The premise is unbound, so we need to bind the block's arg values.
-                    let bound = unbound_premise.bind_values(0, 0, &arg_values);
+                    let bound =
+                        unbound_premise
+                            .instantiate(&param_pairs)
+                            .bind_values(0, 0, &arg_values);
 
                     subenv.add_node(
                         project,
@@ -151,7 +154,10 @@ impl Block {
                 }
 
                 // We can prove the goal either in bound or in function form
-                let bound_goal = unbound_goal.bind_values(0, 0, &arg_values);
+                let bound_goal =
+                    unbound_goal
+                        .instantiate(&param_pairs)
+                        .bind_values(0, 0, &arg_values);
                 Some(Goal::Prove(Proposition::theorem(
                     false,
                     bound_goal,
