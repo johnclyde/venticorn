@@ -84,8 +84,8 @@ fn match_statement_checks_its_scrutinee() {
     let error = env
         .add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err();
-    assert!(error.message.contains("missing"), "{}", error.message);
-    assert!(!error.message.contains("not supported yet"));
+    assert!(error.message().contains("missing"), "{}", error.message());
+    assert!(!error.message().contains("not supported yet"));
 }
 
 fn statement_error(env: &mut Environment, source: &str) -> String {

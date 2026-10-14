@@ -59,7 +59,7 @@ fn malformed_theorem_bodies_leave_no_names_ranges_or_facts() {
         let error = env
             .add_statement(&mut Project::new_mock(), &statement)
             .unwrap_err();
-        assert!(error.message.contains("missing"), "{error}");
+        assert!(error.message().contains("missing"), "{error}");
         assert!(env.nodes.is_empty());
         assert!(!env.bindings.has_identifier("broken"));
         assert!(!env.bindings.has_identifier("value"));
@@ -80,7 +80,7 @@ fn theorem_parameter_collisions_are_errors_instead_of_panics() {
         let error = env
             .add_statement(&mut Project::new_mock(), &statement)
             .unwrap_err();
-        assert_eq!(error.message, "theorem name conflicts with a parameter");
+        assert_eq!(error.message(), "theorem name conflicts with a parameter");
         assert!(env.nodes.is_empty());
         assert!(!env.bindings.has_identifier("f"));
         assert!(!env.bindings.has_type_name("f"));
@@ -133,7 +133,7 @@ fn axiom_proof_blocks_are_rejected_without_discarding_their_content() {
         let error = env
             .add_statement(&mut Project::new_mock(), &statement)
             .unwrap_err();
-        assert_eq!(error.message, "axioms cannot have proof blocks");
+        assert_eq!(error.message(), "axioms cannot have proof blocks");
         assert!(env.nodes.is_empty());
         assert!(!env.bindings.has_identifier("assumption"));
     }

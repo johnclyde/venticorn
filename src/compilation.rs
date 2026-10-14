@@ -1,17 +1,20 @@
 // Modified for Venticorn: shared source-located compilation diagnostics.
 use std::fmt;
 
+use tower_lsp::lsp_types::Range;
+
 use crate::token::Token;
 
 // Errors that happen during compilation.
 // We will want to report these along with a location in the source code.
 #[derive(Debug)]
 pub struct Error {
-    pub message: String,
-    pub token: Token,
+    message: String,
+    token: Token,
 
-    // external is true when the root error is in a different module.
-    pub external: bool,
+    // When you try to import a module that itself had a compilation error, that is a "secondary error".
+    // We may or may not want to report these, depending on the context.
+    pub secondary: bool,
 }
 
 fn fmt_line_part(f: &mut fmt::Formatter, text: &str, line: &str, index: usize) -> fmt::Result {
@@ -47,16 +50,24 @@ impl Error {
         Error {
             message: message.to_string(),
             token: token.clone(),
-            external: false,
+            secondary: false,
         }
     }
 
-    pub fn external(token: &Token, message: &str) -> Self {
+    pub fn secondary(token: &Token, message: &str) -> Self {
         Error {
             message: message.to_string(),
             token: token.clone(),
-            external: true,
+            secondary: true,
         }
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn range(&self) -> Range {
+        self.token.range()
     }
 }
 
