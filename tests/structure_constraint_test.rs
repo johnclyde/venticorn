@@ -124,3 +124,45 @@ fn constrained_projection_equations_are_conditional_and_inputs_need_not_be_injec
         prover.error
     );
 }
+
+fn proof_outcomes(source: &str) -> Vec<venticorn::prover::Outcome> {
+    use venticorn::prover::{Outcome, Prover};
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", source);
+    let id = project.expect_ok("main");
+    let env = project.get_env_by_id(id).unwrap();
+    env.nodes
+        .iter()
+        .for_each(|node| node.claim.value.validate().unwrap());
+    env.iter_goals()
+        .map(|node| {
+            let mut prover = Prover::new(&project, false);
+            for fact in node.usable_facts(&project) {
+                prover.add_fact(fact);
+            }
+            prover.set_goal(&node.goal_context().unwrap());
+            let outcome = prover.quick_verification_search();
+            assert_ne!(outcome, Outcome::Error, "{:?}", prover.error);
+            outcome
+        })
+        .collect()
+}
+
+#[test]
+fn instance_constraints_preserve_nested_quantifier_variable_scopes() {
+    use venticorn::prover::Outcome;
+    let source = "type Item: axiom\ntype Tag: axiom\nlet witness: Item = axiom\nlet related: (Item, Tag) -> Bool = axiom\naxiom(tag: Tag) { related(witness, tag) }\nstructure Box {\n value: Item\n} constraint {\n forall(tag: Tag) { related(value, tag) }\n}\ntheorem goal(box: Box, tag: Tag) { related(box.value, tag) }";
+    assert_eq!(
+        proof_outcomes(source),
+        vec![Outcome::Success, Outcome::Success]
+    );
+}
+
+#[test]
+fn a_constraint_cannot_prove_its_own_nonemptiness() {
+    use venticorn::prover::Outcome;
+    assert_eq!(
+        proof_outcomes("structure Empty {\n value: Bool\n} constraint { false }"),
+        vec![Outcome::Exhausted]
+    );
+}
