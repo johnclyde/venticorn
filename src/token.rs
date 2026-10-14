@@ -120,7 +120,7 @@ pub const LSP_TOKEN_TYPES: &[SemanticTokenType] = &[
 // Infix operators are represented by a "magic method name", where you implement a method
 // with that name, and then the infix operator with this token can be used to invoke that method.
 // The term "magic method name", along with this general idea, are from Python.
-const MAGIC_METHOD_NAMES: &[(&str, TokenType)] = &[
+const INFIX_MAGIC_METHODS: &[(&str, TokenType)] = &[
     ("gt", TokenType::GreaterThan),
     ("lt", TokenType::LessThan),
     ("gte", TokenType::GreaterThanOrEquals),
@@ -131,6 +131,8 @@ const MAGIC_METHOD_NAMES: &[(&str, TokenType)] = &[
     ("mod", TokenType::Percent),
     ("div", TokenType::Slash),
 ];
+
+const PREFIX_MAGIC_METHODS: &[(&str, TokenType)] = &[("neg", TokenType::Minus)];
 
 impl TokenType {
     pub fn is_unary(&self) -> bool {
@@ -252,8 +254,8 @@ impl TokenType {
     }
 
     // Converts a token to its magic method name, if it has on.
-    pub fn to_magic_method_name(&self) -> Option<&str> {
-        for (name, token_type) in MAGIC_METHOD_NAMES {
+    pub fn to_infix_magic_method_name(&self) -> Option<&str> {
+        for (name, token_type) in INFIX_MAGIC_METHODS {
             if token_type == self {
                 return Some(name);
             }
@@ -261,9 +263,16 @@ impl TokenType {
         None
     }
 
-    // Converting the other way, from a (potential) magic method name to an infix token.
+    pub fn to_prefix_magic_method_name(&self) -> Option<&str> {
+        PREFIX_MAGIC_METHODS
+            .iter()
+            .find(|(_, token)| token == self)
+            .map(|(name, _)| *name)
+    }
+
+    // Convert a reserved operator method name to its token.
     pub fn from_magic_method_name(name: &str) -> Option<TokenType> {
-        for (method_name, token_type) in MAGIC_METHOD_NAMES {
+        for (method_name, token_type) in INFIX_MAGIC_METHODS.iter().chain(PREFIX_MAGIC_METHODS) {
             if method_name == &name {
                 return Some(*token_type);
             }
