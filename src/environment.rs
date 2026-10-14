@@ -187,13 +187,13 @@ impl Environment {
 
         let params = param_names
             .into_iter()
-            .map(|name| (name.clone(), AcornType::Variable(name, None)))
+            .map(|name| AcornType::Variable(name, None))
             .collect();
-        let constant = AcornValue::new_generic_constant(
+        let constant = AcornValue::new_constant(
             self.module_id,
             name.to_string(),
-            constant_type_clone,
             params,
+            constant_type_clone,
         );
 
         let claim = if let AcornValue::Lambda(acorn_types, return_value) = definition {
