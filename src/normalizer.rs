@@ -86,7 +86,7 @@ impl Normalizer {
         self.skolem_types.push(acorn_type.clone());
         // Hacky. Turn the int into an s-name
         let name = format!("s{}", skolem_index);
-        AcornValue::Constant(SKOLEM, name, acorn_type, vec![])
+        AcornValue::Unresolved(SKOLEM, name, acorn_type, vec![])
     }
 
     pub fn is_skolem(&self, atom: &Atom) -> bool {
@@ -161,7 +161,7 @@ impl Normalizer {
             | AcornValue::Not(_)
             | AcornValue::Binary(_, _, _)
             | AcornValue::Variable(_, _)
-            | AcornValue::Constant(_, _, _, _)
+            | AcornValue::Unresolved(_, _, _, _)
             | AcornValue::Bool(_) => value,
 
             _ => panic!(
@@ -199,7 +199,7 @@ impl Normalizer {
                 let type_id = self.type_map.add_type(var_type);
                 Ok(Term::new(type_id, type_id, Atom::Variable(*i), vec![]))
             }
-            AcornValue::Constant(module, name, t, params) => {
+            AcornValue::Unresolved(module, name, t, params) => {
                 assert!(params.is_empty());
                 let type_id = self.type_map.add_type(t);
                 let constant_atom = if *module == SKOLEM {
@@ -213,7 +213,7 @@ impl Normalizer {
             AcornValue::Application(application) => {
                 Ok(self.term_from_application(application, local)?)
             }
-            AcornValue::Specialized(module, name, _, parameters) => Ok(self
+            AcornValue::Constant(module, name, _, parameters) => Ok(self
                 .type_map
                 .term_from_monomorph(*module, name, parameters, value.get_type())),
             AcornValue::Bool(true) => Ok(Term::new_true()),
@@ -229,7 +229,7 @@ impl Normalizer {
     // to do rewrite-type lookups, on the larger literal first.
     fn literal_from_value(&mut self, value: &AcornValue, local: bool) -> Result<Literal> {
         match value {
-            AcornValue::Variable(_, _) | AcornValue::Constant(_, _, _, _) => {
+            AcornValue::Variable(_, _) | AcornValue::Unresolved(_, _, _, _) => {
                 Ok(Literal::positive(self.term_from_value(value, local)?))
             }
             AcornValue::Application(app) => {
@@ -370,8 +370,8 @@ impl Normalizer {
         }
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             // Check for defining one constant to equal another constant.
-            if let AcornValue::Constant(left_module, left_name, _, _) = left.as_ref() {
-                if let AcornValue::Constant(right_module, right_name, _, _) = right.as_ref() {
+            if let AcornValue::Unresolved(left_module, left_name, _, _) = left.as_ref() {
+                if let AcornValue::Unresolved(right_module, right_name, _, _) = right.as_ref() {
                     if self.constant_map.has_constant(*right_module, &right_name)
                         && !self.constant_map.has_constant(*left_module, &left_name)
                     {
@@ -415,15 +415,15 @@ impl Normalizer {
             Atom::True => AcornValue::Bool(true),
             Atom::GlobalConstant(i) => {
                 let (module, name) = self.constant_map.get_global_info(*i);
-                AcornValue::Constant(module, name.to_string(), acorn_type, vec![])
+                AcornValue::Unresolved(module, name.to_string(), acorn_type, vec![])
             }
             Atom::LocalConstant(i) => {
                 let (module, name) = self.constant_map.get_local_info(*i);
-                AcornValue::Constant(module, name.to_string(), acorn_type, vec![])
+                AcornValue::Unresolved(module, name.to_string(), acorn_type, vec![])
             }
             Atom::Monomorph(i) => {
                 let (module, name, params) = self.type_map.get_monomorph_info(*i);
-                AcornValue::Specialized(module, name.to_string(), acorn_type, params.clone())
+                AcornValue::Constant(module, name.to_string(), acorn_type, params.clone())
             }
             Atom::Variable(i) => {
                 let index = *i as usize;
@@ -438,7 +438,7 @@ impl Normalizer {
             }
             Atom::Skolem(i) => {
                 let acorn_type = self.skolem_types[*i as usize].clone();
-                AcornValue::Constant(SKOLEM, format!("s{}", i), acorn_type, vec![])
+                AcornValue::Unresolved(SKOLEM, format!("s{}", i), acorn_type, vec![])
             }
         }
     }
@@ -568,7 +568,7 @@ mod tests {
     fn evaluate_boolean(value: &AcornValue, variable: bool) -> bool {
         match value {
             AcornValue::Bool(value) => *value,
-            AcornValue::Constant(_, name, _, _) if name == "p" => variable,
+            AcornValue::Unresolved(_, name, _, _) if name == "p" => variable,
             AcornValue::Not(inner) => !evaluate_boolean(inner, variable),
             AcornValue::Binary(operator, left, right) => {
                 let left = evaluate_boolean(left, variable);
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn boolean_literal_comparisons_preserve_truth() {
-        let variable = AcornValue::Constant(
+        let variable = AcornValue::Unresolved(
             crate::module::FIRST_NORMAL,
             "p".to_string(),
             AcornType::Bool,

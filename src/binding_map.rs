@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
-use crate::acorn_type::AcornType;
+use crate::acorn_type::{AcornType, TypeClass};
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
@@ -262,6 +262,18 @@ impl BindingMap {
         self.insert_type_name(name.to_string(), acorn_type);
     }
 
+    fn add_type_variable(&mut self, name: &str, typeclass: Option<TypeClass>) {
+        assert!(
+            !self.name_in_use(name),
+            "type variable {} already bound",
+            name
+        );
+        self.insert_type_name(
+            name.to_string(),
+            AcornType::Variable(name.to_string(), typeclass),
+        );
+    }
+
     // Returns an AcornValue representing this name, if there is one.
     // Returns None if this name does not refer to a constant.
     pub fn get_constant_value(&self, name: &str) -> Option<AcornValue> {
@@ -269,7 +281,7 @@ impl BindingMap {
 
         // Aliases
         if let Some((canonical_module, canonical_name)) = self.alias_to_canonical.get(name) {
-            return Some(AcornValue::Constant(
+            return Some(AcornValue::Unresolved(
                 *canonical_module,
                 canonical_name.clone(),
                 constant_type,
@@ -278,7 +290,7 @@ impl BindingMap {
         }
 
         // Constants defined here
-        Some(AcornValue::Constant(
+        Some(AcornValue::Unresolved(
             self.module,
             name.to_string(),
             constant_type,
@@ -750,7 +762,7 @@ impl BindingMap {
         source: &dyn ErrorSource,
     ) -> compilation::Result<(usize, usize)> {
         let info = match value {
-            AcornValue::Constant(module, name, _, _) => {
+            AcornValue::Unresolved(module, name, _, _) => {
                 let bindings = if *module == self.module {
                     &self
                 } else {
@@ -1163,7 +1175,7 @@ impl BindingMap {
             NamedEntity::Value(value) => {
                 // Add a local alias that mirrors this constant's name in the imported module.
                 match value {
-                    AcornValue::Constant(ext_module, ext_name, acorn_type, _) => {
+                    AcornValue::Unresolved(ext_module, ext_name, acorn_type, _) => {
                         self.add_alias(&name_token.text(), ext_module, ext_name, acorn_type);
                     }
                     _ => {
@@ -1366,13 +1378,16 @@ impl BindingMap {
                     )));
                 }
 
+                let infer_parameters = matches!(&function, AcornValue::Unresolved(_, _, _, params) if !params.is_empty());
                 let mut args = vec![];
                 let mut mapping = HashMap::new();
                 for (i, arg_expr) in arg_exprs.iter().enumerate() {
                     let arg_type: &AcornType = &function_type.arg_types[i];
                     let arg_value =
                         self.evaluate_value_with_stack(stack, project, arg_expr, None)?;
-                    if !arg_type.match_specialized(&arg_value.get_type(), &mut mapping) {
+                    if !infer_parameters {
+                        check_type(*arg_expr, Some(arg_type), &arg_value.get_type())?;
+                    } else if !arg_type.match_specialized(&arg_value.get_type(), &mut mapping) {
                         return Err(arg_expr.error(&format!(
                             "expected type {}, but got {}",
                             arg_type,
@@ -1391,7 +1406,7 @@ impl BindingMap {
 
                 // Templated functions have to just be constants
                 let (c_module, c_name, c_type, c_params) =
-                    if let AcornValue::Constant(c_module, c_name, c_type, c_params) = function {
+                    if let AcornValue::Unresolved(c_module, c_name, c_type, c_params) = function {
                         (c_module, c_name, c_type, c_params)
                     } else {
                         return Err(
@@ -1416,7 +1431,7 @@ impl BindingMap {
                     check_type(&**function_expr, expected_type, &specialized_type)?;
                 }
 
-                let specialized = AcornValue::Specialized(c_module, c_name, c_type, params);
+                let specialized = AcornValue::Constant(c_module, c_name, c_type, params);
                 Ok(AcornValue::Application(FunctionApplication {
                     function: Box::new(specialized),
                     args,
@@ -1603,29 +1618,25 @@ impl BindingMap {
         Option<AcornValue>,
         AcornType,
     )> {
-        // "Specific" types are types that can refer to these parameters bound as opaque types.
-        // "Generic" types are types where those have been replaced with AcornType::Generic types.
-
         // Bind all the type parameters and arguments
         let mut type_param_names: Vec<String> = vec![];
         for token in type_param_tokens {
-            if self.type_names.contains_key(token.text()) {
+            if self.name_in_use(token.text()) {
                 return Err(token.error("cannot redeclare a type in a generic type list"));
             }
-            self.add_data_type(token.text());
+            self.add_type_variable(token.text(), None);
             type_param_names.push(token.text().to_string());
         }
         let mut stack = Stack::new();
-        let (arg_names, specific_arg_types) =
-            self.bind_args(&mut stack, project, args, class_name)?;
+        let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_name)?;
 
         // Check for possible errors in the specification.
         // Each type has to be used by some argument so that we know how to
         // monomorphize the template.
         for (i, type_param_name) in type_param_names.iter().enumerate() {
-            if !specific_arg_types
+            if !arg_types
                 .iter()
-                .any(|a| a.refers_to(self.module, &type_param_name))
+                .any(|a| a.has_type_variable(type_param_name))
             {
                 return Err(type_param_tokens[i].error(&format!(
                     "type parameter {} is not used in the function arguments",
@@ -1641,51 +1652,31 @@ impl BindingMap {
         }
 
         // Evaluate the inner value using our modified bindings
-        let specific_value_type = match value_type_expr {
+        let value_type = match value_type_expr {
             Some(e) => self.evaluate_type(project, e)?,
             None => AcornType::Bool,
         };
-        let generic_value_type = specific_value_type.parametrize(self.module, &type_param_names);
-        let generic_arg_types: Vec<_> = specific_arg_types
-            .iter()
-            .map(|t| t.parametrize(self.module, &type_param_names))
-            .collect();
         if let Some(name) = function_name {
-            let function_type =
-                AcornType::new_functional(generic_arg_types.clone(), generic_value_type.clone());
+            let function_type = AcornType::new_functional(arg_types.clone(), value_type.clone());
             self.add_constant(name, type_param_names.clone(), function_type, None, None);
         }
-        let generic_value = if value_expr.is_axiom() {
+        let value = if value_expr.is_axiom() {
             None
         } else {
-            let specific_value = self.evaluate_value_with_stack(
-                &mut stack,
-                project,
-                value_expr,
-                Some(&specific_value_type),
-            )?;
+            let value =
+                self.evaluate_value_with_stack(&mut stack, project, value_expr, Some(&value_type))?;
             if let Some(name) = function_name {
-                let mut checker = TerminationChecker::new(
-                    self.module,
-                    name.to_string(),
-                    specific_arg_types.len(),
-                );
-                if !checker.check(&specific_value) {
+                let mut checker =
+                    TerminationChecker::new(self.module, name.to_string(), arg_types.len());
+                if !checker.check(&value) {
                     return Err(value_expr
                         .error("the termination checker could not prove that this terminates"));
                 }
             }
-            let generic_value = specific_value.parametrize(self.module, &type_param_names);
-            Some(generic_value)
+            Some(value)
         };
 
-        Ok((
-            type_param_names,
-            arg_names,
-            generic_arg_types,
-            generic_value,
-            generic_value_type,
-        ))
+        Ok((type_param_names, arg_names, arg_types, value, value_type))
     }
 
     // Finds the names of all constants that are in this module but unknown to this binding map.
@@ -1697,8 +1688,8 @@ impl BindingMap {
     ) {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Bool(_) => {}
-            AcornValue::Constant(module, name, t, _)
-            | AcornValue::Specialized(module, name, t, _) => {
+            AcornValue::Unresolved(module, name, t, _)
+            | AcornValue::Constant(module, name, t, _) => {
                 if *module == self.module && !self.constants.contains_key(name) {
                     answer.insert(name.to_string(), t.clone());
                 }
@@ -1927,7 +1918,7 @@ impl BindingMap {
             AcornValue::Variable(i, _) => {
                 Ok(Expression::generate_identifier(&var_names[*i as usize]))
             }
-            AcornValue::Constant(module, name, _, _) => self.name_to_expr(*module, name),
+            AcornValue::Unresolved(module, name, _, _) => self.name_to_expr(*module, name),
             AcornValue::Application(fa) => {
                 let mut args = vec![];
                 for arg in &fa.args {
@@ -2031,7 +2022,7 @@ impl BindingMap {
                 };
                 Ok(Expression::Singleton(token))
             }
-            AcornValue::Specialized(module, name, _, _) => {
+            AcornValue::Constant(module, name, _, _) => {
                 // Here we are assuming that the context will be enough to disambiguate
                 // the type of the templated name.
                 // I'm not sure if this is a good assumption.

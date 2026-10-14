@@ -67,9 +67,9 @@ impl FunctionType {
     }
 }
 
-// Typeclasses are represented by the module they were defined in, and their name.
+// TypeClasses are represented by the module they were defined in, and their name.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub struct Typeclass {
+pub struct TypeClass {
     pub module_id: ModuleId,
     pub name: String,
 }
@@ -111,11 +111,11 @@ pub enum AcornType {
 
     // A type variable exists inside a parametrized expression.
     // It represents an unknown type, possibly belonging to a particular typeclass.
-    Variable(String, Option<Typeclass>),
+    Variable(String, Option<TypeClass>),
 
     // An arbitrary type represents a type that is (optionally) a fixed instance of a typeclass,
     // but we don't know anything else about it.
-    Arbitrary(String, Option<Typeclass>),
+    Arbitrary(String, Option<TypeClass>),
 }
 
 impl AcornType {
@@ -126,6 +126,18 @@ impl AcornType {
             return_type
         } else {
             AcornType::Function(FunctionType::new(arg_types, return_type))
+        }
+    }
+
+    // Whether this type contains the named generic variable.
+    pub fn has_type_variable(&self, name: &str) -> bool {
+        match self {
+            AcornType::Variable(variable, _) => variable == name,
+            AcornType::Function(function) => {
+                function.arg_types.iter().any(|t| t.has_type_variable(name))
+                    || function.return_type.has_type_variable(name)
+            }
+            _ => false,
         }
     }
 
@@ -383,11 +395,11 @@ mod tests {
 
     #[test]
     fn typeclass_identity_and_arbitrary_conversion_preserve_the_module() {
-        let class = Typeclass {
+        let class = TypeClass {
             module_id: 2,
             name: "Ordered".into(),
         };
-        let other_class = Typeclass {
+        let other_class = TypeClass {
             module_id: 3,
             name: "Ordered".into(),
         };
