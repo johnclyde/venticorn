@@ -1504,4 +1504,48 @@ mod prover_test {
     fn test_prove_disjunctive_constraint_equation() {
         verify_succeeds("structure Foo {\n first: Bool\n second: Bool\n} constraint { first or second }\ntheorem goal(f: Foo) { f.first or f.second }");
     }
+    #[test]
+    fn test_prove_constrained_member_equation() {
+        let text = r#"
+        type Foo: axiom
+        let foo: Foo = axiom
+        let foof: Foo -> Bool = axiom
+        axiom {
+            foof(foo)
+        }
+
+        structure Bar {
+            f: Foo
+        } constraint {
+            foof(f)
+        }
+        theorem goal(f: Foo) {
+            foof(f) -> Bar.new(f).f = f
+        }
+        "#;
+        verify_succeeds(text);
+    }
+
+    #[test]
+    fn test_prove_member_equation_requires_constraint() {
+        // This shouldn't work, because f may fail the constraint, so projecting Bar.new(f) need not recover f.
+        let text = r#"
+        type Foo: axiom
+        let foo: Foo = axiom
+        let foof: Foo -> Bool = axiom
+        axiom {
+            foof(foo)
+        }
+
+        structure Bar {
+            f: Foo
+        } constraint {
+            foof(f)
+        }
+        theorem goal(f: Foo) {
+            Bar.new(f).f = f
+        }
+        "#;
+        verify_fails(text);
+    }
 }
