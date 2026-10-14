@@ -22,31 +22,34 @@ pub struct Error {
     pub secondary: bool,
 }
 
-fn fmt_line_part(f: &mut fmt::Formatter, text: &str, line: &str, index: usize) -> fmt::Result {
-    write!(f, "{}\n", line)?;
-    for (i, _) in line.char_indices() {
-        if i < index {
-            write!(f, " ")?;
-        } else if i < index + text.len() {
-            write!(f, "^")?;
-        }
-    }
-    if index >= line.len() {
-        // The token is the final newline.
-        write!(f, "^")?;
-    }
-    write!(f, "\n")
-}
-
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:\n", self.message)?;
-        fmt_line_part(
-            f,
-            &self.first_token.text(),
-            &self.first_token.line,
-            self.first_token.start as usize,
-        )
+        writeln!(f, "{}:", self.message)?;
+        writeln!(f, "{}", self.first_token.line)?;
+        let start = self.first_token.start as usize;
+        let end = if self.first_token.line_number == self.last_token.line_number {
+            (self.last_token.start + self.last_token.len) as usize
+        } else {
+            self.first_token.line.len()
+        };
+        let mut highlighted = false;
+        // Token offsets are bytes. Terminal padding follows source characters,
+        // while editor ranges use UTF-16 through the token position accessors.
+        for (index, character) in self.first_token.line.char_indices() {
+            if index < start {
+                write!(f, "{}", if character == '\t' { '\t' } else { ' ' })?;
+            } else if index < end {
+                write!(f, "^")?;
+                highlighted = true;
+            } else {
+                break;
+            }
+        }
+        if !highlighted {
+            // Empty lines and zero-length end-of-line tokens still need a marker.
+            write!(f, "^")?;
+        }
+        writeln!(f)
     }
 }
 
