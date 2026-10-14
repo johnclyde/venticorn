@@ -23,7 +23,7 @@ class CompletionTest(unittest.TestCase):
         self.session = LspSession(BINARY, dict(os.environ, VENTICORN_LIBRARY=str(self.library)))
         self.addCleanup(self.session.close)
         response = self.session.request("initialize", {"processId": None, "rootUri": None, "capabilities": {}})
-        self.assertIn("completionProvider", response["result"]["capabilities"])
+        self.assertEqual(response["result"]["capabilities"]["completionProvider"]["triggerCharacters"], ["."])
         self.session.notify("initialized", {})
 
     def open(self, text="from nat import Nat\n", version=1):
@@ -113,6 +113,22 @@ class CompletionTest(unittest.TestCase):
             self.assertEqual(self.complete(1, len(prefix)), expected)
             previous = prefix
             version += 1
+
+    def test_after_dot_uses_the_unsaved_utf16_prefix(self):
+        self.open("from nat import Nat, saved\nlet alias: Nat = saved\n\n")
+        previous = ""
+        for version, (prefix, expected) in enumerate([
+            ("😀 nat.", ["Nat", "saved"]),
+            ("😀 Nat.", ["induction", "suc", "zero"]),
+            ("😀 alias.", ["suc"]),
+            ("😀 missing.", []),
+            ("😀 Nat..", []),
+        ], 2):
+            self.change(version, (2, 0), (2, len(previous.encode("utf-16-le")) // 2), prefix)
+            column = len(prefix.encode("utf-16-le")) // 2
+            self.assertEqual(sorted(self.complete(2, column)), expected, prefix)
+            self.assertEqual(self.complete(2, 1), [])  # Inside the surrogate pair.
+            previous = prefix
 
     def test_unknown_documents_and_invalid_positions_have_no_candidates(self):
         self.open("from nat import Nat\n// a😀b\n")

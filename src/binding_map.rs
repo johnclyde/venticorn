@@ -492,11 +492,11 @@ impl BindingMap {
         importing: bool,
         visible: &dyn Fn(&str) -> bool,
     ) -> Option<Vec<CompletionItem>> {
-        if prefix.is_empty() {
+        if prefix.is_empty() && !importing {
             return None;
         }
         if let Some((namespace, partial)) = prefix.rsplit_once('.') {
-            if importing || partial.is_empty() || namespace.split('.').any(str::is_empty) {
+            if importing || namespace.split('.').any(str::is_empty) {
                 return None;
             }
             let mut entity = None;
