@@ -532,10 +532,7 @@ impl Environment {
                     }
                 }
                 if ts.axiomatic && ts.body.is_some() {
-                    return Err(Error::old(
-                        &statement.first_token,
-                        "axioms cannot have proof blocks",
-                    ));
+                    return Err(statement.error("axioms cannot have proof blocks"));
                 }
 
                 // Figure out the range for this theorem definition.
@@ -594,10 +591,7 @@ impl Environment {
                 let mut staged = self.child(statement.first_line(), true);
                 if let Some(name) = &ts.name {
                     if arg_names.contains(name) || type_params.contains(name) {
-                        return Err(Error::old(
-                            &statement.first_token,
-                            "theorem name conflicts with a parameter",
-                        ));
+                        return Err(statement.error("theorem name conflicts with a parameter"));
                     }
                     let lambda_claim = AcornValue::new_lambda(arg_types, unbound_claim);
                     staged.bindings.add_constant(
@@ -792,16 +786,16 @@ impl Environment {
 
             StatementInfo::FunctionSatisfy(fss) => {
                 if fss.name == "new" || fss.name == "self" {
-                    return Err(Error::old(
-                        &fss.name_token,
-                        &format!("'{}' is a reserved word. use a different name", fss.name),
-                    ));
+                    return Err(fss.name_token.error(&format!(
+                        "'{}' is a reserved word. use a different name",
+                        fss.name
+                    )));
                 }
                 if self.bindings.name_in_use(&fss.name) {
-                    return Err(Error::old(
-                        &statement.first_token,
-                        &format!("function name '{}' already defined in this scope", fss.name),
-                    ));
+                    return Err(statement.error(&format!(
+                        "function name '{}' already defined in this scope",
+                        fss.name
+                    )));
                 }
 
                 // Figure out the range for this function definition.
@@ -825,13 +819,10 @@ impl Environment {
                         None,
                     )?;
 
-                let unbound_condition = condition
-                    .ok_or_else(|| Error::old(&statement.first_token, "missing condition"))?;
+                let unbound_condition =
+                    condition.ok_or_else(|| statement.error("missing condition"))?;
                 if unbound_condition.get_type() != AcornType::Bool {
-                    return Err(Error::old(
-                        &fss.condition.token(),
-                        "condition must be a boolean",
-                    ));
+                    return Err(fss.condition.error("condition must be a boolean"));
                 }
 
                 // The return variable shouldn't become a block arg, because we're trying to
@@ -893,10 +884,7 @@ impl Environment {
             StatementInfo::Structure(ss) => {
                 self.add_other_lines(statement);
                 if self.bindings.has_type_name(&ss.name) {
-                    return Err(Error::old(
-                        &statement.first_token,
-                        "type name already defined in this scope",
-                    ));
+                    return Err(statement.error("type name already defined in this scope"));
                 }
 
                 // Parse the fields before adding the struct type so that we can't have
@@ -907,13 +895,10 @@ impl Environment {
                     let field_type = self.bindings.evaluate_type(project, &field_type_expr)?;
                     field_types.push(field_type.clone());
                     if TokenType::from_magic_method_name(&field_name_token.text()).is_some() {
-                        return Err(Error::old(
-                            field_name_token,
-                            &format!(
-                                "'{}' is a reserved word. use a different name",
-                                field_name_token.text()
-                            ),
-                        ));
+                        return Err(field_name_token.error(&format!(
+                            "'{}' is a reserved word. use a different name",
+                            field_name_token.text()
+                        )));
                     }
                     let member_fn_name = format!("{}.{}", ss.name, field_name_token.text());
                     member_fn_names.push(member_fn_name);
@@ -1021,10 +1006,7 @@ impl Environment {
             StatementInfo::Inductive(is) => {
                 self.add_other_lines(statement);
                 if self.bindings.has_type_name(&is.name) {
-                    return Err(Error::old(
-                        &statement.first_token,
-                        "type name already defined in this scope",
-                    ));
+                    return Err(statement.error("type name already defined in this scope"));
                 }
                 let range = Range {
                     start: statement.first_token.start_pos(),
@@ -1051,8 +1033,7 @@ impl Environment {
                         field != &inductive_type && field.refers_to(self.module_id, &is.name)
                     }) {
                         self.bindings.remove_data_type(&is.name);
-                        return Err(Error::old(
-                            name_token,
+                        return Err(name_token.error(
                             "recursive constructor fields must use the inductive type directly",
                         ));
                     }
@@ -1064,10 +1045,7 @@ impl Environment {
                     constructors.push((member_name, type_list));
                 }
                 if !has_base {
-                    return Err(Error::old(
-                        &statement.first_token,
-                        "inductive type must have a base case",
-                    ));
+                    return Err(statement.error("inductive type must have a base case"));
                 }
 
                 // Define the constructors.
@@ -1294,23 +1272,17 @@ impl Environment {
                 // Give a local name to the imported module
                 let local_name = is.components.last().unwrap();
                 if self.bindings.name_in_use(local_name) {
-                    return Err(Error::old(
-                        &statement.first_token,
-                        &format!(
-                            "imported name '{}' already defined in this scope",
-                            local_name
-                        ),
-                    ));
+                    return Err(statement.error(&format!(
+                        "imported name '{}' already defined in this scope",
+                        local_name
+                    )));
                 }
                 let full_name = is.components.join(".");
                 let module_id = match project.load_module_by_name(&full_name) {
                     Ok(module_id) => module_id,
                     Err(LoadError(s)) => {
                         // The error is with the import statement itself, like a circular import.
-                        return Err(Error::old(
-                            &statement.first_token,
-                            &format!("import error: {}", s),
-                        ));
+                        return Err(statement.error(&format!("import error: {}", s)));
                     }
                 };
                 if project.get_bindings(module_id).is_none() {
@@ -1340,29 +1312,25 @@ impl Environment {
                 match self.bindings.get_type_for_name(&cs.name) {
                     Some(AcornType::Data(module, name)) => {
                         if module != &self.module_id {
-                            return Err(Error::old(
-                                &cs.name_token,
-                                "we can only bind members to types in the current module",
-                            ));
+                            return Err(cs
+                                .name_token
+                                .error("we can only bind members to types in the current module"));
                         }
                         if name != &cs.name {
-                            return Err(Error::old(
-                                &cs.name_token,
-                                "we cannot bind members to type aliases",
-                            ));
+                            return Err(cs
+                                .name_token
+                                .error("we cannot bind members to type aliases"));
                         }
                     }
                     Some(_) => {
-                        return Err(Error::old(
-                            &cs.name_token,
-                            &format!("we can only bind members to data types"),
-                        ));
+                        return Err(cs
+                            .name_token
+                            .error(&format!("we can only bind members to data types")));
                     }
                     None => {
-                        return Err(Error::old(
-                            &cs.name_token,
-                            &format!("undefined type name '{}'", cs.name),
-                        ));
+                        return Err(cs
+                            .name_token
+                            .error(&format!("undefined type name '{}'", cs.name)));
                     }
                 };
                 for substatement in &cs.body.statements {
@@ -1384,8 +1352,7 @@ impl Environment {
                             )?;
                         }
                         _ => {
-                            return Err(Error::old(
-                                &substatement.first_token,
+                            return Err(substatement.error(
                                 "only let and define statements are allowed in class bodies",
                             ));
                         }
@@ -1401,10 +1368,7 @@ impl Environment {
                     self.bindings.set_default(module, typename);
                     Ok(())
                 } else {
-                    Err(Error::old(
-                        &ds.type_expr.token(),
-                        "numerals type must be a data type",
-                    ))
+                    Err(ds.type_expr.error("numerals type must be a data type"))
                 }
             }
 
@@ -1484,10 +1448,7 @@ impl Environment {
                         self.bindings
                             .evaluate_pattern(project, &scrutinee_type, pattern)?;
                     if indices.contains(&index) {
-                        return Err(Error::old(
-                            pattern.token(),
-                            "duplicate pattern in match statement",
-                        ));
+                        return Err(pattern.error("duplicate pattern in match statement"));
                     }
                     indices.push(index);
                     if total == indices.len() {
@@ -1496,10 +1457,9 @@ impl Environment {
                     cases.push((constructor, args, pattern, body));
                 }
                 if !all_cases {
-                    return Err(Error::old(
-                        ms.scrutinee.token(),
-                        "not all cases are covered in match statement",
-                    ));
+                    return Err(ms
+                        .scrutinee
+                        .error("not all cases are covered in match statement"));
                 }
                 // Build every case before changing the parent. A rejected body must not
                 // leave earlier case claims or partial proof obligations behind.

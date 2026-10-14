@@ -1625,10 +1625,7 @@ impl BindingMap {
 
         if let Some(name) = function_name {
             if self.name_in_use(name) {
-                return Err(Error::old(
-                    value_expr.token(),
-                    "function name conflicts with a type parameter",
-                ));
+                return Err(value_expr.error("function name conflicts with a type parameter"));
             }
         }
 
