@@ -91,7 +91,8 @@ fn unavailable_import_errors_name_the_constant_that_code_generation_needs() {
         .get_env_by_id(hidden)
         .unwrap()
         .bindings
-        .old_get_constant_value("secret")
+        .get_constant_value("secret")
+        .and_then(|potential| potential.resolved())
         .unwrap();
     let error = project
         .get_env_by_id(main)
