@@ -47,8 +47,8 @@
       },
       {
         "category": "Venticorn",
-        "command": "acorn.displayAssistant",
-        "title": "Assistant: Display",
+        "command": "acorn.showAssistant",
+        "title": "Show Assistant",
         "description": "Show the assistant.",
         "icon": {
           "light": "images/venticorn-assistant-color.png",
@@ -58,7 +58,7 @@
       {
         "category": "Venticorn",
         "command": "acorn.toggleAssistant",
-        "title": "Assistant: Toggle",
+        "title": "Toggle Assistant",
         "description": "Toggle whether the assistant is displayed."
       },
       {
@@ -85,7 +85,7 @@
     "menus": {
       "editor/title": [
         {
-          "command": "acorn.displayAssistant",
+          "command": "acorn.showAssistant",
           "group": "navigation",
           "when": "editorLangId == acorn"
         }

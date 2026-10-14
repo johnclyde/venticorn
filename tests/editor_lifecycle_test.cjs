@@ -181,7 +181,7 @@ test("a stopped initialized client receives no document requests or restart", as
   const extension = loadExtension();
   await extension.activate(extension.context);
   const { state } = extension;
-  assert.equal(state.commands.length, 6);
+  assert.equal(state.commands.length, 7);
   assert.equal(state.notifications.length, 0);
   state.client.running = false;
   for (const handler of [...state.save, ...state.open]) {
