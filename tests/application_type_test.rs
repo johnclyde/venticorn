@@ -42,8 +42,8 @@ fn parametrization_updates_recursive_constant_types() {
     assert_eq!(
         generic.get_type(),
         AcornType::new_functional(
-            vec![AcornType::Parameter("T".into())],
-            AcornType::Parameter("T".into())
+            vec![AcornType::Variable("T".into(), None)],
+            AcornType::Variable("T".into(), None)
         )
     );
 }

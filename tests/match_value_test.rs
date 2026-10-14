@@ -24,13 +24,13 @@ fn match_case_binders_follow_type_transformations() {
     let AcornValue::Match(_, cases) = &parameterized else {
         panic!("expected a match")
     };
-    assert_eq!(cases[0].0, vec![AcornType::Parameter("T".to_string())]);
+    assert_eq!(cases[0].0, vec![AcornType::Variable("T".to_string(), None)]);
     let specialized = parameterized.specialize(&[("T".to_string(), AcornType::Bool)]);
     assert_eq!(specialized, bound_match(AcornType::Bool));
     let placeholder = parameterized.to_placeholder();
     assert_eq!(
         placeholder,
-        bound_match(AcornType::Placeholder("T".to_string()))
+        bound_match(AcornType::Arbitrary("T".to_string(), None))
     );
 }
 
