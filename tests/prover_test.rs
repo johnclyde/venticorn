@@ -18,7 +18,11 @@ mod prover_test {
         let module_id = project
             .load_module_by_name(module_name)
             .expect("load failed");
-        let env = project.get_env_by_id(module_id).unwrap();
+        let env = match project.get_module_by_id(module_id) {
+            Module::Ok(env) => env,
+            Module::Error(error) => panic!("module loading error: {}", error),
+            _ => panic!("module did not finish loading"),
+        };
         let node = env.get_node_by_name(goal_name);
         let facts = node.usable_facts(project);
         let goal_context = node.goal_context().unwrap();
@@ -1594,5 +1598,37 @@ mod prover_test {
             theorem { b }
         "#,
         );
+    }
+    #[test]
+    fn generated_direct_conclusion_replays_as_a_valid_proof() {
+        // A final equality-resolution step has a single source. Reversing it
+        // must not turn the derived conclusion into an assumed premise.
+        let text = r#"
+            type Foo: axiom
+            let zero: Foo = axiom
+            let three: Foo = axiom
+            let mul: (Foo, Foo) -> Foo = axiom
+            define threeven(n: Foo) -> Bool {
+                exists(d: Foo) { mul(three, d) = n }
+            }
+            axiom mul_zero_right(a: Foo, b: Foo) {
+                b = zero -> mul(a, b) = zero
+            }
+            theorem goal { threeven(zero) }
+        "#;
+        let (outcome, generated) = prove_as_main(text, "goal");
+        assert_eq!(outcome, Outcome::Success);
+        let generated = generated.expect("proof generation failed");
+        assert_eq!(generated, ["exists(k0: Foo) { zero = k0 }"]);
+
+        // Parse and verify the emitted proof in its original theorem context.
+        // A deliberately false emitted line must also be checked as an obligation.
+        let replayed = format!("{} by {{\n{}\n}}", text.trim_end(), generated.join("\n"));
+        verify_succeeds(&replayed);
+        let invalid = format!(
+            "{} by {{ exists(k0: Foo) {{ zero != zero }} }}",
+            text.trim_end()
+        );
+        verify_fails(&invalid);
     }
 }
