@@ -761,13 +761,13 @@ impl BindingMap {
         value: &AcornValue,
         source: &dyn ErrorSource,
     ) -> compilation::Result<(usize, usize)> {
-        let info = match value {
-            AcornValue::Unresolved(module, name, _, _) => {
-                let bindings = if *module == self.module {
+        let info = match value.as_simple_constant() {
+            Some((module, name)) => {
+                let bindings = if module == self.module {
                     &self
                 } else {
                     project
-                        .get_bindings(*module)
+                        .get_bindings(module)
                         .ok_or_else(|| source.error("constructor module is unavailable"))?
                 };
                 bindings
@@ -1173,15 +1173,19 @@ impl BindingMap {
         let entity = bindings.evaluate_name(name_token, project, &Stack::new(), None)?;
         match entity {
             NamedEntity::Value(value) => {
+                if matches!(&value, AcornValue::Unresolved(_, _, _, params) if !params.is_empty()) {
+                    return Err(name_token.error("direct imports of generic constants are not supported; import the module and use a qualified name"));
+                }
                 // Add a local alias that mirrors this constant's name in the imported module.
-                match value {
-                    AcornValue::Unresolved(ext_module, ext_name, acorn_type, _) => {
-                        self.add_alias(&name_token.text(), ext_module, ext_name, acorn_type);
-                    }
-                    _ => {
-                        // I don't see how this branch can be reached.
-                        return Err(name_token.error("cannot import non-constant values"));
-                    }
+                if let Some((ext_module, ext_name)) = value.as_simple_constant() {
+                    self.add_alias(
+                        name_token.text(),
+                        ext_module,
+                        ext_name.to_string(),
+                        value.get_type(),
+                    );
+                } else {
+                    return Err(name_token.error("cannot import non-constant values"));
                 }
                 Ok(())
             }
