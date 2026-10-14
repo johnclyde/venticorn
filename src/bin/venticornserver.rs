@@ -403,7 +403,13 @@ impl Backend {
                     }
                     return;
                 }
-                doc.save(&text)
+                match doc.save(&text) {
+                    Ok(version) => version,
+                    Err(error) => {
+                        log(&format!("save ignored for {}: {}", url, error));
+                        return;
+                    }
+                }
             }
         };
         self.set_search_task(None).await;
@@ -679,7 +685,7 @@ impl Backend {
         let result = doc
             .write()
             .await
-            .advance_version(params.text_document.version);
+            .apply_changes(&params.content_changes, params.text_document.version);
         match result {
             Ok(()) => self.set_search_task(None).await,
             Err(error) => log(&format!("change ignored for {}: {}", url, error)),
@@ -729,8 +735,9 @@ impl Backend {
         let mut prev_start = 0;
         for token in tokens {
             let line = token.line_number as u32;
-            let start = token.start as u32;
-            let length = token.len as u32;
+            // The scanner reports byte offsets; LSP positions count UTF-16 code units.
+            let start = token.line[..token.start as usize].encode_utf16().count() as u32;
+            let length = token.text().encode_utf16().count() as u32;
             let token_type = match token.lsp_type_u32() {
                 Some(t) => t,
                 None => continue,
