@@ -11,7 +11,12 @@ pub struct FunctionType {
 impl fmt::Display for FunctionType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let lhs = if self.arg_types.len() == 1 {
-            format!("{}", self.arg_types[0])
+            let argument = &self.arg_types[0];
+            if argument.is_functional() {
+                format!("({})", argument)
+            } else {
+                argument.to_string()
+            }
         } else {
             format!("({})", AcornType::types_to_str(&self.arg_types))
         };
