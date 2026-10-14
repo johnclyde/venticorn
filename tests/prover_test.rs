@@ -1475,4 +1475,33 @@ mod prover_test {
         "#;
         verify_fails(text);
     }
+    #[test]
+    fn test_prove_constraint_equation_with_distinct_witnesses() {
+        let text = r#"
+        let left: Bool = axiom
+        let right: Bool = axiom
+        axiom { left != right }
+        structure Foo {
+            first: Bool
+            second: Bool
+        } constraint {
+            first != second
+        }
+        theorem goal(f: Foo) {
+            f.first != f.second
+        }
+        "#;
+        verify_succeeds(text);
+    }
+    #[test]
+    fn test_boolean_inequality_nonemptiness_without_witnesses_is_not_yet_proved() {
+        verify_fails(
+            "structure Foo {\n first: Bool\n second: Bool\n} constraint { first != second }",
+        );
+    }
+
+    #[test]
+    fn test_prove_disjunctive_constraint_equation() {
+        verify_succeeds("structure Foo {\n first: Bool\n second: Bool\n} constraint { first or second }\ntheorem goal(f: Foo) { f.first or f.second }");
+    }
 }
