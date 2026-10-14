@@ -195,3 +195,21 @@ fn import_resolution_errors_cover_the_whole_statement() {
         "import error",
     );
 }
+
+#[test]
+fn constructor_identity_errors_cover_the_complete_pattern() {
+    assert_diagnostic(
+        "inductive Foo {\n bar\n }\ninductive Other {\n wrong(Bool)\n }\ndefine f(v: Foo) -> Bool { match v { Other.wrong(b) { b } } }",
+        "Other.wrong(b)",
+        "expected type Foo",
+    );
+}
+
+#[test]
+fn application_result_type_errors_cover_the_function_expression() {
+    assert_diagnostic(
+        "type Thing: axiom\nlet f: Bool -> Bool = axiom\nlet bad: Thing = (f)(true)",
+        "(f)",
+        "expected type Thing",
+    );
+}
