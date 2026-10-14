@@ -249,7 +249,19 @@ impl Project {
         self.add_target_by_ref(&ModuleRef::Name(module_name.to_string()))
     }
 
-    fn add_target_by_path(&mut self, path: &Path) -> Result<(), LoadError> {
+    // Resolve real files before deciding whether they belong to the library. This
+    // keeps relative paths and symlinks identical to imports of the same module.
+    pub fn add_target_by_path(&mut self, path: &Path) -> Result<(), LoadError> {
+        let canonical;
+        let path = if self.use_filesystem {
+            canonical = path.canonicalize()?;
+            if !canonical.is_file() {
+                return Err(LoadError(format!("not a file: {}", path.display())));
+            }
+            canonical.as_path()
+        } else {
+            path
+        };
         let module_ref = self.module_ref_from_path(path)?;
         self.add_target_by_ref(&module_ref);
         Ok(())
