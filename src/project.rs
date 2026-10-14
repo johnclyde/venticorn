@@ -262,7 +262,15 @@ impl Project {
         } else {
             path
         };
-        let module_ref = self.module_ref_from_path(path)?;
+        // Legacy projects keep lexical roots and editor overlay keys. Reconcile
+        // canonical file targets here without changing editor path identities.
+        let canonical_root = if self.use_filesystem && !path.starts_with(&self.library_root) {
+            self.library_root.canonicalize().ok()
+        } else {
+            None
+        };
+        let root = canonical_root.as_deref().unwrap_or(&self.library_root);
+        let module_ref = Self::module_ref_from_path_in_root(path, root)?;
         self.add_target_by_ref(&module_ref);
         Ok(())
     }
@@ -616,13 +624,17 @@ impl Project {
 
     // Returns a load error if this isn't a valid path for an acorn file.
     pub fn module_ref_from_path(&self, path: &Path) -> Result<ModuleRef, LoadError> {
+        Self::module_ref_from_path_in_root(path, &self.library_root)
+    }
+
+    fn module_ref_from_path_in_root(path: &Path, root: &Path) -> Result<ModuleRef, LoadError> {
         if path.extension() != Some(std::ffi::OsStr::new("ac")) {
             return Err(LoadError(format!(
                 "path {} does not end with .ac",
                 path.display()
             )));
         }
-        let relative = match path.strip_prefix(&self.library_root) {
+        let relative = match path.strip_prefix(root) {
             Ok(relative) => relative,
             Err(_) => return Ok(ModuleRef::File(path.to_path_buf())),
         };
