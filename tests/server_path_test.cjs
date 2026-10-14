@@ -71,3 +71,39 @@ test("Windows cached executables never use chmod", async () => {
   const context = { extension: { packageJSON: { version: "0.1.0" } }, globalStorageUri: { fsPath: "/storage" } };
   assert.equal(path.basename(await server.getServerPath(context)), "venticornserver-v0.1.0-win32-x64.exe");
 });
+
+test("cache clearing removes only owned assets and preserves SERVER_PATH", async (t) => {
+  const env = {};
+  const f = fixture(t, env);
+  const bin = path.join(f.directory, "bin");
+  fs.mkdirSync(bin);
+  const keep = "venticornserver-v0.1.0-linux-x64";
+  env.SERVER_PATH = path.join(bin, keep);
+  for (const name of [keep, "venticornserver-v0.2.0-darwin-arm64", "venticornserver-v0.2.0-win32-x64.exe", "notes.txt", "venticornserver-v0.2.0-linux-x64.partial"]) fs.writeFileSync(path.join(bin, name), name);
+  fs.mkdirSync(path.join(bin, "venticornserver-v0.3.0-linux-x64"));
+  fs.symlinkSync(env.SERVER_PATH, path.join(bin, "venticornserver-v0.4.0-linux-x64"));
+  assert.equal(await f.clearServerCache(f.context), 2);
+  assert.equal(fs.readFileSync(env.SERVER_PATH, "utf8"), keep);
+  assert.ok(fs.existsSync(path.join(bin, "notes.txt")));
+  assert.ok(fs.existsSync(path.join(bin, "venticornserver-v0.2.0-linux-x64.partial")));
+  assert.equal(fs.readdirSync(bin).length, 5);
+});
+
+test("cache clearing does not create storage or follow a directory symlink", async (t) => {
+  const f = fixture(t);
+  assert.equal(await f.clearServerCache(f.context), 0);
+  assert.deepEqual(fs.readdirSync(f.directory), []);
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "venticorn-cache-elsewhere-"));
+  t.after(() => fs.rmSync(elsewhere, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(elsewhere, "venticornserver-v0.1.0-linux-x64"), "keep");
+  fs.symlinkSync(elsewhere, path.join(f.directory, "bin"), "dir");
+  await assert.rejects(f.clearServerCache(f.context), /not a regular directory/);
+  assert.equal(fs.readdirSync(elsewhere).length, 1);
+});
+
+test("overlapping cache operations are rejected without downloading", async (t) => {
+  const f = fixture(t);
+  const first = f.clearServerCache(f.context);
+  await assert.rejects(f.clearServerCache(f.context), /Wait for the current/);
+  assert.equal(await first, 0);
+});

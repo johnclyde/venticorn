@@ -6,6 +6,7 @@ import type { ExtensionContext } from "vscode";
 import { downloadServer, DownloadProgress } from "./download";
 
 const downloads = new Map<string, Promise<string>>();
+let clearingCache = false;
 
 const supportedPlatforms = new Set(["linux-x64", "win32-x64", "darwin-arm64"]);
 export const localBuildHelp = "Build locally with cargo build --locked --release --bin venticornserver, set SERVER_PATH to the binary's absolute path before starting VS Code, then reload the window.";
@@ -55,12 +56,18 @@ export async function getServerPath(context: ExtensionContext, showDownloadProgr
     log(`Using configured language server: ${process.env.SERVER_PATH}`);
     return process.env.SERVER_PATH;
   }
+  if (clearingCache) {
+    throw new Error("The language server cache is being cleared. Try again when it finishes.");
+  }
   const asset = serverAsset(context.extension.packageJSON.version);
   const serverPath = path.join(context.globalStorageUri.fsPath, "bin", asset);
   if (await isCachedServer(serverPath)) {
     await ensureExecutable(serverPath);
     log(`Using cached language server: ${serverPath}`);
     return serverPath;
+  }
+  if (clearingCache) {
+    throw new Error("The language server cache is being cleared. Try again when it finishes.");
   }
   let pending = downloads.get(serverPath);
   if (!pending) {
@@ -88,4 +95,44 @@ export async function getServerPath(context: ExtensionContext, showDownloadProgr
     downloads.set(serverPath, pending);
   }
   return pending;
+}
+
+// Clear only completed, owned server assets. Never start a client or download here.
+export async function clearServerCache(context: ExtensionContext): Promise<number> {
+  if (clearingCache || downloads.size > 0) {
+    throw new Error("Wait for the current language server download or cache operation to finish.");
+  }
+  clearingCache = true;
+  try {
+    const directory = path.join(context.globalStorageUri.fsPath, "bin");
+    let entries: string[];
+    try {
+      const stat = await fs.promises.lstat(directory);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        throw new Error("The language server cache directory is not a regular directory.");
+      }
+      entries = await fs.promises.readdir(directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+      throw error;
+    }
+    const override = process.env.SERVER_PATH;
+    const protectedPath = override ? path.resolve(override) : undefined;
+    const protectedRealPath = protectedPath
+      ? await fs.promises.realpath(protectedPath).catch(() => protectedPath) : undefined;
+    let removed = 0;
+    for (const name of entries) {
+      if (!/^venticornserver-v\d+\.\d+\.\d+-(?:linux-x64|darwin-arm64|win32-x64\.exe)$/.test(name)) continue;
+      const candidate = path.join(directory, name);
+      if (path.resolve(candidate) === protectedPath) continue;
+      const stat = await fs.promises.lstat(candidate);
+      if (!stat.isFile() || stat.isSymbolicLink()) continue;
+      if (protectedRealPath && await fs.promises.realpath(candidate) === protectedRealPath) continue;
+      await fs.promises.unlink(candidate);
+      removed++;
+    }
+    return removed;
+  } finally {
+    clearingCache = false;
+  }
 }
