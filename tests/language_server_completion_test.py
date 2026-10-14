@@ -85,6 +85,35 @@ class CompletionTest(unittest.TestCase):
         self.change(4, (5, 0), (5, 3), "ali")
         self.assertEqual(self.complete(5, 3), [])
 
+    def test_unsaved_member_and_module_prefixes_use_canonical_bindings(self):
+        self.open("from nat import Nat, saved\nlet alias: Nat = saved\n\n")
+        self.change(2, (2, 0), (2, 0), "alias.s")
+        self.assertEqual(self.complete(2, 7), ["suc"])
+        self.change(3, (2, 0), (2, 7), "(nat.N")
+        self.assertEqual(self.complete(2, 6), ["Nat"])
+        self.change(4, (2, 0), (2, 6), "// nat.N")
+        self.assertEqual(self.complete(2, 8), [])
+
+    def test_utf16_cursor_after_non_bmp_identifier_reads_the_exact_prefix(self):
+        self.open("let a𐐨value: Bool = axiom\nlet saved: Bool = axiom\n\n")
+        prefix = "a𐐨value and sav"
+        self.change(2, (2, 0), (2, 0), prefix + "ed")
+        column = len(prefix.encode("utf-16-le")) // 2
+        self.assertEqual(self.complete(2, column), ["saved"], self.session.notifications + self.session.errors)
+        self.assertEqual(self.complete(2, 2), [])
+
+    def test_external_files_and_malformed_import_prefixes_stay_bounded(self):
+        self.uri = self.library.parent.joinpath(self.library.name + "-external.ac").as_uri()
+        self.open("from nat import Nat\n\n")
+        previous = ""
+        version = 2
+        for prefix in ["Nat.s", "from ../nat import N", "from nat import Nat.s", "from nat import (N", "Nat..s", "from nat import Nat,sav"]:
+            self.change(version, (1, 0), (1, len(previous)), prefix)
+            expected = ["suc"] if prefix == "Nat.s" else (["saved"] if prefix.endswith(",sav") else [])
+            self.assertEqual(self.complete(1, len(prefix)), expected)
+            previous = prefix
+            version += 1
+
     def test_unknown_documents_and_invalid_positions_have_no_candidates(self):
         self.open("from nat import Nat\n// a😀b\n")
         self.assertEqual(self.complete(1, 5), [])  # Inside the surrogate pair.

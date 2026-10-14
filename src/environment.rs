@@ -257,18 +257,16 @@ impl Environment {
 
     pub fn get_completions(
         &self,
-        _project: &Project,
+        project: &Project,
         line: u32,
         prefix: &str,
     ) -> Option<Vec<CompletionItem>> {
-        Some(
-            self.bindings
-                .get_completions_visible(prefix, false, &|name| {
-                    self.definition_ranges
-                        .get(name)
-                        .map_or(true, |range| range.start.line <= line)
-                }),
-        )
+        self.bindings
+            .get_completions_visible(project, prefix, false, &|name| {
+                self.definition_ranges
+                    .get(name)
+                    .map_or(true, |range| range.start.line <= line)
+            })
     }
 
     // Adds a conditional block to the environment.

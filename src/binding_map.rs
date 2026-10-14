@@ -429,19 +429,122 @@ impl BindingMap {
         }
     }
 
-    // Complete one identifier with deterministic ordering.
-    pub fn get_completions(&self, prefix: &str, importing: bool) -> Vec<CompletionItem> {
-        self.get_completions_visible(prefix, importing, &|_| true)
+    // Members are looked up through the type's canonical defining module.
+    fn get_member_completions(
+        &self,
+        project: &Project,
+        data_type: &AcornType,
+        prefix: &str,
+        instance: Option<&AcornValue>,
+        visible: &dyn Fn(&str) -> bool,
+    ) -> Option<Vec<CompletionItem>> {
+        let (module, type_name) = match data_type {
+            AcornType::Data(module, name) => (*module, name),
+            _ => return None,
+        };
+        let bindings = if module == self.module {
+            self
+        } else {
+            project.get_bindings(module)?
+        };
+        let full_prefix = format!("{}.{}", type_name, prefix);
+        let mut items = vec![];
+        for name in keys_with_prefix(&bindings.identifier_types, &full_prefix) {
+            if module == self.module && !visible(name) {
+                continue;
+            }
+            let member = name.strip_prefix(&format!("{}.", type_name))?;
+            if member.contains('.') {
+                continue;
+            }
+            if let Some(instance) = instance {
+                let token = TokenType::Identifier.new_token(member);
+                if self
+                    .evaluate_instance_variable(&token, project, instance.clone(), member)
+                    .is_err()
+                {
+                    continue;
+                }
+            }
+            items.push(CompletionItem {
+                label: member.to_string(),
+                kind: Some(CompletionItemKind::FIELD),
+                ..Default::default()
+            });
+        }
+        Some(items)
+    }
+
+    // Complete an identifier or name chain. Import completion exposes only canonical exports.
+    pub fn get_completions(
+        &self,
+        project: &Project,
+        prefix: &str,
+        importing: bool,
+    ) -> Option<Vec<CompletionItem>> {
+        self.get_completions_visible(project, prefix, importing, &|_| true)
     }
 
     pub fn get_completions_visible(
         &self,
+        project: &Project,
         prefix: &str,
         importing: bool,
         visible: &dyn Fn(&str) -> bool,
-    ) -> Vec<CompletionItem> {
+    ) -> Option<Vec<CompletionItem>> {
         if prefix.is_empty() {
-            return vec![];
+            return None;
+        }
+        if let Some((namespace, partial)) = prefix.rsplit_once('.') {
+            if importing || partial.is_empty() || namespace.split('.').any(str::is_empty) {
+                return None;
+            }
+            let mut entity = None;
+            for name in namespace.split('.') {
+                let local_name = match &entity {
+                    None => Some(name.to_string()),
+                    Some(NamedEntity::Type(AcornType::Data(module, type_name)))
+                        if *module == self.module =>
+                    {
+                        Some(format!("{}.{}", type_name, name))
+                    }
+                    Some(NamedEntity::Value(value)) => match value.get_type() {
+                        AcornType::Data(module, type_name) if module == self.module => {
+                            Some(format!("{}.{}", type_name, name))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if local_name.as_deref().is_some_and(|name| !visible(name)) {
+                    return None;
+                }
+                let kind = if name.chars().all(|ch| ch.is_ascii_digit()) {
+                    TokenType::Numeral
+                } else {
+                    TokenType::Identifier
+                };
+                let token = kind.new_token(name);
+                entity = Some(
+                    self.evaluate_name(&token, project, &Stack::new(), entity)
+                        .ok()?,
+                );
+            }
+            return match entity? {
+                NamedEntity::Module(module) => project
+                    .get_bindings(module)?
+                    .get_completions(project, partial, true),
+                NamedEntity::Type(data_type) => {
+                    self.get_member_completions(project, &data_type, partial, None, visible)
+                }
+                NamedEntity::Value(value) => self.get_member_completions(
+                    project,
+                    &value.get_type(),
+                    partial,
+                    Some(&value),
+                    visible,
+                ),
+            };
         }
         let mut items = vec![];
         if !importing {
@@ -485,7 +588,19 @@ impl BindingMap {
                 ..Default::default()
             });
         }
-        items
+        if !importing {
+            for name in keys_with_prefix(&self.modules, prefix) {
+                if !visible(name) {
+                    continue;
+                }
+                items.push(CompletionItem {
+                    label: name.clone(),
+                    kind: Some(CompletionItemKind::MODULE),
+                    ..Default::default()
+                });
+            }
+        }
+        Some(items)
     }
 
     ////////////////////////////////////////////////////////////////////////////////

@@ -80,6 +80,92 @@ fn local_completion_preserves_aliases_keywords_and_proof_scope() {
 }
 
 #[test]
+fn member_and_module_completions_use_canonical_types() {
+    let mut project = project();
+    project
+        .update_file(
+            Path::new("/mock/main.ac").to_path_buf(),
+            "from nat import Nat, saved\ntype Renamed: Nat\nlet alias: Nat = saved\n",
+            1,
+        )
+        .unwrap();
+    project.expect_ok("main");
+    for (prefix, expected) in [
+        ("Nat.s", vec!["suc"]),
+        ("Renamed.s", vec!["suc"]),
+        ("alias.s", vec!["suc"]),
+        ("nat.N", vec!["Nat"]),
+        ("na", vec!["nat"]),
+        ("(sav", vec!["saved"]),
+        ("identity<Nat>(sav", vec!["saved"]),
+        ("from nat import Nat, sav", vec!["saved"]),
+        ("from nat import Nat,sav", vec!["saved"]),
+        // A nullary constructor is a static value, not an applicable instance member.
+        ("alias.z", vec![]),
+    ] {
+        assert_eq!(
+            labels(&project, "/mock/main.ac", 2, prefix),
+            expected,
+            "{prefix}"
+        );
+    }
+}
+
+#[test]
+fn completion_does_not_reuse_words_before_the_cursor_or_in_comments() {
+    let project = project();
+    for prefix in [
+        "Nat;",
+        "Nat ",
+        "// Nat.s",
+        "true // Nat.s",
+        "Nat..s",
+        ".Nat",
+        "missing.N",
+        "Bool.s",
+        "import nat",
+        "from nat N",
+        "from ../nat import sav",
+        "from nat import Nat.s",
+        "from nat import (sav",
+        "from nat import Nat,,sav",
+        "Nat.",
+    ] {
+        assert!(
+            labels(&project, "/mock/main.ac", 0, prefix).is_empty(),
+            "{prefix}"
+        );
+    }
+    assert!(project
+        .get_completions(Path::new("/missing/main.ac"), 0, "N")
+        .is_none());
+}
+
+#[test]
+fn completion_supports_external_modules_and_keeps_sibling_bindings_private() {
+    let mut project = project();
+    project.mock("/elsewhere/external.ac", "from nat import Nat\ntheorem first<T>(local: T) {\n local = local\n} by {\n // first\n}\ntheorem second(other: Nat) {\n other = other\n} by {\n // second\n}\n");
+    let reference = project
+        .module_ref_from_path(Path::new("/elsewhere/external.ac"))
+        .unwrap();
+    assert!(
+        project.get_env_by_ref(&reference).is_some(),
+        "external module did not load"
+    );
+    assert_eq!(
+        labels(&project, "/elsewhere/external.ac", 4, "loc"),
+        ["local"]
+    );
+    assert_eq!(labels(&project, "/elsewhere/external.ac", 4, "T"), ["T"]);
+    assert!(labels(&project, "/elsewhere/external.ac", 9, "loc").is_empty());
+    assert!(labels(&project, "/elsewhere/external.ac", 9, "T").is_empty());
+    assert_eq!(
+        labels(&project, "/elsewhere/external.ac", 9, "oth"),
+        ["other"]
+    );
+}
+
+#[test]
 fn completion_respects_declaration_order_and_nested_block_boundaries() {
     let mut project = project();
     project.mock("/mock/other.ac", "let imported: Bool = axiom\n");
@@ -164,6 +250,18 @@ from other import imported\n";
 }
 
 #[test]
+fn completion_hides_members_until_their_declarations() {
+    let mut project = Project::new_mock();
+    let source = "inductive Local {\n zero\n}\nlet value: Local = axiom\n// before member\nclass Local {\n define later(self) -> Local { self }\n}\n// after member\n";
+    project.mock("/mock/main.ac", source);
+    project.expect_ok("main");
+    for prefix in ["Local.la", "value.la"] {
+        assert!(labels(&project, "/mock/main.ac", 4, prefix).is_empty());
+        assert_eq!(labels(&project, "/mock/main.ac", 8, prefix), ["later"]);
+    }
+}
+
+#[test]
 fn local_aliases_are_visible_only_after_their_declaration() {
     let mut project = Project::new_mock();
     project.mock(
@@ -173,4 +271,28 @@ fn local_aliases_are_visible_only_after_their_declaration() {
     project.expect_ok("main");
     assert!(labels(&project, "/mock/main.ac", 0, "lat").is_empty());
     assert_eq!(labels(&project, "/mock/main.ac", 3, "lat"), ["later"]);
+}
+
+#[test]
+fn member_aliases_and_alias_namespaces_preserve_declaration_visibility() {
+    let mut project = Project::new_mock();
+    let source = "inductive Local {\n zero\n}\nlet value: Local = axiom\nclass Local {\n define base(self) -> Local { self }\n}\n// before aliases\nlet alias: Local = value\nclass Local {\n let later: Local -> Local = Local.base\n}\n// after aliases\n";
+    project.mock("/mock/main.ac", source);
+    project.expect_ok("main");
+    for prefix in ["Local.la", "value.la", "alias.ba", "alias.la"] {
+        assert!(
+            labels(&project, "/mock/main.ac", 7, prefix).is_empty(),
+            "{prefix}"
+        );
+        let expected = if prefix.ends_with("ba") {
+            "base"
+        } else {
+            "later"
+        };
+        assert_eq!(
+            labels(&project, "/mock/main.ac", 12, prefix),
+            [expected],
+            "{prefix}"
+        );
+    }
 }

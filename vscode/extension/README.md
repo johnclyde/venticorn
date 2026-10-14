@@ -22,6 +22,17 @@ If you close the Assistant, reopen it with the small acorn button in the editor 
 **Venticorn: Assistant: Display**, or **Ctrl+Enter** (**Cmd+Enter** on macOS). It stays closed until you
 reopen it or reload the editor window.
 
+## Name completion
+
+While editing a saved file, request suggestions for a partial name such as `Nat.s` or
+`from nat import N`. Completion uses evaluated library definitions and the nearest unchanged
+source line to find the current proof scope. It includes local aliases and proof parameters,
+and distinguishes instance members from type members. Comments and invalid cursor positions
+produce no suggestions.
+
+Save after changing declarations or block structure to refresh the available names and scopes.
+Completions for an entirely replaced document may remain unavailable until its next valid save.
+
 ## Language server setup
 
 The server executable is separate from the extension package. `SERVER_PATH` takes precedence; otherwise the extension reuses a matching cached server or downloads the exact extension version from `johnclyde/venticorn` releases. Packaged server platforms are Linux x64, Windows x64, and macOS Apple silicon.
