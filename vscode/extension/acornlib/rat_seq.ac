@@ -1,0 +1,48 @@
+from nat import Nat
+from rat import Rat
+numerals Rat
+
+// Infinite sequences of rational numbers can be represented as Nat -> Rat.
+
+// The Cauchy criterion for convergence.
+define close_after(seq: Nat -> Rat, n: Nat, epsilon: Rat) -> Bool {
+    forall(i: Nat, j: Nat) {
+        i > n and j > n -> (seq(i) - seq(j)).abs < epsilon
+    }
+}
+
+define converges(seq: Nat -> Rat) -> Bool {
+    forall(eps: Rat) {
+        eps.is_positive -> exists(n: Nat) {
+            close_after(seq, n, eps)
+        }
+    }
+}
+
+define bounded_above(seq: Nat -> Rat) -> Bool {
+    exists(r: Rat) {
+        forall(n: Nat) {
+            seq(n) < r
+        }
+    }
+}
+
+define bounded_below(seq: Nat -> Rat) -> Bool {
+    exists(r: Rat) {
+        forall(n: Nat) {
+            seq(n) > r
+        }
+    }
+}
+
+// Before proving this, it would help to have a few more theorems about sequences.
+// Like, a finite sequence over an ordered type must have a maximum and minimum.
+//
+// theorem converges_imp_bounded_above(seq: Nat -> Rat) {
+//     converges(seq) -> bounded_above(seq)
+// } by {
+//     let eps: Rat = 1/2
+//     let n: Nat satisfy {
+//         close_after(seq, n, eps)
+//     }
+// }

@@ -1,0 +1,1203 @@
+from nat import Nat
+from int import Int, gcd
+
+define is_reduced(a: Int, b: Int) -> Bool {
+    b > Int.0 and gcd(a, b) = Int.1
+}
+
+theorem denom_one_is_reduced(a: Int) {
+    is_reduced(a, Int.1)
+}
+
+structure Rat {
+    num: Int
+    denom: Int
+} constraint {
+    is_reduced(num, denom)
+}
+
+class Rat {
+    let 0: Rat = Rat.new(Int.0, Int.1)
+}
+
+theorem zero_num {
+    Rat.0.num = Int.0
+}
+
+theorem zero_denom {
+    Rat.0.denom = Int.1
+}
+
+theorem denom_nonzero(r: Rat) {
+    r.denom != Int.0
+} by {
+    r.denom > Int.0
+}
+
+theorem denom_positive(r: Rat) {
+    r.denom.is_positive
+} by {
+    r.denom > Int.0
+}
+
+class Rat {
+    let from_int: Int -> Rat = function(n: Int) {
+        Rat.new(n, Int.1)
+    }
+}
+
+theorem from_int_num(n: Int) {
+    Rat.from_int(n).num = n
+}
+
+theorem from_int_denom(n: Int) {
+    Rat.from_int(n).denom = Int.1
+}
+
+define cross_equals(a: Int, b: Int, c: Int, d: Int) -> Bool {
+    b != Int.0 and d != Int.0 and a * d = c * b
+}
+
+theorem cross_equals_trans(a: Int, b: Int, c: Int, d: Int, e: Int, f: Int) {
+    cross_equals(a, b, c, d) and cross_equals(c, d, e, f) -> cross_equals(a, b, e, f)
+} by {
+    a * d = b * c
+    c * f = d * e
+    a * d * f = b * c * f
+    a * d * f = b * d * e
+    a * f * d = b * e * d
+    d != Int.0
+    a * f = b * e
+}
+
+// Either zero, or a / b reduced to simplest form.
+let reduce(a: Int, b: Int) -> r: Rat satisfy {
+    if b = Int.0 {
+        r = Rat.0
+    } else {
+        cross_equals(r.num, r.denom, a, b)
+    }
+} by {
+    if b = Int.0 {
+        Rat.0 = Rat.0
+    } else {
+        // Factor out the gcd
+        gcd(a, b) != Int.0
+        let a1: Int satisfy {
+            a1 * gcd(a, b) = a
+        }
+        let b1: Int satisfy {
+            b1 * gcd(a, b) = b
+        }
+        b1 != Int.0
+        a * b = a * b1 * gcd(a, b)
+        a * b = b * a1 * gcd(a, b)
+        a * b1 * gcd(a, b) = b * a1 * gcd(a, b)
+        a * b1 = b * a1
+        cross_equals(a1, b1, a, b)
+        gcd(a1, b1) = Int.1
+
+        // To reduce we also need to swap signs if the denominator is negative
+        let a2: Int = a1 * int.unit_sign(b1)
+        let b2: Int = b1 * int.unit_sign(b1)
+        b2 = Int.from_nat(int.abs(b1))
+        b2 != Int.0
+        (a1 * int.unit_sign(b1)) * b1 = (b1 * int.unit_sign(b1)) * a1
+        cross_equals(a2, b2, a1, b1)
+        gcd(a2, b2) = Int.1 * Int.from_nat(int.abs(int.unit_sign(b1)))
+        Int.from_nat(int.abs(int.unit_sign(b1))) = Int.1
+        gcd(a2, b2) = Int.1
+        b2 != Int.0
+        is_reduced(a2, b2)
+
+        let r: Rat = Rat.new(a2, b2)
+        r.num = a2
+        r.denom = b2
+        cross_equals(r.num, r.denom, a2, b2)
+        cross_equals(a2, b2, a, b)
+        cross_equals(r.num, r.denom, a, b)
+    }
+}
+
+theorem cross_eq_imp_eq(r1: Rat, r2: Rat) {
+    cross_equals(r1.num, r1.denom, r2.num, r2.denom) -> r1 = r2
+} by {
+    // The r1 fields divide into the r2 ones
+    gcd(r1.num, r1.denom) = Int.1
+    int.divides(r1.denom, r1.num * r2.denom)
+    int.divides(r1.denom, r2.denom)
+    nat.divides(int.abs(r1.denom), int.abs(r2.denom))
+
+    // The r2 fields divide into the r1 ones
+    gcd(r2.num, r2.denom) = Int.1
+    int.divides(r2.denom, r2.num * r1.denom)
+    int.divides(r2.denom, r1.denom)
+    nat.divides(int.abs(r2.denom), int.abs(r1.denom))
+
+    // Prove int equality from nat equality
+    int.abs(r1.denom) = int.abs(r2.denom)
+    r1.denom.is_positive
+    r2.denom.is_positive
+    r1.denom = r2.denom
+
+    // Divide out the denominators
+    r1.num * r2.denom = r2.num * r1.denom
+    r1.num * r2.denom = r2.num * r2.denom
+    r2.denom != Int.0
+    r1.num = r2.num
+}
+
+class Rat {
+    let 1: Rat = Rat.from_int(Int.1)
+    let 2: Rat = Rat.from_int(Int.2)
+    let 3: Rat = Rat.from_int(Int.3)
+    let 4: Rat = Rat.from_int(Int.4)
+    let 5: Rat = Rat.from_int(Int.5)
+    let 6: Rat = Rat.from_int(Int.6)
+    let 7: Rat = Rat.from_int(Int.7)
+    let 8: Rat = Rat.from_int(Int.8)
+    let 9: Rat = Rat.from_int(Int.9)
+    let 10: Rat = Rat.from_int(Int.10)
+
+    define is_positive(self) -> Bool {
+        self.num.is_positive
+    }
+
+    define is_negative(self) -> Bool {
+        self.num.is_negative
+    }
+
+    define neg(self) -> Rat {
+        Rat.new(-self.num, self.denom)
+    }
+
+    define add(self, other: Rat) -> Rat {
+        reduce(self.num * other.denom + other.num * self.denom,
+               self.denom * other.denom)
+    }
+
+    define sub(self, other: Rat) -> Rat {
+        self + -other
+    }
+
+    define mul(self, other: Rat) -> Rat {
+        reduce(self.num * other.num, self.denom * other.denom)
+    }
+
+    // This defines the reciprocal of zero to be zero
+    define reciprocal(self) -> Rat {
+        reduce(self.denom, self.num)
+    }
+
+    // This is the weird version where dividing by zero gives you zero
+    define div(self, other: Rat) -> Rat {
+        self * other.reciprocal
+    }
+
+    define lt(self, other: Rat) -> Bool {
+        (other - self).is_positive
+    }
+
+    define lte(self, other: Rat) -> Bool {
+        self < other or self = other
+    }
+
+    define gt(self, other: Rat) -> Bool {
+        other < self
+    }
+
+    define gte(self, other: Rat) -> Bool {
+        other <= self
+    }
+
+    define read(self, other: Rat) -> Rat { Rat.10 * self + other }
+}
+
+theorem reduce_idempotent(r: Rat) {
+    reduce(r.num, r.denom) = r
+}
+
+theorem neg_is_reduced(r: Rat) {
+    is_reduced(-r.num, r.denom)
+} by {
+    r.denom > Int.0
+    gcd(-r.num, r.denom) = gcd(r.num, r.denom)
+}
+
+theorem neg_num(r: Rat) {
+    r.neg.num = -r.num
+}
+
+theorem neg_denom(r: Rat) {
+    r.neg.denom = r.denom
+}
+
+theorem add_zero_right(a: Rat) {
+    a + Rat.0 = a
+} by {
+    a + Rat.0 = reduce(a.num * Int.1 + Int.0 * a.denom, a.denom * Int.1)
+    a + Rat.0 = reduce(a.num, a.denom)
+}
+
+theorem add_zero_left(a: Rat) {
+    Rat.0 + a = a
+}
+
+theorem add_comm(a: Rat, b: Rat) {
+    a + b = b + a
+}
+
+theorem from_int_cancel(a: Int, b: Int) {
+    Rat.from_int(a) = Rat.from_int(b) -> a = b
+}
+
+theorem mul_comm(a: Rat, b: Rat) {
+    a * b = b * a
+}
+
+theorem rat_neg_one {
+    -Rat.1 = Rat.from_int(-Int.1)
+} by {
+    Rat.1 = Rat.new(Int.1, Int.1)
+    Rat.from_int(-Int.1) = Rat.new(-Int.1, Int.1)
+}
+
+theorem mul_neg_one_right(r: Rat) {
+    r * -Rat.1 = -r
+} by {
+    r * Rat.from_int(-Int.1) = -r
+}
+
+theorem mul_neg_one_left(r: Rat) {
+    -Rat.1 * r = -r
+}
+
+theorem mul_one_right(r: Rat) {
+    r * Rat.1 = r
+} by {
+    r * Rat.from_int(Int.1) = r
+}
+
+theorem mul_one_left(r: Rat) {
+    Rat.1 * r = r
+}
+
+theorem mul_int_eq_int_mul(a: Int, b: Int) {
+    Rat.from_int(a) * Rat.from_int(b) = Rat.from_int(a * b)
+}
+
+theorem unreduce_right(a: Int, b: Int) {
+    b != Int.0 -> exists(d: Int) {
+        reduce(a, b).num * d = a and reduce(a, b).denom * d = b
+    }
+} by {
+    let r: Rat = reduce(a, b)
+    cross_equals(r.num, r.denom, a, b)
+    r.num * b = a * r.denom
+    int.gcd(r.num, r.denom) = Int.1
+    int.divides(r.denom, r.num * b)
+    int.divides(r.denom, b)
+    let d: Int satisfy {
+        r.denom * d = b
+    }
+    r.num * b * d = a * r.denom * d
+    r.num * d * b = a * b
+    r.num * d = a
+}
+
+theorem unreduce_left(a: Int, b: Int) {
+    b != Int.0 -> exists(d: Int) {
+        d * reduce(a, b).num = a and d * reduce(a, b).denom = b
+    }
+} by {
+    let d: Int satisfy {
+        reduce(a, b).num * d = a and reduce(a, b).denom * d = b
+    }
+    d * reduce(a, b).num = a
+    d * reduce(a, b).denom = b
+}
+
+theorem mul_int_right(r: Rat, n: Int) {
+    r * Rat.from_int(n) = reduce(r.num * n, r.denom)
+} 
+
+theorem mul_int_left(n: Int, r: Rat) {
+    Rat.from_int(n) * r = reduce(n * r.num, r.denom)
+}
+
+theorem cross_eq_imp_reduce_eq(a: Int, b: Int, c: Int, d: Int) {
+    cross_equals(a, b, c, d) -> reduce(a, b) = reduce(c, d)
+} by {
+    b != Int.0
+    d != Int.0
+    let rab: Rat = reduce(a, b)
+    cross_equals(rab.num, rab.denom, a, b)
+    cross_equals(rab.num, rab.denom, c, d)
+    let rcd: Rat = reduce(c, d)
+    cross_equals(reduce(c, d).num, rcd.denom, c, d)
+    cross_equals(rcd.num, rcd.denom, c, d)
+    c * rab.denom = rab.num * d
+    cross_equals(rcd.num, rcd.denom, rab.num, rab.denom)
+    rab = rcd
+}
+
+theorem reduce_eq_imp_cross_eq(a: Int, b: Int, c: Int, d: Int) {
+    b != Int.0 and d != Int.0 and reduce(a, b) = reduce(c, d)
+        -> cross_equals(a, b, c, d)
+} by {
+    cross_equals(reduce(a, b).num, reduce(a, b).denom, a, b)
+    cross_equals(reduce(c, d).num, reduce(c, d).denom, c, d)
+}
+
+theorem mul_reduced_int_right(a: Int, b: Int, c: Int) {
+    reduce(a, b) * Rat.from_int(c) = reduce(a * c, b)
+} by {
+    if b = Int.0 {
+        reduce(a, b) = Rat.0
+        reduce(a * c, b) = Rat.0
+        reduce(a, b) * Rat.from_int(c) = reduce(a * c, b)
+    } else {
+        let r: Rat = reduce(a, b)
+        r * Rat.from_int(c) = reduce(r.num * c, r.denom)
+        cross_equals(r.num, r.denom, a, b)
+        r.num * b = r.denom * a
+        r.num * c * b = r.denom * (a * c)
+        reduce(r.num * c, r.denom) = reduce(a * c, b)
+        reduce(a, b) * Rat.from_int(c) = reduce(a * c, b)
+    }
+}
+
+theorem mul_reduced_int_left(a: Int, b: Int, c: Int) {
+    Rat.from_int(c) * reduce(a, b) = reduce(c * a, b)
+}
+
+theorem mul_int_right_cancel(r1: Rat, r2: Rat, n: Int) {
+    n != Int.0 and r1 * Rat.from_int(n) = r2 * Rat.from_int(n) -> r1 = r2
+} by {
+    r1 * Rat.from_int(n) = reduce(r1.num * n, r1.denom)
+    r2 * Rat.from_int(n) = reduce(r2.num * n, r2.denom)
+    reduce(r1.num * n, r1.denom) = reduce(r2.num * n, r2.denom)
+    r1.num * n * r2.denom = r1.denom * r2.num * n
+    r1.num * r2.denom = r1.denom * r2.num
+    r1 = r2
+}
+
+theorem mul_int_left_cancel(r1: Rat, r2: Rat, n: Int) {
+    n != Int.0 and Rat.from_int(n) * r1 = Rat.from_int(n) * r2 -> r1 = r2
+}
+
+theorem mul_reduced_nondegen(a: Int, b: Int, c: Int, d: Int) {
+    b != Int.0 and d != Int.0 ->
+        reduce(a, b) * reduce(c, d) = reduce(a * c, b * d)
+} by {
+    let e: Int satisfy {
+        reduce(a, b).num * e = a and reduce(a, b).denom * e = b
+    }
+    e != Int.0
+    let f: Int satisfy {
+        reduce(c, d).num * f = c and reduce(c, d).denom * f = d
+    }
+    f != Int.0
+
+    // Simplify numerator
+    let nums: Int = reduce(a, b).num * reduce(c, d).num
+    (reduce(a, b).num * e) * (reduce(c, d).num * f) = a * c
+    reduce(a, b).num * e * reduce(c, d).num * f = a * c
+    (reduce(a, b).num * reduce(c, d).num) * e * f = a * c
+    (reduce(a, b).num * reduce(c, d).num) * (e * f) = a * c
+    nums * (e * f) = a * c
+
+    // Simplify denominator
+    let denoms: Int = reduce(a, b).denom * reduce(c, d).denom
+    (reduce(a, b).denom * e) * (reduce(c, d).denom * f) = b * d
+    (reduce(a, b).denom * reduce(c, d).denom) * e * f = b * d
+    (reduce(a, b).denom * reduce(c, d).denom) * (e * f) = b * d
+    denoms * (e * f) = b * d
+
+    // Combining
+    nums * (b * d) = denoms * (a * c)
+    reduce(a, b).denom * reduce(c, d).denom != Int.0
+    denoms != Int.0
+    cross_equals(nums, denoms, a * c, b * d)
+    cross_equals(reduce(a, b).num * reduce(c, d).num,
+                 reduce(a, b).denom * reduce(c, d).denom,
+                 a * c, b * d)
+}
+
+theorem reduce_zero_num(a: Int) {
+    reduce(Int.0, a) = Rat.0
+} by {
+    if a = Int.0 {
+        reduce(Int.0, a) = Rat.0
+    } else {
+        Rat.0 = reduce(Int.0, Int.1)
+        cross_equals(Int.0, a, Int.0, Int.1)
+        reduce(Int.0, a) = reduce(Int.0, Int.1)
+        reduce(Int.0, a) = Rat.0
+    }
+}
+
+theorem mul_zero_right(r: Rat) {
+    r * Rat.0 = Rat.0
+} by {
+    r * Rat.0 = reduce(r.num * Int.0, r.denom)
+    r * Rat.0 = reduce(Int.0, r.denom)
+}
+
+theorem mul_reduced_degen(a: Int, b: Int, c: Int) {
+    reduce(a, b) * reduce(c, Int.0) = reduce(a * c, b * Int.0)
+} by {
+    reduce(c, Int.0) = Rat.0
+    reduce(a, b) * Rat.0 = Rat.0
+    reduce(a * c, b * Int.0) = Rat.0
+}
+
+theorem mul_reduced(a: Int, b: Int, c: Int, d: Int) {
+    reduce(a, b) * reduce(c, d) = reduce(a * c, b * d)
+} by {
+    if b = Int.0 or d = Int.0 {
+        // Degen cases
+        if b = Int.0 {
+            reduce(a, Int.0) * reduce(c, d) = reduce(a * c, Int.0 * d)
+            reduce(a, b) * reduce(c, d) = reduce(a * c, b * d)
+        } else {
+            d = Int.0
+            reduce(a, b) * reduce(c, Int.0) = reduce(a * c, b * Int.0)
+            reduce(a, b) * reduce(c, d) = reduce(a * c, b * d)
+        }
+    } else {
+        // Non-degen case
+        reduce(a, b) * reduce(c, d) = reduce(a * c, b * d)
+    }
+}
+
+theorem mul_assoc(a: Rat, b: Rat, c: Rat) {
+    (a * b) * c = a * (b * c)
+} by {
+    (a * b) * c = reduce(a.num * b.num * c.num, a.denom * b.denom * c.denom)
+    a * (b * c) = reduce(a.num * (b.num * c.num), a.denom * (b.denom * c.denom))
+}
+
+theorem add_int_eq_int_add(a: Int, b: Int) {
+    Rat.from_int(a) + Rat.from_int(b) = Rat.from_int(a + b)
+}
+
+theorem reduce_cancels_right(a: Int, b: Int, c: Int) {
+    c != Int.0 -> reduce(a, b) = reduce(a * c, b * c)
+} by {
+    if b = Int.0 {
+        reduce(a, b) = Rat.0
+        b * c = Int.0
+        reduce(a * c, b * c) = Rat.0
+        reduce(a, b) = reduce(a * c, b * c)
+    } else {
+        cross_equals(a, b, a * c, b * c)
+        reduce(a, b) = reduce(a * c, b * c)
+    }
+}
+
+theorem reduce_cancels_left(a: Int, b: Int, c: Int) {
+    c != Int.0 -> reduce(a, b) = reduce(c * a, c * b)
+}
+
+theorem add_reduce_right(r: Rat, a: Int, b: Int) {
+    b != Int.0 -> r + reduce(a, b) = reduce(r.num * b + a * r.denom, r.denom * b)
+} by {
+    let c: Int satisfy {
+        reduce(a, b).num * c = a and reduce(a, b).denom * c = b
+    }
+    c != Int.0
+    r + reduce(a, b) = reduce(r.num * reduce(a, b).denom + r.denom * reduce(a, b).num,
+                              reduce(a, b).denom * r.denom)
+    r + reduce(a, b) = reduce((r.num * reduce(a, b).denom + r.denom * reduce(a, b).num) * c,
+                              reduce(a, b).denom * r.denom * c)
+    r + reduce(a, b) = reduce(r.num * reduce(a, b).denom * c + r.denom * reduce(a, b).num * c,
+                              reduce(a, b).denom * r.denom * c)
+    r + reduce(a, b) = reduce(r.num * b + a * r.denom, r.denom * b)
+}
+
+theorem add_reduced(a: Int, b: Int, c: Int, d: Int) {
+    b != Int.0 and d != Int.0 -> reduce(a, b) + reduce(c, d) = reduce(a * d + b * c, b * d)
+} by {
+    reduce(a, b) + reduce(c, d) = reduce(reduce(a, b).num * d + c * reduce(a, b).denom,
+                                         reduce(a, b).denom * d)
+    let e: Int satisfy {
+        reduce(a, b).num * e = a and reduce(a, b).denom * e = b
+    }
+    e != Int.0
+    reduce(reduce(a, b).num * d + c * reduce(a, b).denom, reduce(a, b).denom * d) = reduce(
+        (reduce(a, b).num * d + c * reduce(a, b).denom) * e, reduce(a, b).denom * d * e)
+    reduce(a, b) + reduce(c, d) = reduce((reduce(a, b).num * d + c * reduce(a, b).denom) * e,
+                                         reduce(a, b).denom * d * e)
+    reduce(a, b) + reduce(c, d) = reduce(reduce(a, b).num * d * e + c * reduce(a, b).denom * e,
+                                         reduce(a, b).denom * d * e)
+    reduce(a, b) + reduce(c, d) = reduce(reduce(a, b).num * e * d + reduce(a, b).denom * e * c,
+                                         reduce(a, b).denom * e * d)
+}
+
+theorem add_reduced_same_denom(a: Int, b: Int, c: Int) {
+    reduce(a, c) + reduce(b, c) = reduce(a + b, c)
+} by {
+    if c = Int.0 {
+        reduce(a, c) = Rat.0
+        reduce(b, c) = Rat.0
+        reduce(a + b, c) = Rat.0
+        reduce(a, c) + reduce(b, c) = reduce(a + b, c)
+    } else {
+        reduce(a, c) + reduce(b, c) = reduce(a * c + b * c, c * c)
+        reduce(a, c) + reduce(b, c) = reduce((a + b) * c, c * c)
+        reduce(a, c) + reduce(b, c) = reduce(a + b, c)
+    }
+}
+
+theorem add_assoc(a: Rat, b: Rat, c: Rat) {
+    a + b + c = a + (b + c)
+} by {
+    let d: Int = a.denom * b.denom * c.denom
+    let an: Int = a.num * (b.denom * c.denom)
+    a = reduce(a.num, a.denom)
+    b.denom * c.denom != Int.0
+    a = reduce(a.num * (b.denom * c.denom), a.denom * (b.denom * c.denom))
+    a = reduce(an, d)
+
+    let bn: Int = b.num * (a.denom * c.denom)
+    b = reduce(b.num, b.denom)
+    a.denom * c.denom != Int.0
+    b = reduce(b.num * (a.denom * c.denom), b.denom * (a.denom * c.denom))
+    b = reduce(bn, d)
+
+    let cn: Int = c.num * (a.denom * b.denom)
+    c = reduce(c.num, c.denom)
+    a.denom * b.denom != Int.0
+    c = reduce(c.num * (a.denom * b.denom), c.denom * (a.denom * b.denom))
+    c = reduce(cn, d)
+
+    a + b + c = reduce(an, d) + reduce(bn, d) + reduce(cn, d)
+    a + b + c = reduce(an + bn, d) + reduce(cn, d)
+    a + b + c = reduce(an + bn + cn, d)
+    a + b + c = reduce(an + (bn + cn), d)
+    a + b + c = reduce(an, d) + reduce(bn + cn, d)
+    a + b + c = reduce(an, d) + (reduce(bn, d) + reduce(cn, d))
+    a + b + c = a + (b + c)
+}
+
+theorem common_denom(r1: Rat, r2: Rat) {
+    exists(n1: Int, n2: Int, d: Int) {
+        r1 = reduce(n1, d) and r2 = reduce(n2, d)
+    }
+} by {
+    let d: Int = r1.denom * r2.denom
+    d != Int.0
+    let n1: Int = r1.num * r2.denom
+    r1 = reduce(r1.num * r2.denom, r1.denom * r2.denom)
+    r1 = reduce(n1, d)
+    let n2: Int = r2.num * r1.denom
+    r2 = reduce(r2.num * r1.denom, r2.denom * r1.denom)
+    r2 = reduce(n2, d)
+}
+
+theorem distrib_left(r1: Rat, r2: Rat, r3: Rat) {
+    r1 * (r2 + r3) = r1 * r2 + r1 * r3
+} by {
+    let (a: Int, b: Int, c: Int) satisfy {
+        r2 = reduce(a, c) and r3 = reduce(b, c)
+    }
+
+    // Simplify the left side
+    r2 + r3 = reduce(a + b, c)
+    r1 * (r2 + r3) = r1 * reduce(a + b, c)
+    r1 * (r2 + r3) = reduce(r1.num * (a + b), r1.denom * c)
+    r1 * (r2 + r3) = reduce(r1.num * a + r1.num * b, r1.denom * c)
+
+    // Simplify the right side
+    r1 * r2 = reduce(r1.num * a, r1.denom * c)
+    r1 * r3 = reduce(r1.num * b, r1.denom * c)
+    r1 * r2 + r1 * r3 = reduce(r1.num * a + r1.num * b, r1.denom * c)
+}
+
+theorem distrib_right(r1: Rat, r2: Rat, r3: Rat) {
+    (r1 + r2) * r3 = r1 * r3 + r2 * r3
+}
+
+theorem add_inv_cancels_right(a: Rat, b: Rat) {
+    a + -a = Rat.0
+} by {
+    a + -a = reduce(a.num * a.denom + -a.num * a.denom, a.denom * a.denom)
+    a + -a = reduce(a.num * a.denom - a.num * a.denom, a.denom * a.denom)
+    a + -a = reduce(Int.0, a.denom * a.denom)
+    a + -a = Rat.0
+}
+
+theorem add_inv_cancels_left(a: Rat, b: Rat) {
+    -a + a = Rat.0
+}
+
+theorem sub_self(a: Rat) {
+    a - a = Rat.0
+}
+
+theorem reduce_self(n: Int) {
+    n != Int.0 -> reduce(n, n) = Rat.1
+} by {
+    Rat.1 = Rat.new(Int.1, Int.1)
+    cross_equals(Int.1, Int.1, n, n)
+    reduce(n, n) = Rat.1
+}
+
+theorem mul_inv_cancels_right(a: Rat) {
+    a != Rat.0 -> a * a.reciprocal = Rat.1
+} by {
+    a * a.reciprocal = reduce(a.num * a.denom, a.denom * a.num)
+    a * a.reciprocal = reduce(a.num * a.denom, a.num * a.denom)
+    a.num * a.denom != Int.0
+    a * a.reciprocal = Rat.1
+}
+
+theorem mul_inv_cancels_left(a: Rat) {
+    a != Rat.0 -> a.reciprocal * a = Rat.1
+}
+
+theorem sub_zero(a: Rat) {
+    a - Rat.0 = a
+}
+
+theorem pos_imp_zero_lt(a: Rat) {
+    a.is_positive -> Rat.0 < a
+} by {
+    (a - Rat.0).is_positive
+}
+
+theorem zero_lt_imp_pos(a: Rat) {
+    Rat.0 < a -> a.is_positive
+} by {
+    a - Rat.0 = a
+    a.is_positive
+}
+
+theorem not_pos_and_neg(a: Rat) {
+    a.is_positive -> not a.is_negative
+}
+
+theorem reduce_pos_pos(a: Int, b: Int) {
+    a.is_positive and b.is_positive -> reduce(a, b).is_positive
+} by {
+    b != Int.0
+    let d: Int satisfy {
+        reduce(a, b).num * d = a and reduce(a, b).denom * d = b
+    }
+    reduce(a, b).denom.is_positive
+    d.is_positive
+}
+
+theorem add_pos_pos(a: Rat, b: Rat) {
+    a.is_positive and b.is_positive -> (a + b).is_positive
+} by {
+    a + b = reduce(a.num * b.denom + b.num * a.denom, a.denom * b.denom)
+    (a.num * b.denom).is_positive
+    (b.num * a.denom).is_positive
+    (a.num * b.denom + b.num * a.denom).is_positive
+    (a.denom * b.denom).is_positive
+}
+
+theorem mul_pos_pos(a: Rat, b: Rat) {
+    a.is_positive and b.is_positive -> (a * b).is_positive
+} by {
+    a * b = reduce(a.num * b.num, a.denom * b.denom)
+    (a.num * b.num).is_positive
+    (a.denom * b.denom).is_positive
+}
+
+theorem pos_reciprocal(a: Rat) {
+    a.is_positive -> a.reciprocal.is_positive
+} by {
+    a.reciprocal = reduce(a.denom, a.num)
+    a.denom.is_positive
+    a.num.is_positive
+}
+
+theorem add_cancels_sub(a: Rat, b: Rat) {
+    a - b + b = a
+} by {
+    a + (-b + b) = a
+    a + -b + b = a
+}
+
+theorem lt_trans(a: Rat, b: Rat, c: Rat) {
+    a < b and b < c -> a < c
+} by {
+    (b - a).is_positive
+    (c - b).is_positive
+    (c - b) + (b - a) = (c - b) + b - a
+    (c - b) + (b - a) = c - a
+    (c - a).is_positive
+}
+
+theorem neg_neg_is_pos(a: Rat) {
+    a.is_negative -> (-a).is_positive
+}
+
+theorem neg_pos_is_neg(a: Rat) {
+    a.is_positive -> (-a).is_negative
+}
+
+theorem zero_minus(a: Rat) {
+    Rat.0 - a = -a
+}
+
+theorem neg_imp_lt_zero(a: Rat) {
+    a.is_negative -> a < Rat.0
+} by {
+    (-a).is_positive
+    (Rat.0 - a).is_positive
+}
+
+theorem lt_zero_imp_neg(a: Rat) {
+    a < Rat.0 -> a.is_negative
+} by {
+    (Rat.0 - a).is_positive
+    (-a).is_positive
+}
+
+theorem mul_cancels_div(a: Rat, b: Rat) {
+    b != Rat.0 -> (a / b) * b = a
+} by {
+    (a / b) * b = a * b.reciprocal * b
+    (a / b) * b = a * (b.reciprocal * b)
+    (a / b) * b = a * Rat.1
+    (a / b) * b = a
+}
+
+theorem two_neq_zero {
+    Rat.2 != Rat.0
+}
+
+theorem times_two(r: Rat) {
+    Rat.2 * r = r + r
+} by {
+    // Simplify left
+    Rat.2 * r = reduce(Int.2 * r.num, Int.1 * r.denom)
+    Rat.2 * r = reduce(r.num + r.num, r.denom)
+
+    // Simplify right
+    r + r = reduce(r.num + r.num, r.denom)
+}
+
+theorem mul_cancels_right(a: Rat, b: Rat, c: Rat) {
+    c != Rat.0 and a * c = b * c -> a = b
+} by {
+    a * c * c.reciprocal = b * c * c.reciprocal
+    a * (c * c.reciprocal) = b * (c * c.reciprocal)
+    a * Rat.1 = b * Rat.1
+    a = b
+}
+
+theorem half_plus_half(r: Rat) {
+    (r / Rat.2) + (r / Rat.2) = r
+} by {
+    (r / Rat.2) * Rat.2 = r 
+    (r / Rat.2 + r / Rat.2) * Rat.2 = r + r
+    (r / Rat.2 + r / Rat.2) * Rat.2 = r * Rat.2
+    r / Rat.2 + r / Rat.2 = r
+}
+
+theorem neg_mul(a: Rat, b: Rat) {
+    (-a) * b = -(a * b)
+}
+
+theorem mul_neg_pos(a: Rat, b: Rat) {
+    a.is_negative and b.is_positive -> (a * b).is_negative
+} by {
+    (-a).is_positive
+    (-a * b).is_positive
+    (-(a * b)).is_positive
+    (a * b).is_negative
+}
+
+theorem mul_pos_neg(a: Rat, b: Rat) {
+    a.is_positive and b.is_negative -> (a * b).is_negative
+}
+
+theorem mul_neg_neg(a: Rat, b: Rat) {
+    a.is_negative and b.is_negative -> (a * b).is_positive
+} by {
+    (-b).is_positive
+    (-b * a).is_negative
+}
+
+theorem one_is_pos {
+    Rat.1.is_positive
+}
+
+theorem two_is_pos {
+    Rat.2.is_positive
+}
+
+theorem half_is_pos {
+    Rat.2.reciprocal.is_positive
+}
+
+theorem sub_add_quasi_cancel(a: Rat, b: Rat) {
+    a - (a + b) = -b
+} by {
+    a - (a + b) = a + -Rat.1 * (a + b)
+    a - (a + b) = a + (-Rat.1 * a + -Rat.1 * b)
+    a - (a + b) = a + (-a + -b)
+    a - (a + b) = a + -a + -b
+    a - (a + b) = Rat.0 + -b
+    a - (a + b) = -b
+}
+
+theorem not_lt_self(a: Rat) {
+    not a < a
+}
+
+theorem not_lt_both_ways(a: Rat, b: Rat) {
+    a < b -> not b < a
+}
+
+theorem lt_add_pos(a: Rat, b: Rat) {
+    b.is_positive -> a < a + b
+} by {
+    (a + b) - a = (a + b) + -a
+    (a + b) - a = -a + (a + b)
+    (a + b) - a = (-a + a) + b
+    (a + b) - a = Rat.0 + b
+    (a + b) - a = b
+}
+
+class Rat {
+    define abs(self) -> Rat {
+        if self.is_negative {
+            -self
+        } else {
+            self
+        }
+    }
+}
+
+theorem neg_sub(a: Rat, b: Rat) {
+    -(a - b) = b - a
+} by {
+    -(a - b) = -(a + -b)
+    -(a - b) = -a + --b
+    -(a - b) = -a + b
+    -(a - b) = b + -a
+}
+
+theorem single_trichotomy(a: Rat) {
+    a.is_positive or a.is_negative or a = Rat.0
+} by {
+    if a.num.is_positive {
+        a.is_positive
+    } else {
+        if a.num.is_negative {
+            a.is_negative
+        } else {
+            a.num = Int.0
+            a = Rat.0
+        }
+    }
+}
+
+theorem trichotomy(a: Rat, b: Rat) {
+    a < b or a = b or a > b
+} by {
+    if (a - b).is_positive {
+        a > b
+    } else {
+        if (a - b).is_negative {
+            (-(a - b)).is_positive
+            (b - a).is_positive
+            a < b
+        } else {
+            a = b
+        }
+    }
+}
+
+theorem lt_add_right(a: Rat, b: Rat, c: Rat) {
+    a < b -> a + c < b + c
+} by {
+    (b - a).is_positive
+    (b + c) - (a + c) = (b + c) + (-a + -c)
+    (b + c) - (a + c) = b + c + (-c + -a)
+    (b + c) - (a + c) = b + (c + -c) + -a
+    (b + c) - (a + c) = b + -a
+    ((b + c) - (a + c)).is_positive
+}
+
+theorem add_neg_lt(a: Rat, b: Rat) {
+    a.is_negative -> b + a < b
+}
+
+theorem adding_lts(a: Rat, b: Rat, c: Rat, d: Rat) {
+    a < b and c < d -> a + c < b + d
+} by {
+    a + c < b + c
+    b + c < b + d
+}
+
+theorem minus_cancels_plus(a: Rat, b: Rat) {
+    a + b - b = a
+} by {
+    a + b - b = a + b + -b
+    a + b - b = a + (b + -b)
+    a + b - b = a + Rat.0
+    a + b - b = a
+}
+
+theorem gt_minus_pos(a: Rat, b: Rat) {
+    b.is_positive -> a > a - b
+} by {
+    a - (a - b) = b
+    (a - (a - b)).is_positive
+}
+
+theorem sub_add(a: Rat, b: Rat, c: Rat) {
+    a - (b + c) = a - b - c
+} by {
+    a - (b + c) = a + -(b + c)
+    a - (b + c) = a + (-b + -c)
+    a - (b + c) = a + -b + -c
+    a - (b + c) = a - b - c
+}
+
+theorem no_greatest(a: Rat) {
+    exists(b: Rat) {
+        a < b
+    }
+}
+
+theorem sub_from_int(a: Int, b: Int) {
+    Rat.from_int(a) - Rat.from_int(b) = Rat.from_int(a - b)
+} by {
+    Rat.from_int(a) - Rat.from_int(b) = Rat.from_int(a) + -Rat.from_int(b)
+    Rat.from_int(a) - Rat.from_int(b) = Rat.from_int(a) + Rat.from_int(-b)
+    Rat.from_int(a) - Rat.from_int(b) = Rat.from_int(a + -b)
+    Rat.from_int(a) - Rat.from_int(b) = Rat.from_int(a - b)
+}
+
+theorem lt_from_int(a: Int, b: Int) {
+    a < b -> Rat.from_int(a) < Rat.from_int(b)
+} by {
+    Rat.from_int(b) - Rat.from_int(a) = Rat.from_int(b - a)
+}
+
+theorem lte_from_int(a: Int, b: Int) {
+    a <= b -> Rat.from_int(a) <= Rat.from_int(b)
+}
+
+theorem gt_from_int(a: Int, b: Int) {
+    a > b -> Rat.from_int(a) > Rat.from_int(b)
+}
+
+theorem gte_from_int(a: Int, b: Int) {
+    a >= b -> Rat.from_int(a) >= Rat.from_int(b)
+}
+
+theorem lt_mul_pos(a: Rat, b: Rat, c: Rat) {
+    a < b and c.is_positive -> a * c < b * c
+} by {
+    b - a > Rat.0
+    c > Rat.0
+    (b - a) * c > Rat.0
+    b * c - a * c > Rat.0
+    a * c < b * c
+}
+
+theorem lte_mul_pos(a: Rat, b: Rat, c: Rat) {
+    a <= b and c.is_positive -> a * c <= b * c
+} by {
+    a < b or a = b
+    a * c < b * c or a * c = b * c
+}
+
+theorem lt_div_pos(a: Rat, b: Rat, c: Rat) {
+    c.is_positive and a < b -> a / c < b / c
+} by {
+    c.reciprocal.is_positive
+    a * c.reciprocal < b * c.reciprocal
+}
+
+theorem lte_div_pos(a: Rat, b: Rat, c: Rat) {
+    c.is_positive and a <= b -> a / c <= b / c
+} by {
+    c.reciprocal.is_positive
+    a * c.reciprocal <= b * c.reciprocal
+}
+
+theorem mul_div_cancels(a: Rat, b: Rat) {
+    b != Rat.0 -> (a * b) / b = a
+} by {
+    (a * b) / b = a * (b / b)
+    (a * b) / b = a * Rat.1
+}
+
+theorem div_from_int(a: Rat) {
+    Rat.from_int(a.num) / Rat.from_int(a.denom) = a
+} by {
+    Rat.from_int(a.num) / Rat.from_int(a.denom) = reduce(a.num, Int.1) * reduce(Int.1, a.denom)
+}
+
+theorem lt_from_int_mul_denom(a: Rat, n: Int) {
+    a.num < n * a.denom -> a < Rat.from_int(n)
+} by {
+    Rat.from_int(a.num) < Rat.from_int(n * a.denom)
+    Rat.from_int(a.num) < Rat.from_int(n) * Rat.from_int(a.denom)
+    Rat.from_int(a.denom).is_positive
+    Rat.from_int(a.num) / Rat.from_int(a.denom) < Rat.from_int(n) * Rat.from_int(a.denom) / Rat.from_int(a.denom)
+    Rat.from_int(n) * Rat.from_int(a.denom) / Rat.from_int(a.denom) = Rat.from_int(n)
+    Rat.from_int(a.num) / Rat.from_int(a.denom) < Rat.from_int(n)
+}
+
+theorem lte_from_int_mul_denom(a: Rat, n: Int) {
+    a.num <= n * a.denom -> a <= Rat.from_int(n)
+} by {
+    if a.num = n * a.denom {
+        a = Rat.from_int(n)
+    } else {
+        a < Rat.from_int(n)
+    }
+}
+
+theorem floor_exists(a: Rat) {
+    exists(q: Int) {
+        Rat.from_int(q) <= a and a < Rat.from_int(q + Int.1)
+    }
+} by {
+    a.denom.is_positive
+    let (q: Int, r: Int) satisfy {
+        Int.0 <= r and r < a.denom and a.num = q * a.denom + r
+    }
+
+    // Left bound
+    Rat.from_int(a.num) = Rat.from_int(q * a.denom + r)
+    Rat.from_int(a.num) = Rat.from_int(q * a.denom) + Rat.from_int(r)
+    Rat.from_int(r) >= Rat.from_int(Int.0)
+    Rat.from_int(q * a.denom) + Rat.from_int(r) >= Rat.from_int(q * a.denom) + Rat.from_int(Int.0)
+    Rat.from_int(a.num) >= Rat.from_int(q * a.denom)
+    Rat.from_int(a.num) >= Rat.from_int(q) * Rat.from_int(a.denom)
+    Rat.from_int(a.denom).is_positive
+    Rat.from_int(q) * Rat.from_int(a.denom) / Rat.from_int(a.denom) <= Rat.from_int(a.num) / Rat.from_int(a.denom)
+    Rat.from_int(q) * Rat.from_int(a.denom) / Rat.from_int(a.denom) = Rat.from_int(q)
+    Rat.from_int(q) <= Rat.from_int(a.num) / Rat.from_int(a.denom)
+    Rat.from_int(q) <= a
+
+    // Right bound
+    q * a.denom + r < q * a.denom + a.denom
+    q * a.denom + a.denom = (q + Int.1) * a.denom
+    a.num < (q + Int.1) * a.denom
+    a < Rat.from_int(q + Int.1)
+}
+
+let floor(a: Rat) -> q: Int satisfy {
+    Rat.from_int(q) <= a and a < Rat.from_int(q + Int.1)
+}
+
+theorem mul_lt_lt(a: Rat, b: Rat, c: Rat, d: Rat) {
+    a.is_positive and c.is_positive and a < b and c < d -> a * c < b * d
+} by {
+    a * c < b * c
+    b.is_positive
+    b * c < b * d
+}
+
+theorem mul_lt_lte(a: Rat, b: Rat, c: Rat, d: Rat) {
+    a.is_positive and c.is_positive and a < b and c <= d -> a * c < b * d
+} by {
+    a * c < b * c
+    b.is_positive
+    b * c <= b * d
+}
+
+theorem pos_lte(a: Rat, b: Rat) {
+    a.is_positive and a <= b -> b.is_positive
+} by {
+    if a = b {
+        b.is_positive
+    } else {
+        a < b
+        b.is_positive
+    }
+}
+
+theorem mul_lte_lt(a: Rat, b: Rat, c: Rat, d: Rat) {
+    a.is_positive and c.is_positive and a <= b and c < d -> a * c < b * d
+} by {
+    a * c <= b * c
+    b.is_positive
+    b * c < b * d
+}
+
+theorem lt_pos_reciprocal(a: Rat, b: Rat) {
+    a.is_positive and a < b -> b.reciprocal < a.reciprocal
+} by {
+    if a.reciprocal <= b.reciprocal {
+        a.reciprocal * a < b.reciprocal * b
+        a.reciprocal * a = Rat.1
+        b.reciprocal * b = Rat.1
+        Rat.1 < Rat.1
+        false
+    }
+}
+
+theorem reciprocal_inverts(a: Rat) {
+    a != Rat.0 -> a.reciprocal.reciprocal = a
+} by {
+    a * a.reciprocal = Rat.1
+    Rat.new(a.reciprocal.num, a.reciprocal.denom) / a * a = Rat.new(a.reciprocal.num, a.reciprocal.denom)
+    a.reciprocal != Rat.0
+    a * a.reciprocal / a.reciprocal = a
+    Rat.1 * a.reciprocal.reciprocal = a
+}
+
+theorem smaller_int_reciprocal(a: Rat) {
+    a.is_positive -> exists(n: Int) {
+        n.is_positive and Rat.from_int(n).reciprocal < a
+    }
+} by {
+    a.reciprocal.is_positive
+    let n: Int satisfy {
+        a.reciprocal < Rat.from_int(n)
+    }
+    Rat.from_int(n).reciprocal < a.reciprocal.reciprocal
+    a.reciprocal.reciprocal = a
+    Rat.from_int(n).is_positive
+    n.is_positive
+}
+
+theorem gte_some_int(a: Rat) {
+    exists(n: Int) {
+        a >= Rat.from_int(n)
+    }
+} by {
+    a >= Rat.from_int(floor(a))
+}
+
+theorem mul_denom(r: Rat) {
+    r * Rat.from_int(r.denom) = Rat.from_int(r.num)
+} by {
+    Rat.from_int(r.denom).num != Int.0
+    Rat.from_int(r.denom) != Rat.0
+    Rat.from_int(r.num) / Rat.from_int(r.denom) * Rat.from_int(r.denom) = Rat.from_int(r.num)
+}
+
+theorem half_pos(r: Rat) {
+    r.is_positive -> (r / Rat.2).is_positive
+}
+
+theorem add_half_half(r: Rat) {
+    (r / Rat.2) + (r / Rat.2) = r
+} by {
+    (r / Rat.2) + (r / Rat.2) = r / Rat.2 + r / Rat.2
+    (r / Rat.2) + (r / Rat.2) = (r + r) / Rat.2
+    (r / Rat.2) + (r / Rat.2) = (Rat.2 * r) / Rat.2
+    (r / Rat.2) + (r / Rat.2) = r
+}
+
+theorem lt_neg(p: Rat, q: Rat) {
+    p < q -> -q < -p
+} by {
+    q + -p > Rat.0
+    --q + -p > Rat.0
+}

@@ -365,3 +365,95 @@ theorem mod_maintains_imp_gcd(f: Nat -> Bool, a: Nat, b: Nat) {
     f(gcd_step_n(p, num_gcd_steps(p)).first)
     f(gcd(a, b))
 }
+
+theorem gcd_one_right(a: Nat) {
+    gcd(a, 1) = 1
+}
+
+theorem gcd_one_left(a: Nat) {
+    gcd(1, a) = 1
+}
+
+theorem gcd_mult_left_nonzero(a: Nat, b: Nat, m: Nat) {
+    m != 0 -> m * gcd(a, b) = gcd(m * a, m * b)
+} by {
+    divides(m, m * a)
+    divides(m, m * b)
+    divides(m, gcd(m * a, m * b))
+    let d: Nat satisfy {
+        m * d = gcd(m * a, m * b)
+    }
+    
+    // Overall we will prove equality by proving both sides divide the other.
+    // First we prove that d equals gcd(a, b), to prove that right divides left.
+    divides(m * d, m * a)
+    divides(d, a)
+    divides(m * d, m * b)
+    divides(d, b)
+    divides(d, gcd(a, b))
+    divides(m * d, m * gcd(a, b))
+    divides(gcd(m * a, m * b), m * gcd(a, b))
+
+    // Now we prove left divides right.
+    divides(m * gcd(a, b), m * a)
+    divides(m * gcd(a, b), m * b)
+    divides(m * gcd(a, b), gcd(m * a, m * b))
+}
+
+theorem gcd_mult_left(a: Nat, b: Nat, m: Nat) {
+    m * gcd(a, b) = gcd(m * a, m * b)
+} by {
+    if m = 0 {
+        m * gcd(a, b) = 0
+        gcd(m * a, m * b) = 0
+    } else {
+        m * gcd(a, b) = gcd(m * a, m * b)
+    }
+}
+
+theorem gcd_mult_right(a: Nat, b: Nat, m: Nat) {
+    gcd(a, b) * m = gcd(a * m, b * m)
+} by {
+    gcd_mult_left(a, b, m)
+    gcd_comm(a, b)
+    gcd_comm(m * a, m * b)
+}
+
+theorem cofactor(a: Nat, b: Nat, af: Nat, bf: Nat) {
+    (
+        gcd(a, b) != 0 and
+        af * gcd(a, b) = a and
+        bf * gcd(a, b) = b
+    ) -> gcd(af, bf) = 1
+} by {
+    divides(gcd(af, bf), af)
+    divides(gcd(a, b) * gcd(af, bf), a)
+    divides(gcd(af, bf), bf)
+    divides(gcd(a, b) * gcd(af, bf), b)
+    divides(gcd(a, b) * gcd(af, bf), gcd(a, b))
+    divides(gcd(a, b) * gcd(af, bf), gcd(a, b) * 1)
+    divides(gcd(af, bf), 1)
+    gcd(af, bf) = 1
+}
+
+theorem gcd_of_prime(p: Nat, n: Nat) {
+    nat.is_prime(p) -> gcd(p, n) = 1 or divides(p, n)
+} by {
+    divides(gcd(p, n), p)
+    let d: Nat satisfy {
+        d * gcd(p, n) = p
+    }
+    d != 0
+    if d = 1 {
+        gcd(p, n) = p
+        divides(p, n)
+    } else {
+        if gcd(p, n) > 1 {
+            d > 1
+            nat.is_composite(p)
+            false
+        }
+        gcd(p, n) != 0
+        gcd(p, n) = 1
+    }
+}
