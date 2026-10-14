@@ -327,20 +327,6 @@ impl AcornValue {
         AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
     }
 
-    // Make a Constant or a Specialized depending on whether we have params.
-    pub fn new_specialized(
-        module: ModuleId,
-        name: String,
-        constant_type: AcornType,
-        params: Vec<(String, AcornType)>,
-    ) -> AcornValue {
-        if params.is_empty() {
-            AcornValue::Unresolved(module, name, constant_type, vec![])
-        } else {
-            AcornValue::Constant(module, name, constant_type, params)
-        }
-    }
-
     pub fn is_lambda(&self) -> bool {
         match self {
             AcornValue::Lambda(_, _) => true,
@@ -1474,11 +1460,10 @@ impl AcornValue {
     fn validate_against_stack(&self, stack: &mut Vec<AcornType>) -> Result<(), String> {
         match self {
             AcornValue::Unresolved(_, _, _, params) => {
-                if !params.is_empty() {
-                    Err("should be no polymorphs during validation".to_string())
-                } else {
-                    Ok(())
+                if params.is_empty() {
+                    return Ok(());
                 }
+                Err("there should be no unresolved values during validation".to_string())
             }
             AcornValue::Variable(i, var_type) => match stack.get(*i as usize) {
                 Some(t) => {
