@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::{fmt, io};
 
-use tower_lsp::lsp_types::CompletionItem;
+use tower_lsp::lsp_types::{CompletionItem, Url};
 use walkdir::WalkDir;
 
 use crate::binding_map::BindingMap;
@@ -36,7 +36,7 @@ pub struct Project {
     // Maps filename -> (contents, version number).
     // The version number can mean whatever the caller wants it to mean.
     // From vscode, it'll be the vscode version number.
-    pub open_files: HashMap<PathBuf, (String, i32)>,
+    open_files: HashMap<PathBuf, (String, i32)>,
 
     // modules[module_id] is the (ref, Module) for the given module id.
     // Built-in modules have no name.
@@ -671,6 +671,16 @@ impl Project {
         }
     }
 
+    pub fn url_from_module_ref(&self, module_ref: &ModuleRef) -> Option<Url> {
+        Url::from_file_path(self.path_from_module_ref(module_ref)?).ok()
+    }
+
+    pub fn open_urls(&self) -> impl Iterator<Item = (Url, i32)> + '_ {
+        self.open_files.iter().filter_map(|(path, (_, version))| {
+            Url::from_file_path(path).ok().map(|url| (url, *version))
+        })
+    }
+
     pub fn path_from_module_id(&self, module_id: ModuleId) -> Option<PathBuf> {
         self.path_from_module_ref(&self.modules.get(module_id as usize)?.0)
     }
@@ -918,6 +928,24 @@ impl Project {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn invalid_file_updates_and_closes_preserve_existing_state() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem identity { true }");
+        let invalid = PathBuf::from("/outside/not_source.txt");
+        assert!(project
+            .update_file(invalid.clone(), "theorem identity { true }", 1)
+            .is_err());
+        assert!(!project.open_files.contains_key(&invalid));
+        project
+            .open_files
+            .insert(invalid.clone(), ("editor content".to_string(), 1));
+        assert!(project.close_file(invalid.clone()).is_err());
+        assert_eq!(project.open_files[&invalid].0, "editor content");
+        assert_eq!(project.sync_build().0, BuildStatus::Good);
+    }
+
     use super::*;
 
     const FOO_AC: &str = r#"

@@ -13,6 +13,7 @@ use tower_lsp::jsonrpc;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 use venticorn::block::NodeCursor;
+use venticorn::build_info::BuildInfo;
 use venticorn::builder::Builder;
 use venticorn::interfaces::{
     InfoParams, InfoResponse, ProgressParams, ProgressResponse, SearchParams, SearchResponse,
@@ -246,9 +247,8 @@ struct Backend {
     // The project we're working on
     project: Arc<RwLock<Project>>,
 
-    // Progress requests share this value with the client.
-    // Search tasks update it as they go.
-    progress: Arc<Mutex<ProgressResponse>>,
+    // Publication state is guarded independently of document lifecycle work.
+    build: Arc<RwLock<BuildInfo>>,
 
     // Maps each URI to the most recently saved document text.
     documents: DashMap<Url, Arc<RwLock<LiveDocument>>>,
@@ -258,9 +258,6 @@ struct Backend {
 
     // The current search task, if any
     search_task: Arc<RwLock<Option<SearchTask>>>,
-
-    // All the diagnostics that are currently published for the project.
-    diagnostic_map: Arc<RwLock<HashMap<Url, Vec<Diagnostic>>>>,
 }
 
 impl Backend {
@@ -268,37 +265,70 @@ impl Backend {
         Backend {
             project: Arc::new(RwLock::new(project)),
             client,
-            progress: Arc::new(Mutex::new(ProgressResponse::default())),
+            build: Arc::new(RwLock::new(BuildInfo::default())),
             documents: DashMap::new(),
             lifecycle: Mutex::new(()),
             search_task: Arc::new(RwLock::new(None)),
-            diagnostic_map: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    // Run a build in a background thread, proving the goals in all open documents.
-    // Both spawned threads hold a read lock on the project while doing their work.
-    // This ensures that the project doesn't change for the duration of the build.
-    fn spawn_build(&self) {
+    // Snapshot Arcs before awaiting document locks: never retain DashMap guards.
+    async fn live_versions(&self) -> HashMap<Url, i32> {
+        let documents: Vec<_> = self
+            .documents
+            .iter()
+            .map(|entry| (entry.key().clone(), Arc::clone(entry.value())))
+            .collect();
+        let mut versions = HashMap::new();
+        for (url, document) in documents {
+            versions.insert(url, document.read().await.live_version());
+        }
+        versions
+    }
+
+    // Called while holding lifecycle, after the document change and before any
+    // project wait. Publication holds only BuildInfo, never lifecycle/documents.
+    async fn invalidate_build(&self) {
+        let versions = self.live_versions().await;
+        {
+            let mut build = self.build.write().await;
+            for update in build.invalidate(versions) {
+                self.client
+                    .publish_diagnostics(update.url, update.diagnostics, update.version)
+                    .await;
+            }
+        }
+        // Release BuildInfo before obtaining project: event consumers hold a
+        // project read snapshot while waiting for the publication lock.
+        self.project.read().await.stop_build();
+    }
+
+    async fn spawn_build(&self) {
         let start_time = chrono::Local::now();
-
-        // This channel passes the build events
+        let versions = self.live_versions().await;
+        // Producer and consumer share exactly one immutable project snapshot.
+        let project = Arc::new(self.project.clone().read_owned().await);
+        let generation;
+        {
+            let mut build = self.build.write().await;
+            for update in build.reset(project.open_urls(), versions) {
+                self.client
+                    .publish_diagnostics(update.url, update.diagnostics, update.version)
+                    .await;
+            }
+            generation = build.generation();
+        }
         let (tx, mut rx) = mpsc::unbounded_channel();
-
-        // Spawn a thread to run the build.
-
-        let project = self.project.clone();
+        let producer_project = project.clone();
         tokio::spawn(async move {
-            let project = project.read().await;
-
             tokio::task::block_in_place(move || {
                 let mut builder = Builder::new(move |event| {
-                    tx.send(event).unwrap();
+                    // A superseded consumer may already have stopped listening.
+                    let _ = tx.send(event);
                 });
-                project.build(&mut builder);
-
-                let duration = chrono::Local::now() - start_time;
-                let seconds = duration.num_milliseconds() as f64 / 1000.0;
+                producer_project.build(&mut builder);
+                let seconds =
+                    (chrono::Local::now() - start_time).num_milliseconds() as f64 / 1000.0;
                 log(&format!(
                     "verification {} after {:.2}s",
                     builder.status.verb(),
@@ -306,65 +336,29 @@ impl Backend {
                 ));
             });
         });
-
-        // Spawn a thread to process the build events.
-        let project = self.project.clone();
-        let progress = self.progress.clone();
+        let state = self.build.clone();
         let client = self.client.clone();
-        let diagnostic_map = self.diagnostic_map.clone();
         tokio::spawn(async move {
-            // Clear any diagnostics from the previous build
-            let mut diagnostic_map = diagnostic_map.write().await;
-            for url in diagnostic_map.keys() {
-                client.publish_diagnostics(url.clone(), vec![], None).await;
-            }
-            diagnostic_map.clear();
-
-            let project = project.read().await;
             while let Some(event) = rx.recv().await {
-                if let Some((done, total)) = event.progress {
-                    if total > 0 {
-                        let mut locked_progress = progress.lock().await;
-                        locked_progress.done = done;
-                        locked_progress.total = total;
-                    }
+                let mut build = state.write().await;
+                if !build.accepts(generation, event.build_id) {
+                    break;
                 }
-
-                if let Some(message) = event.log_message {
-                    log(&message);
+                if let Some(message) = &event.log_message {
+                    log(message);
                 }
-
-                if let Some((module_ref, diagnostic)) = event.diagnostic {
-                    let path = match project.path_from_module_ref(&module_ref) {
-                        Some(path) => path,
-                        None => {
-                            log(&format!(
-                                "cannot publish diagnostic; no path available for {:?}",
-                                module_ref
-                            ));
-                            continue;
-                        }
-                    };
-                    let url = match Url::from_file_path(&path) {
-                        Ok(url) => url,
-                        Err(_) => {
-                            log(&format!("invalid diagnostic path: {}", path.display()));
-                            continue;
-                        }
-                    };
-                    let diagnostics = diagnostic_map.entry(url.clone()).or_default();
-                    if let Some(d) = diagnostic {
-                        diagnostics.push(d);
-                    }
+                let url = project.url_from_module_ref(&event.module);
+                if let Some(update) = build.handle_event(generation, url, &event) {
+                    // Keep the guard through the send so a replacement cannot
+                    // begin and then receive a notification from this build.
                     client
-                        .publish_diagnostics(url, diagnostics.clone(), None)
+                        .publish_diagnostics(update.url, update.diagnostics, update.version)
                         .await;
                 }
             }
         });
     }
 
-    // Opening provides a version; saving commits the last accepted live version.
     // A lifecycle lock keeps document, project, and search identity changes ordered.
     async fn set_full_text(&self, url: Url, text: String, version: Option<i32>) {
         let _lifecycle = self.lifecycle.lock().await;
@@ -413,6 +407,7 @@ impl Backend {
                 }
             }
         };
+        self.invalidate_build().await;
         self.set_search_task(None).await;
         let mut project = self.stop_build_and_get_project().await;
         log_with_doc(&url, version, "updating saved text");
@@ -421,7 +416,7 @@ impl Backend {
             Err(error) => log(&format!("update failed: {:?}", error)),
         }
         drop(project);
-        self.spawn_build();
+        self.spawn_build().await;
     }
 
     // If there is a build happening, stops it.
@@ -450,8 +445,8 @@ impl Backend {
         &self,
         _params: ProgressParams,
     ) -> jsonrpc::Result<ProgressResponse> {
-        let locked_progress = self.progress.lock().await;
-        Ok(locked_progress.clone())
+        let _lifecycle = self.lifecycle.lock().await;
+        Ok(self.build.read().await.progress())
     }
 
     // Cancels any current search task.
@@ -688,7 +683,12 @@ impl Backend {
             .await
             .apply_changes(&params.content_changes, params.text_document.version);
         match result {
-            Ok(()) => self.set_search_task(None).await,
+            Ok(()) => {
+                self.invalidate_build().await;
+                self.set_search_task(None).await;
+                // Retire canceled readers before giving new searches a fresh stop token.
+                drop(self.stop_build_and_get_project().await);
+            }
             Err(error) => log(&format!("change ignored for {}: {}", url, error)),
         }
     }
@@ -703,12 +703,15 @@ impl Backend {
         if self.documents.remove(&uri).is_none() {
             return;
         }
+        self.invalidate_build().await;
         self.set_search_task(None).await;
         let mut project = self.stop_build_and_get_project().await;
         match project.close_file(path) {
             Ok(()) => {}
             Err(error) => log(&format!("close failed: {:?}", error)),
         }
+        drop(project);
+        self.spawn_build().await;
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> {

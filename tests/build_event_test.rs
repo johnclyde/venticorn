@@ -14,11 +14,11 @@ fn builds_have_distinct_ids_and_preserve_verified_goal_identity() {
     assert!(first.iter().all(|event| event.build_id == first_id));
     let verified: Vec<_> = first
         .iter()
-        .filter_map(|event| event.verified.as_ref())
+        .filter(|event| event.verified.is_some())
         .collect();
     assert_eq!(verified.len(), 1);
-    assert_eq!(verified[0].0, ModuleRef::Name("main".to_string()));
-    assert_eq!(verified[0].1.start.line, 0);
+    assert_eq!(verified[0].module, ModuleRef::Name("main".to_string()));
+    assert_eq!(verified[0].verified.unwrap().start.line, 0);
     let (_, second) = project.sync_build();
     assert!(second
         .iter()
@@ -62,7 +62,7 @@ fn slow_success_keeps_its_verified_range() {
     }
     assert_eq!(events.len(), 1);
     assert!(events[0].log_message.as_ref().unwrap().contains("took"));
-    assert_eq!(events[0].verified.as_ref().unwrap().0, module);
-    assert_eq!(events[0].verified.as_ref().unwrap().1, goal.goal.range());
+    assert_eq!(events[0].module, module);
+    assert_eq!(events[0].verified.unwrap(), goal.goal.range());
     assert_eq!(events[0].progress, Some((1, 1)));
 }

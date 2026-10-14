@@ -21,6 +21,7 @@ cargo build --locked --bins
 python3 tests/language_server_test.py
 python3 tests/language_server_documents_test.py
 python3 tests/language_server_completion_test.py
+python3 tests/language_server_build_test.py
 
 (
   cd vscode/extension
