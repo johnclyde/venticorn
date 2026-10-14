@@ -30,6 +30,37 @@ pub enum Normalization {
     Error(String),
 }
 
+// Check the first-order type boundary before assigning prover type IDs.
+fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
+    match acorn_type {
+        AcornType::Function(function) => {
+            if function.arg_types.is_empty() {
+                return Err(NormalizationError(format!(
+                    "Function type {} has no arguments",
+                    function
+                )));
+            }
+            for argument in &function.arg_types {
+                check_normalized_type(argument)?;
+            }
+            if function.return_type.is_functional() {
+                return Err(NormalizationError(format!(
+                    "Function type has a functional return type: {}",
+                    function
+                )));
+            }
+            check_normalized_type(&function.return_type)
+        }
+        AcornType::Variable(..) => Err(NormalizationError(format!(
+            "Type variables must be instantiated before normalization: {}",
+            acorn_type
+        ))),
+        AcornType::Bool | AcornType::Data(..) | AcornType::Empty | AcornType::Arbitrary(..) => {
+            Ok(())
+        }
+    }
+}
+
 impl Normalization {
     pub fn expect_clauses(self) -> Vec<Clause> {
         match self {
@@ -178,7 +209,9 @@ impl Normalizer {
         application: &FunctionApplication,
         local: bool,
     ) -> Result<Term> {
-        let term_type = self.type_map.add_type(&application.get_type());
+        let application_type = application.get_type();
+        check_normalized_type(&application_type)?;
+        let term_type = self.type_map.add_type(&application_type);
         let func_term = self.term_from_value(&application.function, local)?;
         let head = func_term.head;
         let head_type = func_term.head_type;
@@ -196,6 +229,7 @@ impl Normalizer {
     pub fn term_from_value(&mut self, value: &AcornValue, local: bool) -> Result<Term> {
         match value {
             AcornValue::Variable(i, var_type) => {
+                check_normalized_type(var_type)?;
                 let type_id = self.type_map.add_type(var_type);
                 Ok(Term::new(type_id, type_id, Atom::Variable(*i), vec![]))
             }
@@ -203,6 +237,10 @@ impl Normalizer {
                 Ok(self.term_from_application(application, local)?)
             }
             AcornValue::Constant(c) => {
+                check_normalized_type(&c.instance_type)?;
+                for argument in &c.params {
+                    check_normalized_type(argument)?;
+                }
                 if c.params.is_empty() {
                     let type_id = self.type_map.add_type(&c.instance_type);
                     let constant_atom = if c.module_id == SKOLEM {

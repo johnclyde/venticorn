@@ -15,7 +15,8 @@ fn nested_function_argument_types_have_unambiguous_parentheses() {
     assert_eq!(multiple.to_string(), "(Bool -> Bool, Bool) -> Bool");
     for rendered in [nested.to_string(), multiple.to_string()] {
         let mut tokens = TokenIter::new(Token::scan(&rendered));
-        let (expression, _) = Expression::parse_type(&mut tokens, Terminator::Is(TokenType::NewLine)).unwrap();
+        let (expression, _) =
+            Expression::parse_type(&mut tokens, Terminator::Is(TokenType::NewLine)).unwrap();
         assert_eq!(expression.to_string(), rendered);
     }
 }
