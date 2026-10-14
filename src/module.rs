@@ -5,6 +5,45 @@ use std::{fmt, path::PathBuf};
 use crate::compilation;
 use crate::environment::Environment;
 
+// Loaded state and its fingerprint are kept together without changing public
+// module identity or lookup APIs.
+pub(crate) struct ModuleRecord {
+    pub descriptor: ModuleRef,
+    pub state: Module,
+    pub fingerprint: Option<crate::project::ModuleFingerprint>,
+}
+
+impl ModuleRecord {
+    pub fn anonymous() -> Self {
+        Self {
+            descriptor: ModuleRef::Anonymous,
+            state: Module::None,
+            fingerprint: None,
+        }
+    }
+
+    pub fn loading(descriptor: ModuleRef) -> Self {
+        Self {
+            descriptor,
+            state: Module::Loading,
+            fingerprint: None,
+        }
+    }
+
+    pub fn finish_loading(
+        &mut self,
+        state: Module,
+        fingerprint: Option<crate::project::ModuleFingerprint>,
+    ) {
+        self.fingerprint = if matches!(state, Module::Ok(_)) {
+            fingerprint
+        } else {
+            None
+        };
+        self.state = state;
+    }
+}
+
 // The code in one file is exposed to other Acorn code as a "module".
 // You could have two different types both named "MyStruct" but defined in different places.
 // Each name is uniquely identified not just by its string name, but also by the module it's defined in.

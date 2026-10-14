@@ -17,7 +17,7 @@ use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
 use crate::goal::GoalContext;
-use crate::module::{Module, ModuleId, ModuleRef, FIRST_NORMAL};
+use crate::module::{Module, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL};
 use crate::prover::Prover;
 use crate::token::{Token, TokenType};
 
@@ -54,7 +54,7 @@ pub struct Project {
     open_files: HashMap<PathBuf, (String, i32)>,
 
     // Failed or loading modules have no fingerprint. IDs may change after a reload.
-    modules: Vec<(ModuleRef, Module, Option<ModuleFingerprint>)>,
+    modules: Vec<ModuleRecord>,
 
     // module_map maps from a module ref to its id
     module_map: HashMap<ModuleRef, ModuleId>,
@@ -124,10 +124,10 @@ fn logical_fingerprint(
     ModuleFingerprint(digest.finalize().into())
 }
 
-fn new_modules() -> Vec<(ModuleRef, Module, Option<ModuleFingerprint>)> {
+fn new_modules() -> Vec<ModuleRecord> {
     let mut modules = vec![];
     while modules.len() < FIRST_NORMAL as usize {
-        modules.push((ModuleRef::Anonymous, Module::None, None));
+        modules.push(ModuleRecord::anonymous());
     }
     modules
 }
@@ -509,7 +509,7 @@ impl Project {
             .bindings
             .direct_dependencies()
             .into_iter()
-            .map(|id| self.modules[id as usize].0.clone())
+            .map(|id| self.modules[id as usize].descriptor.clone())
             .collect();
         let ranges = Self::goal_ranges(env);
         builder.module_proving_started_with_metadata(
@@ -523,7 +523,7 @@ impl Project {
                 return false;
             };
             builder.has_cached_module(
-                &self.modules[id as usize].0,
+                &self.modules[id as usize].descriptor,
                 self.get_hash(id),
                 &Self::goal_ranges(dependency),
             )
@@ -706,12 +706,12 @@ impl Project {
     }
 
     pub fn get_hash(&self, module_id: ModuleId) -> Option<ModuleFingerprint> {
-        self.modules.get(module_id as usize)?.2
+        self.modules.get(module_id as usize)?.fingerprint
     }
 
     pub fn get_module_by_id(&self, module_id: ModuleId) -> &Module {
         match self.modules.get(module_id as usize) {
-            Some((_, module, _)) => module,
+            Some(module) => &module.state,
             None => &Module::None,
         }
     }
@@ -742,7 +742,7 @@ impl Project {
     pub fn errors(&self) -> Vec<(ModuleId, &compilation::Error)> {
         let mut errors = vec![];
         for (module_id, module) in self.modules.iter().enumerate() {
-            if let (_, Module::Error(e), _) = module {
+            if let Module::Error(e) = &module.state {
                 errors.push((module_id as ModuleId, e));
             }
         }
@@ -850,7 +850,7 @@ impl Project {
     }
 
     pub fn path_from_module_id(&self, module_id: ModuleId) -> Option<PathBuf> {
-        self.path_from_module_ref(&self.modules.get(module_id as usize)?.0)
+        self.path_from_module_ref(&self.modules.get(module_id as usize)?.descriptor)
     }
 
     // Loads a module from cache if possible, or else from the filesystem.
@@ -886,8 +886,7 @@ impl Project {
 
         // Give this module an id before parsing it, so that we can catch circular imports.
         let module_id = self.modules.len() as ModuleId;
-        self.modules
-            .push((module_ref.clone(), Module::Loading, None));
+        self.modules.push(ModuleRecord::loading(module_ref.clone()));
         self.module_map.insert(module_ref.clone(), module_id);
 
         let mut env = Environment::new(module_id);
@@ -903,14 +902,18 @@ impl Project {
             env.bindings
                 .direct_dependencies()
                 .into_iter()
-                .map(|id| Some((&self.modules.get(id as usize)?.0, self.get_hash(id)?)))
+                .map(|id| {
+                    Some((
+                        &self.modules.get(id as usize)?.descriptor,
+                        self.get_hash(id)?,
+                    ))
+                })
                 .collect::<Option<Vec<_>>>()
                 .map(|deps| logical_fingerprint(&text, deps))
         } else {
             None
         };
-        self.modules[module_id as usize].1 = module;
-        self.modules[module_id as usize].2 = fingerprint;
+        self.modules[module_id as usize].finish_loading(module, fingerprint);
 
         Ok(module_id)
     }
