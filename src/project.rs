@@ -17,7 +17,7 @@ use crate::compilation;
 use crate::environment::Environment;
 use crate::fact::Fact;
 use crate::goal::GoalContext;
-use crate::module::{Module, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL};
+use crate::module::{Module, ModuleHash, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL};
 use crate::prover::Prover;
 use crate::token::{Token, TokenType};
 
@@ -87,9 +87,8 @@ impl fmt::Display for LoadError {
     }
 }
 
-// Fingerprints identify loaded source snapshots; they are not proof certificates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ModuleFingerprint([u8; 32]);
+// Preserve the established public fingerprint path.
+pub use crate::module::ModuleFingerprint;
 
 // Hash lengths and variant tags explicitly; neither map iteration order nor
 // transient numeric module IDs participate in logical source identity.
@@ -515,7 +514,7 @@ impl Project {
         builder.module_proving_started_with_metadata(
             target,
             dependencies,
-            self.get_hash(env.module_id),
+            self.get_module_hash(env.module_id).cloned(),
             Some(ranges.len()),
         );
         let dependencies_verified = self.all_dependencies(env.module_id).into_iter().all(|id| {
@@ -706,7 +705,11 @@ impl Project {
     }
 
     pub fn get_hash(&self, module_id: ModuleId) -> Option<ModuleFingerprint> {
-        self.modules.get(module_id as usize)?.fingerprint
+        Some(self.get_module_hash(module_id)?.fingerprint())
+    }
+
+    pub fn get_module_hash(&self, module_id: ModuleId) -> Option<&ModuleHash> {
+        self.modules.get(module_id as usize)?.hash.as_ref()
     }
 
     pub fn get_module_by_id(&self, module_id: ModuleId) -> &Module {
@@ -909,7 +912,13 @@ impl Project {
                     ))
                 })
                 .collect::<Option<Vec<_>>>()
-                .map(|deps| logical_fingerprint(&text, deps))
+                .map(|deps| {
+                    ModuleHash::new(
+                        logical_fingerprint(&text, deps.clone()),
+                        logical_fingerprint(&text, Vec::new()),
+                        logical_fingerprint("", deps),
+                    )
+                })
         } else {
             None
         };
