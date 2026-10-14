@@ -29,14 +29,23 @@ impl PartialEq for ModuleHash {
 impl ModuleHash {
     pub(crate) fn new(
         fingerprint: ModuleFingerprint,
-        source: ModuleFingerprint,
+        prefixes: Arc<[ModuleFingerprint]>,
         dependencies: ModuleFingerprint,
     ) -> Self {
         Self {
             fingerprint,
             dependencies,
-            prefixes: vec![source].into(),
+            prefixes,
         }
+    }
+
+    // Inclusive, zero-based complete-line boundary. Missing lines never match.
+    pub fn matches_through_line(&self, other: &Self, line: u32) -> bool {
+        self.dependencies == other.dependencies
+            && self
+                .prefixes
+                .get(line as usize)
+                .is_some_and(|prefix| other.prefixes.get(line as usize) == Some(prefix))
     }
 
     pub fn fingerprint(&self) -> ModuleFingerprint {
@@ -51,6 +60,7 @@ impl ModuleHash {
 // All dependency references are sorted before framing, independent of load IDs.
 pub(crate) struct ModuleHasher {
     source: Sha256,
+    prefixes: Arc<[ModuleFingerprint]>,
     dependencies: Vec<(ModuleRef, ModuleFingerprint)>,
 }
 
@@ -59,8 +69,21 @@ impl ModuleHasher {
         let mut source = Sha256::new();
         source.update(b"venticorn:module-logic:v1\0");
         Self::framed(&mut source, text.as_bytes());
+        // Preserve raw bytes, including CRLF and final newlines. Hashing framed
+        // segments incrementally avoids rescanning each preceding source prefix.
+        let mut prefix = Sha256::new();
+        prefix.update(b"venticorn:line-prefix:v1\0");
+        let prefixes = text
+            .split_inclusive('\n')
+            .map(|line| {
+                Self::framed(&mut prefix, line.as_bytes());
+                ModuleFingerprint(prefix.clone().finalize().into())
+            })
+            .collect::<Vec<_>>()
+            .into();
         Self {
             source,
+            prefixes,
             dependencies: Vec::new(),
         }
     }
@@ -101,10 +124,9 @@ impl ModuleHasher {
             .sort_by(|(left, _), (right, _)| left.cmp(right));
         self.dependencies
             .dedup_by(|(left, _), (right, _)| left == right);
-        let source = Self::finish_digest(self.source.clone(), &[]);
         let dependencies = Self::finish_digest(Self::new("").source, &self.dependencies);
         let fingerprint = Self::finish_digest(self.source, &self.dependencies);
-        ModuleHash::new(fingerprint, source, dependencies)
+        ModuleHash::new(fingerprint, self.prefixes, dependencies)
     }
 }
 
@@ -210,6 +232,36 @@ mod fingerprint_tests {
             hasher.add_dependency(descriptor, fingerprint);
         }
         hasher.finish().fingerprint()
+    }
+
+    fn hash(text: &str) -> ModuleHash {
+        ModuleHasher::new(text).finish()
+    }
+
+    #[test]
+    fn prefix_boundaries_preserve_exact_source_bytes() {
+        let original = hash("α😀\nsecond\nthird\n");
+        let changed = hash("α😀\nchanged\nthird\n");
+        assert!(original.matches_through_line(&changed, 0));
+        assert!(!original.matches_through_line(&changed, 1));
+        assert!(!original.matches_through_line(&changed, 2));
+        assert!(!original.matches_through_line(&original, 3));
+        assert!(!original.matches_through_line(&hash("β😀\nsecond\nthird\n"), 0));
+        assert!(!original.matches_through_line(&hash("α😀\r\nsecond\r\nthird\r\n"), 0));
+        assert!(original.matches_through_line(&hash("α😀\nsecond\nthird\nextra"), 2));
+    }
+
+    #[test]
+    fn empty_and_final_line_boundaries_are_conservative() {
+        assert_eq!(hash(""), hash(""));
+        assert!(!hash("").matches_through_line(&hash(""), 0));
+        assert!(!hash("a").matches_through_line(&hash("a\n"), 0));
+        assert_ne!(hash("a"), hash("a\n"));
+        assert!(hash("a\n").matches_through_line(&hash("a\n\n"), 0));
+        assert!(!hash("a\n").matches_through_line(&hash("a\n\n"), 1));
+        assert!(hash("\n").matches_through_line(&hash("\n"), 0));
+        assert!(!hash("\n").matches_through_line(&hash(""), 0));
+        assert!(!hash("a").matches_through_line(&hash("a"), u32::MAX));
     }
 
     #[test]
