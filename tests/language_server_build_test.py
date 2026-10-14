@@ -111,6 +111,12 @@ class BuildPublicationTest(unittest.TestCase):
         self.assertEqual(current["docs"][self.other], {"version": 1, "verified": [0]})
         self.wait_for_diagnostic(lambda item: item.get("version") == 2 and not item["diagnostics"])
 
+    def test_failed_subgoal_does_not_mark_its_theorem_verified(self):
+        self.open("theorem misleading { true } by {\n false\n}\n")
+        current = self.wait_for_build(total=2)
+        self.assertEqual(current["docs"][self.uri]["verified"], [])
+        self.wait_for_diagnostic(lambda item: bool(item["diagnostics"]))
+
     def test_unsaved_edit_keeps_other_saved_document_searchable(self):
         self.open("theorem first { true }\n")
         first = self.wait_for_build()

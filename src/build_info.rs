@@ -151,7 +151,18 @@ impl BuildInfo {
                             url.clone(),
                             DocumentProgress {
                                 version,
-                                verified: doc.verified.clone(),
+                                verified: if doc.diagnostics.iter().any(|diagnostic| {
+                                    diagnostic.severity
+                                        != Some(
+                                            tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION,
+                                        )
+                                        && diagnostic.severity
+                                            != Some(tower_lsp::lsp_types::DiagnosticSeverity::HINT)
+                                }) {
+                                    Vec::new()
+                                } else {
+                                    doc.verified.clone()
+                                },
                             },
                         )
                     })
@@ -183,10 +194,10 @@ mod tests {
             progress: Some((1, 1)),
             log_message: None,
             verified: Some(Range::new(Position::new(4, 0), Position::new(4, 8))),
-            diagnostic: Some(Diagnostic::new_simple(
-                Range::default(),
-                "warning".to_string(),
-            )),
+            diagnostic: Some(Diagnostic {
+                severity: Some(tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION),
+                ..Diagnostic::new_simple(Range::default(), "timing".to_string())
+            }),
         }
     }
 
