@@ -1104,8 +1104,12 @@ mod tests {
             let mut tokens = TokenIter::new(Token::scan(input));
             let error = Expression::parse_value(&mut tokens, Terminator::Is(TokenType::NewLine))
                 .unwrap_err();
-            assert_eq!(error.message, message);
-            assert_eq!(error.token.text(), operator);
+            assert_eq!(error.message(), message);
+            let range = error.range();
+            assert_eq!(
+                &input[range.start.character as usize..range.end.character as usize],
+                operator
+            );
         }
         check_value("a and not b");
         check_value("not not a");

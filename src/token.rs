@@ -402,14 +402,16 @@ impl Token {
     pub fn start_pos(&self) -> Position {
         Position {
             line: self.line_number,
-            character: self.start,
+            character: self.line[..self.start as usize].encode_utf16().count() as u32,
         }
     }
 
     pub fn end_pos(&self) -> Position {
         Position {
             line: self.line_number,
-            character: (self.start + self.len),
+            character: self.line[..(self.start + self.len) as usize]
+                .encode_utf16()
+                .count() as u32,
         }
     }
 

@@ -66,6 +66,27 @@ class BuildPublicationTest(unittest.TestCase):
             time.sleep(0.01)
         self.fail(f"expected diagnostic was not published: {values}")
 
+    def test_compilation_diagnostics_use_utf16_columns(self):
+        for version, (text, token) in enumerate([
+            ("let x𐐀é: Bool = missing", "missing"),
+            ("let x: Bool = y𐐀é", "y𐐀é"),
+        ], 1):
+            if version == 1:
+                self.open(text, version)
+            else:
+                self.change(version, text)
+                self.save(text)
+            item = self.wait_for_diagnostic(lambda value: value.get("version") == version and value["diagnostics"])
+            self.assertEqual(len(item["diagnostics"]), 1)
+            diagnostic = item["diagnostics"][0]
+            start = len(text[:text.index(token)].encode("utf-16-le")) // 2
+            end = start + len(token.encode("utf-16-le")) // 2
+            self.assertEqual(diagnostic["range"], {
+                "start": {"line": 0, "character": start},
+                "end": {"line": 0, "character": end},
+            })
+            self.assertIn("unknown identifier", diagnostic["message"])
+
     def test_empty_open_then_edit_and_save_gets_a_fresh_verification(self):
         self.open("", 1)
         empty = self.wait_for_build(total=0)

@@ -33,7 +33,7 @@ fn unary_minus_evaluates_to_the_same_typed_value_as_its_member_call() {
             Some(&AcornType::Bool),
         )
         .unwrap_err();
-    assert!(error.message.contains("expected type"), "{error}");
+    assert!(error.message().contains("expected type"), "{error}");
 }
 #[test]
 fn unary_minus_requires_a_method_on_the_operand_type() {
@@ -43,7 +43,7 @@ fn unary_minus_requires_a_method_on_the_operand_type() {
         .bindings
         .evaluate_value(&Project::new_mock(), &Expression::expect_value("-a"), None)
         .unwrap_err();
-    assert_eq!(error.message, "unknown instance variable 'Number.neg'");
+    assert_eq!(error.message(), "unknown instance variable 'Number.neg'");
     env.bad("class Number {\n let neg: Number = axiom\n}");
 }
 #[test]
