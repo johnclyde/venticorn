@@ -65,6 +65,7 @@ pub struct BuildInfo {
     id: Option<u32>,
     done: i32,
     total: i32,
+    finished: bool,
     docs: HashMap<Url, DocumentBuildInfo>,
     live_versions: HashMap<Url, i32>,
 }
@@ -84,6 +85,7 @@ impl BuildInfo {
         self.id = None;
         self.done = 0;
         self.total = 0;
+        self.finished = false;
         let mut urls: Vec<_> = self
             .docs
             .keys()
@@ -127,8 +129,19 @@ impl BuildInfo {
 
     pub fn accepts(&self, generation: u64, build_id: u32) -> bool {
         generation == self.generation
+            && !self.finished
             && build_id != 0
             && (self.id.is_none() || self.id == Some(build_id))
+    }
+
+    // Only the consumer that drained this exact build can finish it. Goal counts
+    // can reach their total before its final verification ranges are published.
+    pub fn finish(&mut self, generation: u64, build_id: u32) -> bool {
+        if generation != self.generation || self.id != Some(build_id) {
+            return false;
+        }
+        self.finished = true;
+        true
     }
 
     pub fn handle_event(
@@ -178,6 +191,7 @@ impl BuildInfo {
             build_id: self.id,
             done: self.done,
             total: self.total,
+            finished: self.finished,
             docs: self
                 .docs
                 .iter()
@@ -225,6 +239,68 @@ mod tests {
                 ..Diagnostic::new_simple(Range::default(), "timing".to_string())
             }),
         }
+    }
+
+    #[test]
+    fn empty_build_completion_is_distinct_from_initial_zero_counts() {
+        let mut info = BuildInfo::default();
+        assert!(!info.progress().finished);
+        assert!(!info.finish(info.generation(), 1));
+        let mut empty = event(1);
+        empty.progress = Some((0, 0));
+        empty.verified = None;
+        empty.diagnostic = None;
+        info.handle_event(info.generation(), None, &empty);
+        assert_eq!((info.progress().done, info.progress().total), (0, 0));
+        assert!(!info.progress().finished);
+        assert!(info.finish(info.generation(), 1));
+        assert!(info.progress().finished);
+    }
+
+    #[test]
+    fn final_verification_ranges_precede_completion_and_late_events_are_rejected() {
+        let mut info = BuildInfo::default();
+        info.reset(versions(1), versions(1));
+        let generation = info.generation();
+        let mut counted = event(1);
+        counted.verified = None;
+        counted.diagnostic = None;
+        info.handle_event(generation, Some(url()), &counted);
+        assert_eq!(info.progress().done, info.progress().total);
+        assert!(!info.progress().finished);
+        assert!(info.progress().docs[&url()].verified.is_empty());
+        info.handle_event(generation, Some(url()), &event(1));
+        assert!(!info.progress().finished);
+        assert_eq!(info.progress().docs[&url()].verified, vec![(4, 4)]);
+        assert!(info.finish(generation, 1));
+        let completed = info.progress();
+        assert!(completed.finished);
+        let mut late = event(1);
+        late.verified = Some((9, 9));
+        assert!(info.handle_event(generation, Some(url()), &late).is_none());
+        assert_eq!(info.progress(), completed);
+    }
+
+    #[test]
+    fn a_stale_consumer_cannot_finish_a_reopened_document_or_another_build() {
+        let mut info = BuildInfo::default();
+        info.reset(versions(7), versions(7));
+        let old = info.generation();
+        info.handle_event(old, Some(url()), &event(1));
+        info.invalidate(HashMap::new());
+        info.reset(versions(7), versions(7));
+        let current = info.generation();
+        assert!(!info.finish(old, 1));
+        assert!(!info.progress().finished);
+        info.handle_event(current, Some(url()), &event(2));
+        assert!(!info.finish(old, 1));
+        assert!(!info.finish(current, 1));
+        assert!(!info.progress().finished);
+        assert!(info.finish(current, 2));
+        assert!(info.progress().finished);
+        info.invalidate(versions(8));
+        assert!(!info.progress().finished);
+        assert!(!info.finish(current, 2));
     }
 
     #[test]

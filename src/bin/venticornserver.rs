@@ -338,11 +338,13 @@ impl Backend {
         let state = self.build.clone();
         let client = self.client.clone();
         tokio::spawn(async move {
+            let mut build_id = None;
             while let Some(event) = rx.recv().await {
                 let mut build = state.write().await;
                 if !build.accepts(generation, event.build_id) {
                     break;
                 }
+                build_id = Some(event.build_id);
                 if let Some(message) = &event.log_message {
                     log(message);
                 }
@@ -354,6 +356,9 @@ impl Backend {
                         .publish_diagnostics(update.url, update.diagnostics, update.version)
                         .await;
                 }
+            }
+            if let Some(build_id) = build_id {
+                state.write().await.finish(generation, build_id);
             }
         });
     }
