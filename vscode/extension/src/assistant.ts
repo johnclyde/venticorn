@@ -16,6 +16,7 @@ export class Assistant implements Disposable {
   listener: Disposable;
   disposables: Disposable[];
   currentParams: SearchParams;
+  private searchEditor: TextEditor | undefined;
   distPath: string;
   currentSearchId: number;
   requestViewColumn: number;
@@ -72,7 +73,7 @@ export class Assistant implements Disposable {
       if (!editor) {
         return;
       }
-      if (editor.document.languageId !== "acorn" || editor.document.uri.scheme !== "file") {
+      if (editor.document.languageId !== "acorn" || editor.document.uri.scheme !== "file" || editor.document.isDirty) {
         return;
       }
       if (!this.panel) {
@@ -91,7 +92,8 @@ export class Assistant implements Disposable {
         !force &&
         this.currentParams &&
         this.currentParams.uri === uri &&
-        this.currentParams.selectedLine === selectedLine
+        this.currentParams.selectedLine === selectedLine &&
+        this.currentParams.version === version
       ) {
         return;
       }
@@ -109,6 +111,16 @@ export class Assistant implements Disposable {
     }
   }
 
+  private matchesEditor(params: SearchParams): boolean {
+    const active = window.activeTextEditor;
+    const editor = active ?? this.searchEditor;
+    const document = editor?.document;
+    return !!document && document === this.searchEditor?.document && !document.isClosed &&
+      (!!active || workspace.textDocuments.includes(document)) && document.languageId === "acorn" &&
+      document.uri.scheme === "file" && !document.isDirty &&
+      document.uri.toString() === params.uri && document.version === params.version;
+  }
+
   // Sends a search request to the language server, passing the response on to the webview.
   async sendSearchRequest(params: SearchParams) {
     console.log(
@@ -116,6 +128,7 @@ export class Assistant implements Disposable {
     );
     this.currentSearchId = params.id;
     this.currentParams = params;
+    this.searchEditor = window.activeTextEditor;
 
     while (true) {
       if (!this.client?.isRunning()) {
@@ -126,7 +139,7 @@ export class Assistant implements Disposable {
         params
       );
 
-      if (!this.panel || params.id != this.currentSearchId) {
+      if (!this.panel || params.id != this.currentSearchId || !this.matchesEditor(params)) {
         // The request is no longer relevant
         return;
       }
@@ -146,7 +159,7 @@ export class Assistant implements Disposable {
       // The search is not complete. Send another request after waiting a bit.
       let ms = 50;
       await new Promise((resolve) => setTimeout(resolve, ms));
-      if (!this.panel || params.id != this.currentSearchId) {
+      if (!this.panel || params.id != this.currentSearchId || !this.matchesEditor(params)) {
         return;
       }
     }
