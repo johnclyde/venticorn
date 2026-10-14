@@ -268,3 +268,23 @@ fn axiomatic_types_require_a_bare_axiom_and_valid_declarations_still_work() {
     assert!(env.bindings.has_identifier("thing"));
     assert!(env.bindings.has_identifier("identity"));
 }
+
+#[test]
+fn infix_member_and_type_errors_cover_the_complete_operation() {
+    let declarations = "type Number: axiom\nclass Number {\n define add(self, other: Number) -> Number { axiom }\n}\nlet a: Number = axiom\n";
+    assert_diagnostic(
+        &format!("{declarations}let bad: Number = a + true"),
+        "a + true",
+        "expected type Number",
+    );
+    assert_diagnostic(
+        &format!("{declarations}let bad: Bool = a + a"),
+        "a + a",
+        "expected type Bool",
+    );
+    assert_diagnostic(
+        &format!("{declarations}let bad: Number = a * a"),
+        "a * a",
+        "unknown instance variable 'Number.mul'",
+    );
+}
