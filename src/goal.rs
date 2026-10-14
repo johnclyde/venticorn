@@ -75,10 +75,11 @@ impl GoalContext {
                         format!("claim at line {}", proposition.source.range.start.line + 1)
                     }),
             },
-            Goal::Solve(value, _) => {
-                let value_str = env.bindings.value_to_code(value).unwrap();
-                format!("solve {}", value_str)
-            }
+            Goal::Solve(value, range) => env
+                .bindings
+                .value_to_code(value)
+                .map(|code| format!("solve {}", code))
+                .unwrap_or_else(|_| format!("solve at line {}", range.start.line + 1)),
         };
         GoalContext {
             module_id: env.module_id,
