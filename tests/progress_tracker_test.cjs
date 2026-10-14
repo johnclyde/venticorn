@@ -14,6 +14,7 @@ function host(responses) {
       onDidChangeTextDocument: listen("change"), onDidCloseTextDocument: listen("close"), onDidOpenTextDocument: listen("open"),
     },
     window: { visibleTextEditors: state.editors,
+      onDidChangeVisibleTextEditors: listen("visible"),
       createTextEditorDecorationType: () => ({ dispose() {} }),
       withProgress: async (options, callback) => {
       state.windows++; assert.equal(options.cancellable, false);
@@ -124,4 +125,12 @@ test("dirty documents never receive cached marks even when versions match", asyn
   const { tracker, state } = host([marked()]);
   const view = editor(state); view.document.isDirty = true;
   await tracker.getProgress(); assert.deepEqual(view.lines, []);
+});
+
+test("a newly visible editor receives only its current cached marks", async () => {
+  const { tracker, state } = host([marked()]);
+  await tracker.getProgress(); const view = editor(state);
+  state.events.visible([view]); assert.deepEqual(view.lines, [0]);
+  view.document.version = 2; state.events.visible([view]); assert.deepEqual(view.lines, []);
+  assert.equal(state.calls, 1);
 });
