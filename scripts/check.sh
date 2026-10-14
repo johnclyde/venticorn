@@ -19,6 +19,7 @@ cargo test --locked --all-targets
 cargo test --locked --all-targets --no-default-features
 cargo build --locked --bins
 python3 tests/language_server_test.py
+python3 tests/language_server_documents_test.py
 
 (
   cd vscode/extension
