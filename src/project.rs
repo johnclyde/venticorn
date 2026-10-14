@@ -608,7 +608,7 @@ impl Project {
                 builder.goals_done,
                 builder.goals_total,
             );
-            (stats.0, stats.1, stats.2, stats.3, builder.into_cache())
+            (stats.0, stats.1, stats.2, stats.3, builder.take_cache())
         };
         BuildReport {
             status,
