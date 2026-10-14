@@ -1304,6 +1304,69 @@ impl BindingMap {
         }
     }
 
+    // Apply a pending generic declaration while preserving its canonical parameter order.
+    fn infer_and_apply(
+        &self,
+        stack: &mut Stack,
+        project: &Project,
+        source: &dyn ErrorSource,
+        unresolved: UnresolvedConstant,
+        arg_exprs: Vec<&Expression>,
+        expected_type: Option<&AcornType>,
+    ) -> compilation::Result<AcornValue> {
+        let function_type = match &unresolved.generic_type {
+            AcornType::Function(function_type) => function_type,
+            _ => return Err(source.error("expected a function")),
+        };
+        if arg_exprs.len() > function_type.arg_types.len() {
+            return Err(source.error(&format!(
+                "expected <= {} arguments, but got {}",
+                function_type.arg_types.len(),
+                arg_exprs.len()
+            )));
+        }
+        // Do the actual inference
+        let mut args = vec![];
+        let mut mapping = HashMap::new();
+        for (i, arg_expr) in arg_exprs.iter().enumerate() {
+            let arg_type: &AcornType = &function_type.arg_types[i];
+            let arg_value = self.evaluate_value_with_stack(stack, project, arg_expr, None)?;
+            if !arg_type.match_instance(&arg_value.get_type(), &mut mapping) {
+                return Err(arg_expr.error(&format!(
+                    "expected type {}, but got {}",
+                    arg_type,
+                    arg_value.get_type()
+                )));
+            }
+            args.push(arg_value);
+        }
+
+        // Resolve the instance type using declaration names before keeping ordered actuals
+        let mut params = vec![];
+        for param_name in &unresolved.params {
+            match mapping.get(param_name) {
+                Some(t) => params.push((param_name.clone(), t.clone())),
+                None => {
+                    return Err(
+                        source.error(&format!("parameter {} could not be inferred", param_name))
+                    )
+                }
+            }
+        }
+
+        let instance_type = unresolved.generic_type.instantiate(&params);
+        let actuals = params.into_iter().map(|(_, actual)| actual).collect();
+        let instance_fn = AcornValue::new_constant(
+            unresolved.module_id,
+            unresolved.name,
+            actuals,
+            instance_type,
+        );
+        let value = AcornValue::new_apply(instance_fn, args);
+        check_type(source, expected_type, &value.get_type())?;
+        Ok(value)
+    }
+
     // Preserve unresolved qualified and grouped function heads during lookup migration.
     fn evaluate_function_head(
         &self,
@@ -1523,44 +1586,19 @@ impl BindingMap {
 
                 // Check if we have to do type inference.
                 if let AcornValue::Unresolved(c_module, c_name, c_type, c_params) = function {
-                    // Do the actual inference
-                    let mut args = vec![];
-                    let mut mapping = HashMap::new();
-                    for (i, arg_expr) in arg_exprs.iter().enumerate() {
-                        let arg_type: &AcornType = &function_type.arg_types[i];
-                        let arg_value =
-                            self.evaluate_value_with_stack(stack, project, arg_expr, None)?;
-                        if !arg_type.match_instance(&arg_value.get_type(), &mut mapping) {
-                            return Err(arg_expr.error(&format!(
-                                "expected type {}, but got {}",
-                                arg_type,
-                                arg_value.get_type()
-                            )));
-                        }
-                        args.push(arg_value);
-                    }
-
-                    // Resolve the instance type using declaration names before keeping ordered actuals
-                    let mut params = vec![];
-                    for param_name in &c_params {
-                        match mapping.get(param_name) {
-                            Some(t) => params.push((param_name.clone(), t.clone())),
-                            None => {
-                                return Err(function_expr.error(&format!(
-                                    "parameter {} could not be inferred",
-                                    param_name
-                                )))
-                            }
-                        }
-                    }
-
-                    let instance_type = c_type.instantiate(&params);
-                    let actuals = params.into_iter().map(|(_, actual)| actual).collect();
-                    let instance_fn =
-                        AcornValue::new_constant(c_module, c_name, actuals, instance_type);
-                    let value = AcornValue::new_apply(instance_fn, args);
-                    check_type(&**function_expr, expected_type, &value.get_type())?;
-                    return Ok(value);
+                    return self.infer_and_apply(
+                        stack,
+                        project,
+                        &**function_expr,
+                        UnresolvedConstant {
+                            module_id: c_module,
+                            name: c_name,
+                            params: c_params,
+                            generic_type: c_type,
+                        },
+                        arg_exprs,
+                        expected_type,
+                    );
                 }
 
                 // Ordinary functions keep the types declared in their current scope.
