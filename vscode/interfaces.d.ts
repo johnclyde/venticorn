@@ -87,3 +87,10 @@ interface InfoResponse {
   failure: string | null;
   result: InfoResult | null;
 }
+
+// Editor guidance replaces proof data when there is no current saved selection.
+interface PreSaveHelp {
+  noFile?: boolean;
+  newDocument?: boolean;
+  unsaved?: boolean;
+}

@@ -1,6 +1,6 @@
 // Modified for Venticorn: isolate proof-search UI and preserve stopped-client guards.
 import {
-  commands, Disposable, Position, Range, TextEditor, TextEditorRevealType,
+  commands, Disposable, Position, Range, TextDocument, TextEditor, TextEditorRevealType,
   TextEditorSelectionChangeKind, Uri, ViewColumn, WebviewPanel, window, workspace,
 } from "vscode";
 import * as fs from "fs";
@@ -16,14 +16,16 @@ export class Assistant implements Disposable {
   listener: Disposable;
   disposables: Disposable[];
   currentParams: SearchParams;
-  private searchEditor: TextEditor | undefined;
+  private currentDocument: TextDocument | undefined;
   distPath: string;
   currentSearchId: number;
   requestViewColumn: number;
   wasDisplayed = false;
+  private lastEditor: TextEditor | undefined;
 
   constructor(private readonly client: LanguageClient, distPath: string) {
     this.distPath = distPath;
+    this.lastEditor = window.activeTextEditor;
     this.currentSearchId = 0;
     this.disposables = [
       commands.registerTextEditorCommand("acorn.displayAssistant", (editor) =>
@@ -55,10 +57,60 @@ export class Assistant implements Disposable {
           await this.searchOnSelection(false);
         }
       }),
-      workspace.onDidSaveTextDocument(async () => {
+      workspace.onDidSaveTextDocument(async (document) => {
+        if (document !== this.selectedEditor()?.document) return;
+        this.chooseHelp();
         await this.searchOnSelection(true);
       }),
+      window.onDidChangeActiveTextEditor((editor) => {
+        if (editor) this.lastEditor = editor;
+        if (this.currentParams && this.matchesEditor(this.currentParams)) return;
+        this.chooseHelp();
+      }),
+      workspace.onDidChangeTextDocument((event) => {
+        if (event.document === this.selectedEditor()?.document) this.chooseHelp();
+      }),
+      workspace.onDidCloseTextDocument((document) => {
+        if (this.lastEditor?.document === document) {
+          this.lastEditor = undefined;
+          this.sendHelp({ noFile: true });
+        }
+      }),
     ];
+  }
+
+  private selectedEditor(): TextEditor | undefined {
+    const active = window.activeTextEditor;
+    if (active && !active.document.isClosed) {
+      this.lastEditor = active;
+      return active;
+    }
+    // Focusing the webview removes activeTextEditor; retain its open source document.
+    const previous = this.lastEditor;
+    if (previous && !previous.document.isClosed && workspace.textDocuments.includes(previous.document)) {
+      return previous;
+    }
+    return undefined;
+  }
+
+  sendHelp(help: PreSaveHelp) {
+    this.currentSearchId++;
+    this.currentParams = null;
+    this.currentDocument = undefined;
+    this.panel?.webview.postMessage({ type: "help", help });
+  }
+
+  chooseHelp() {
+    const document = this.selectedEditor()?.document;
+    if (!document || document.languageId !== "acorn") {
+      this.sendHelp({ noFile: true });
+    } else if (document.uri.scheme !== "file") {
+      this.sendHelp({ newDocument: true });
+    } else if (document.isDirty) {
+      this.sendHelp({ unsaved: true });
+    } else {
+      this.sendHelp({});
+    }
   }
 
   // Runs a new search based on the current selection.
@@ -69,11 +121,10 @@ export class Assistant implements Disposable {
       return;
     }
     try {
-      let editor = window.activeTextEditor;
-      if (!editor) {
-        return;
-      }
-      if (editor.document.languageId !== "acorn" || editor.document.uri.scheme !== "file" || editor.document.isDirty) {
+      let editor = this.selectedEditor();
+      if (!editor || editor.document.languageId !== "acorn" ||
+          editor.document.uri.scheme !== "file" || editor.document.isDirty) {
+        this.chooseHelp();
         return;
       }
       if (!this.panel) {
@@ -98,6 +149,7 @@ export class Assistant implements Disposable {
         return;
       }
 
+      this.sendHelp({});
       let id = this.currentSearchId + 1;
       let params: SearchParams = { uri, selectedLine, version, id };
 
@@ -112,11 +164,8 @@ export class Assistant implements Disposable {
   }
 
   private matchesEditor(params: SearchParams): boolean {
-    const active = window.activeTextEditor;
-    const editor = active ?? this.searchEditor;
-    const document = editor?.document;
-    return !!document && document === this.searchEditor?.document && !document.isClosed &&
-      (!!active || workspace.textDocuments.includes(document)) && document.languageId === "acorn" &&
+    const document = this.selectedEditor()?.document;
+    return !!document && document === this.currentDocument && document.languageId === "acorn" &&
       document.uri.scheme === "file" && !document.isDirty &&
       document.uri.toString() === params.uri && document.version === params.version;
   }
@@ -128,7 +177,7 @@ export class Assistant implements Disposable {
     );
     this.currentSearchId = params.id;
     this.currentParams = params;
-    this.searchEditor = window.activeTextEditor;
+    this.currentDocument = this.selectedEditor()?.document;
 
     while (true) {
       if (!this.client?.isRunning()) {
@@ -168,19 +217,31 @@ export class Assistant implements Disposable {
   // Handles messages from the webview.
   async handleWebviewMessage(message: any) {
     try {
+      if (message.command === "ready") {
+        this.chooseHelp();
+        await this.searchOnSelection(true);
+        return;
+      }
       if (message.command === "insertProof") {
+        const params = this.currentParams;
+        if (!params || !this.matchesEditor(params) || message.uri !== params.uri ||
+            message.version !== params.version || message.searchId !== params.id || !this.currentDocument) return;
         await this.insertProof(
           message.uri,
           message.version,
           message.line,
           message.insertBlock,
-          message.code
+          message.code,
+          params,
+          this.currentDocument
         );
         return;
       }
 
       if (message.command === "infoRequest") {
-        if (!this.client?.isRunning()) {
+        const params = this.currentParams;
+        if (!this.client?.isRunning() || !params || !this.matchesEditor(params) ||
+            message.params.searchId !== this.currentSearchId) {
           return;
         }
         console.log(`info request for clause ${message.params.clauseId}`);
@@ -188,8 +249,10 @@ export class Assistant implements Disposable {
           "acorn/info",
           message.params
         );
+        if (!this.panel || this.currentParams !== params || !this.matchesEditor(params) ||
+            response.searchId !== this.currentSearchId) return;
         if (!response.result) {
-          console.log(`info request failed: {response.failure}`);
+          console.log(`info request failed: ${response.failure}`);
           return;
         }
         this.panel.webview.postMessage({ type: "info", response });
@@ -295,7 +358,9 @@ export class Assistant implements Disposable {
     version: number,
     line: number,
     insertBlock: boolean,
-    code: string[]
+    code: string[],
+    expectedParams: SearchParams,
+    expectedDocument: TextDocument
   ) {
     let parts = uri.split("/");
     let filename = parts[parts.length - 1];
@@ -306,7 +371,10 @@ export class Assistant implements Disposable {
       return;
     }
 
-    if (editor.document.version != version) {
+    if (this.currentParams !== expectedParams || this.currentDocument !== expectedDocument ||
+        editor.document !== expectedDocument || expectedDocument.isClosed ||
+        !this.matchesEditor(expectedParams)) return;
+    if (editor.document.isDirty || editor.document.version != version) {
       window.showWarningMessage(`${filename} has pending changes`);
       return;
     }
@@ -362,7 +430,7 @@ export class Assistant implements Disposable {
     editor.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
   }
 
-  // Open once per activation, after a saved Acorn document becomes visible.
+  // Open once per activation when an Acorn document becomes active.
   autoDisplay() {
     const editor = window.activeTextEditor;
     if (this.wasDisplayed || !this.client?.isRunning() || editor?.document.languageId !== "acorn") {
@@ -404,6 +472,9 @@ export class Assistant implements Disposable {
       this.listener.dispose();
       this.listener = null;
       this.panel = null;
+      this.currentSearchId++;
+      this.currentParams = null;
+      this.currentDocument = undefined;
     });
 
     // Set the webview's initial content
@@ -426,7 +497,7 @@ export class Assistant implements Disposable {
     this.panel.webview.html = injected;
 
     // Always reissue the search request on panel open.
-    this.currentParams = null;
+    this.chooseHelp();
     this.searchOnSelection(true);
   }
 

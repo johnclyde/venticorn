@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "node --test ../../tests/proof_status_test.cjs"
+    "test": "node --test ../../tests/proof_status_test.cjs ../../tests/assistant_help_test.cjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^2.4.2",
