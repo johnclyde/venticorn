@@ -891,11 +891,12 @@ fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
     let name = tokens.expect_type_name()?;
     tokens.expect_type(TokenType::LeftBrace)?;
     let mut constants = vec![];
+    let mut theorems = vec![];
     while let Some(token) = tokens.next() {
         match token.token_type {
             TokenType::NewLine => continue,
             TokenType::RightBrace => {
-                if constants.is_empty() {
+                if constants.is_empty() && theorems.is_empty() {
                     return Err(token.error("typeclasses must have some constants or theorems"));
                 }
                 return Ok(Statement {
@@ -905,7 +906,7 @@ fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
                         instance_type,
                         name,
                         constants,
-                        theorems: vec![],
+                        theorems,
                     }),
                 });
             }
@@ -923,10 +924,29 @@ fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
                     }
                     constants.push((token, type_expr));
                 }
-                Some(TokenType::LeftParen | TokenType::LeftBrace | TokenType::LessThan) => {
-                    return Err(token.error("typeclass theorem members are not supported yet"));
+                Some(TokenType::LeftParen | TokenType::LeftBrace) => {
+                    let (type_params, args, _) = parse_args(tokens, TokenType::LeftBrace)?;
+                    if let Some(param) = type_params.first() {
+                        return Err(
+                            param.error("typeclass theorem type parameters are not supported")
+                        );
+                    }
+                    let (claim, _) =
+                        Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
+                    theorems.push(TypeclassTheorem {
+                        name: token,
+                        args,
+                        claim,
+                    });
                 }
-                _ => return Err(token.error("expected ':' after name in typeclass statement")),
+                Some(TokenType::LessThan) => {
+                    return Err(token.error("typeclass theorem type parameters are not supported"));
+                }
+                _ => {
+                    return Err(
+                        token.error("expected ':', '(' or '{' after name in typeclass statement")
+                    )
+                }
             },
             _ => return Err(token.error("unexpected token in typeclass statement")),
         }
@@ -964,6 +984,25 @@ fn write_args(f: &mut fmt::Formatter, args: &[Declaration]) -> fmt::Result {
     Ok(())
 }
 
+// Writes the parameters, arguments and claim after a theorem's name.
+fn write_theorem(
+    f: &mut fmt::Formatter,
+    indentation: &str,
+    type_params: &[Token],
+    args: &[Declaration],
+    claim: &Expression,
+) -> fmt::Result {
+    write_type_params(f, type_params)?;
+    write_args(f, args)?;
+    write!(
+        f,
+        " {{\n{}{}\n{}}}",
+        add_indent(indentation),
+        claim,
+        indentation
+    )
+}
+
 impl Statement {
     fn fmt_helper(&self, f: &mut fmt::Formatter, indentation: &str) -> fmt::Result {
         write!(f, "{}", indentation)?;
@@ -985,7 +1024,6 @@ impl Statement {
             }
 
             StatementInfo::Theorem(ts) => {
-                let new_indentation = add_indent(indentation);
                 if ts.axiomatic {
                     write!(f, "axiom")?;
                 } else {
@@ -994,9 +1032,7 @@ impl Statement {
                 if let Some(name) = &ts.name {
                     write!(f, " {}", name)?;
                 }
-                write_type_params(f, &ts.type_params)?;
-                write_args(f, &ts.args)?;
-                write!(f, " {{\n{}{}\n{}}}", new_indentation, ts.claim, indentation)?;
+                write_theorem(f, indentation, &ts.type_params, &ts.args, &ts.claim)?;
                 if let Some(body) = &ts.body {
                     write!(f, " by")?;
                     write_block(f, &body.statements, indentation)?;
@@ -1133,14 +1169,8 @@ impl Statement {
                 }
                 for theorem in &ts.theorems {
                     write!(f, "{}{}", member_indent, theorem.name)?;
-                    write_args(f, &theorem.args)?;
-                    writeln!(
-                        f,
-                        " {{\n{}{}\n{}}}",
-                        add_indent(&member_indent),
-                        theorem.claim,
-                        member_indent
-                    )?;
+                    write_theorem(f, &member_indent, &[], &theorem.args, &theorem.claim)?;
+                    writeln!(f)?;
                 }
                 write!(f, "{}}}", indentation)
             }

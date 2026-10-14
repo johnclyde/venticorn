@@ -120,13 +120,30 @@ fn malformed_typeclass_headers_and_members_return_diagnostics() {
 }
 
 #[test]
-fn theorem_members_are_explicitly_rejected_until_supported() {
+fn theorem_members_round_trip_with_nested_claims_and_no_arguments() {
     for source in [
         "typeclass F: Foo {\n some_bar(x: F) { true }\n}",
         "typeclass F: Foo {\n inhabited { exists(x: F) { x = x } }\n}",
+        "typeclass F: Foo {\n bar: (F, F) -> Bool\n some_bar(x: F) { exists(y: F) { x.bar(y) } }\n}",
+        "typeclass T: MyTypeclass {\n two_nonequal { exists(x: T, y: T) { x != y } }\n always_a_third(x: T, y: T) { exists(z: T) { x != z and y != z } }\n}",
     ] {
-        parse_error(source, "typeclass theorem members are not supported yet");
+        let parsed = Statement::parse_str(source).unwrap();
+        let formatted = parsed.to_string();
+        assert_eq!(Statement::parse_str(&formatted).unwrap().to_string(), formatted);
+        let StatementInfo::Typeclass(tc) = parsed.statement else { panic!("expected typeclass") };
+        assert!(!tc.theorems.is_empty());
+        assert_eq!(tc.theorems[0].name.start_pos().line, if tc.constants.is_empty() { 1 } else { 2 });
     }
+    let source = "typeclass F: Foo {\n first { true }\n second(value: F) { value = value }\n}";
+    let parsed = Statement::parse_str(source).unwrap();
+    let StatementInfo::Typeclass(tc) = parsed.statement else {
+        panic!("expected typeclass")
+    };
+    assert_eq!(tc.theorems.len(), 2);
+    assert!(tc.theorems[0].args.is_empty());
+    assert_eq!(tc.theorems[1].args.len(), 1);
+    assert_eq!(tc.theorems[0].claim.to_string(), "true");
+    assert_eq!(tc.theorems[1].claim.to_string(), "value = value");
 }
 
 #[test]
@@ -136,7 +153,9 @@ fn rejected_typeclasses_leave_the_environment_unchanged() {
     let nodes = env.nodes.len();
     let last_line = env.last_line();
     let kept = env.bindings.get_constant_value("kept").unwrap();
-    let statement = Statement::parse_str("typeclass T: Example {\n value: T\n}").unwrap();
+    let statement =
+        Statement::parse_str("typeclass T: Example {\n value: T\n identity { value = value }\n}")
+            .unwrap();
     let error = env
         .add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err();
@@ -154,6 +173,52 @@ fn rejected_typeclasses_leave_the_environment_unchanged() {
 #[test]
 fn truncated_typeclass_input_never_panics() {
     let source = "typeclass F: Foo {\n value: (F, F) -> Bool\n}";
+    for end in source.char_indices().map(|(i, _)| i).chain([source.len()]) {
+        let mut tokens = TokenIter::new(Token::scan(&source[..end]));
+        let _ = Statement::parse(&mut tokens, false);
+    }
+}
+
+#[test]
+fn malformed_theorem_members_and_generic_parameters_return_diagnostics() {
+    parse_error(
+        "typeclass F: Foo { identity<T>(x: T) { x = x } }",
+        "type parameters are not supported",
+    );
+    for source in [
+        "typeclass F: Foo { identity() { true } }",
+        "typeclass F: Foo { identity(x) { true } }",
+        "typeclass F: Foo { identity(x: F) true }",
+        "typeclass F: Foo { identity { } }",
+        "typeclass F: Foo { identity { true } by { true } }",
+        "typeclass F: Foo { identity(x: F) { exists(y: F) { x = y } }",
+    ] {
+        assert!(Statement::parse_str(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn theorem_braces_preserve_following_typeclass_members_and_statements() {
+    let source = "typeclass T: Example {\n nested(x: T) { forall(y: T) { exists(z: T) { x = y or x = z } } }\n value: T\n}\ntheorem { true }";
+    let mut tokens = TokenIter::new(Token::scan(source));
+    let (first, _) = Statement::parse(&mut tokens, false).unwrap();
+    let first = first.unwrap();
+    assert_eq!(first.range().end, Position::new(3, 1));
+    let StatementInfo::Typeclass(tc) = first.statement else {
+        panic!("expected typeclass")
+    };
+    assert_eq!(tc.theorems.len(), 1);
+    assert_eq!(tc.constants.len(), 1);
+    let (second, _) = Statement::parse(&mut tokens, false).unwrap();
+    assert!(matches!(
+        second.unwrap().statement,
+        StatementInfo::Theorem(_)
+    ));
+}
+
+#[test]
+fn nested_theorem_truncations_never_panic() {
+    let source = "typeclass F: Foo {\n law(x𐐀: F) { forall(y: F) { x𐐀 = y } }\n}";
     for end in source.char_indices().map(|(i, _)| i).chain([source.len()]) {
         let mut tokens = TokenIter::new(Token::scan(&source[..end]));
         let _ = Statement::parse(&mut tokens, false);
