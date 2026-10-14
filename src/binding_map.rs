@@ -1293,10 +1293,15 @@ impl BindingMap {
                     )?;
                     Ok(AcornValue::Not(Box::new(value)))
                 }
-                _ => Err(Error::new(
-                    token,
-                    "unexpected unary operator in value expression",
-                )),
+                operator => {
+                    let name = operator.to_prefix_magic_method_name().ok_or_else(|| {
+                        Error::new(token, "unexpected unary operator in value expression")
+                    })?;
+                    let operand = self.evaluate_value_with_stack(stack, project, expr, None)?;
+                    let value = self.evaluate_instance_variable(token, project, operand, name)?;
+                    check_type(token, expected_type, &value.get_type())?;
+                    Ok(value)
+                }
             },
             Expression::Binary(left, token, right) => match token.token_type {
                 TokenType::RightArrow => {
@@ -1394,7 +1399,7 @@ impl BindingMap {
                     let entity = self.evaluate_dot_expression(stack, project, left, right)?;
                     Ok(entity.expect_value(expected_type, token)?)
                 }
-                token_type => match token_type.to_magic_method_name() {
+                token_type => match token_type.to_infix_magic_method_name() {
                     Some(name) => {
                         self.evaluate_infix(stack, project, left, token, right, name, expected_type)
                     }
@@ -2023,7 +2028,9 @@ impl BindingMap {
                 if let Some(name) = fa.function.is_member(&fa.args[0].get_type()) {
                     if args.len() == 2 {
                         // Infix operators
-                        if let Some(op) = TokenType::from_magic_method_name(&name) {
+                        if let Some(op) = TokenType::from_magic_method_name(&name)
+                            .filter(|op| op.to_infix_magic_method_name() == Some(name.as_str()))
+                        {
                             let right = args.pop().unwrap();
                             let left = args.pop().unwrap();
                             return Ok(Expression::generate_binary(left, op, right));
