@@ -1,6 +1,8 @@
 // Modified for Venticorn: staged match binding and constructor metadata.
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
+
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::AtomId;
@@ -65,21 +67,21 @@ pub struct BindingMap {
     module: ModuleId,
 
     // Maps the name of a type to the type object.
-    type_names: HashMap<String, AcornType>,
+    type_names: BTreeMap<String, AcornType>,
 
     // Maps the type object to the name of a type.
     reverse_type_names: HashMap<AcornType, String>,
 
     // Maps an identifier name to its type.
     // Has entries for both defined constants and aliases.
-    identifier_types: HashMap<String, AcornType>,
+    identifier_types: BTreeMap<String, AcornType>,
 
     // Maps the name of a constant defined in this scope to information about it.
     // Doesn't handle variables defined on the stack, only ones that will be in scope for the
     // entirety of this environment.
     // Aliases are stored separately and resolve to their canonical constant.
     // Includes "<datatype>.<constant>" for members.
-    constants: HashMap<String, ConstantInfo>,
+    constants: BTreeMap<String, ConstantInfo>,
 
     // The canonical identifier of a constant is the first place it is defined.
     // There may be other names in this environment that refer to the same thing.
@@ -146,6 +148,15 @@ pub fn check_type<'a>(
     Ok(())
 }
 
+fn keys_with_prefix<'a, T>(
+    map: &'a BTreeMap<String, T>,
+    prefix: &'a str,
+) -> impl Iterator<Item = &'a String> {
+    map.range(prefix.to_string()..)
+        .take_while(move |(key, _)| key.starts_with(prefix))
+        .map(|(key, _)| key)
+}
+
 // A name can refer to any of these things.
 enum NamedEntity {
     Value(AcornValue),
@@ -195,10 +206,10 @@ impl BindingMap {
         assert!(module >= FIRST_NORMAL);
         let mut answer = BindingMap {
             module,
-            type_names: HashMap::new(),
+            type_names: BTreeMap::new(),
             reverse_type_names: HashMap::new(),
-            identifier_types: HashMap::new(),
-            constants: HashMap::new(),
+            identifier_types: BTreeMap::new(),
+            constants: BTreeMap::new(),
             alias_to_canonical: HashMap::new(),
             canonical_to_alias: HashMap::new(),
             modules: BTreeMap::new(),
@@ -416,6 +427,31 @@ impl BindingMap {
             }
             None => false,
         }
+    }
+
+    // Complete one identifier with deterministic ordering.
+    pub fn get_completions(&self, prefix: &str) -> Vec<CompletionItem> {
+        if prefix.is_empty() {
+            return vec![];
+        }
+        let mut items = vec![];
+        for name in keys_with_prefix(&self.identifier_types, prefix) {
+            if !name.contains('.') {
+                items.push(CompletionItem {
+                    label: name.clone(),
+                    kind: Some(CompletionItemKind::CONSTANT),
+                    ..Default::default()
+                });
+            }
+        }
+        for name in keys_with_prefix(&self.type_names, prefix) {
+            items.push(CompletionItem {
+                label: name.clone(),
+                kind: Some(CompletionItemKind::CLASS),
+                ..Default::default()
+            });
+        }
+        items
     }
 
     ////////////////////////////////////////////////////////////////////////////////

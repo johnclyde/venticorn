@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::{fmt, io};
 
+use tower_lsp::lsp_types::CompletionItem;
 use walkdir::WalkDir;
 
 use crate::binding_map::BindingMap;
@@ -776,6 +777,22 @@ impl Project {
             facts.extend(env.exported_facts());
         }
         facts
+    }
+
+    // Complete against an already evaluated module. Unknown modules have no invented symbols.
+    pub fn get_completions(
+        &self,
+        _path: &Path,
+        _env_line: u32,
+        prefix: &str,
+    ) -> Option<Vec<CompletionItem>> {
+        let parts: Vec<_> = prefix.split_whitespace().collect();
+        if parts.len() != 4 || parts[0] != "from" || parts[2] != "import" {
+            return None;
+        }
+        let module_ref = ModuleRef::Name(parts[1].to_string());
+        let env = self.get_env_by_ref(&module_ref)?;
+        Some(env.bindings.get_completions(parts[3]))
     }
 
     // Expects the module to load successfully and for there to be no errors in the loaded module.
