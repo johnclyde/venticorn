@@ -6,14 +6,15 @@ use crate::acorn_value::AcornValue;
 use crate::constant_map::ConstantKey;
 use crate::fact::Fact;
 
-// A parameter list corresponds to a monomorphization.
+// A substitution of type variables relative to one fact or constant.
 #[derive(PartialEq, Eq, Hash, Clone)]
-struct ParamList {
-    // Sorted
+struct Instantiation {
+    // Fact substitutions are sorted by variable name. Constant substitutions retain
+    // the declaration order, so their formal and actual types remain paired.
     params: Vec<(String, AcornType)>,
 }
 
-impl fmt::Display for ParamList {
+impl fmt::Display for Instantiation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (i, (name, t)) in self.params.iter().enumerate() {
             if i > 0 {
@@ -25,12 +26,13 @@ impl fmt::Display for ParamList {
     }
 }
 
-impl ParamList {
-    fn new(params: Vec<(String, AcornType)>) -> ParamList {
-        ParamList { params }
+impl Instantiation {
+    fn new(params: Vec<(String, AcornType)>) -> Instantiation {
+        Instantiation { params }
     }
 
-    fn assert_monomorph(&self) {
+    // Every replacement type must be fixed before it can drive proof search.
+    fn assert_full(&self) {
         for (name, t) in &self.params {
             if t.is_generic() {
                 panic!("bad monomorphization: {} = {}", name, t);
@@ -50,30 +52,28 @@ pub struct Monomorphizer {
     // The Monomorphizer only writes to this, never reads.
     monomorphic_facts: Vec<Fact>,
 
-    // The parameters we have already used to monomorphize each fact.
+    // The complete substitutions already emitted for each fact.
     // Parallel to generic_facts.
-    monomorphs_for_fact: Vec<Vec<ParamList>>,
+    instantiations_for_fact: Vec<Vec<Instantiation>>,
 
-    // The parameters we have already used to monomorphize each constant.
+    // The concrete constant instances requested by facts, goals, or their definitions.
     // Indexed by constant id.
-    monomorphs_for_constant: HashMap<ConstantKey, Vec<ParamList>>,
+    instantiations_for_constant: HashMap<ConstantKey, Vec<Instantiation>>,
 
     // An index tracking how each generic constant is used in the generic facts.
     // This is updated whenever we add a fact.
     // Lists (index in generic facts, params for the constant) for each occurrence.
-    generic_instances: HashMap<ConstantKey, Vec<(usize, ParamList)>>,
+    generic_constants: HashMap<ConstantKey, Vec<(usize, Instantiation)>>,
 }
 
 impl Monomorphizer {
-    // Populates monomorphs_for_constant, and puts None vs Some([]) in the right place for
-    // monomorphs_for_fact.
     pub fn new() -> Monomorphizer {
         Monomorphizer {
             generic_facts: vec![],
             monomorphic_facts: vec![],
-            monomorphs_for_fact: vec![],
-            monomorphs_for_constant: HashMap::new(),
-            generic_instances: HashMap::new(),
+            instantiations_for_fact: vec![],
+            instantiations_for_constant: HashMap::new(),
+            generic_constants: HashMap::new(),
         }
     }
 
@@ -102,12 +102,12 @@ impl Monomorphizer {
         }
 
         self.generic_facts.push(fact);
-        self.monomorphs_for_fact.push(vec![]);
+        self.instantiations_for_fact.push(vec![]);
 
         // Store a reference to our generic instances in the index
         for (constant_key, params) in instances.clone() {
-            let params = ParamList::new(params);
-            self.generic_instances
+            let params = Instantiation::new(params);
+            self.generic_constants
                 .entry(constant_key)
                 .or_insert(vec![])
                 .push((i, params));
@@ -115,8 +115,8 @@ impl Monomorphizer {
 
         // Check how this new generic fact should be monomorphized
         for (constant_key, params) in instances {
-            let instance_params = ParamList::new(params);
-            if let Some(monomorphs) = self.monomorphs_for_constant.get(&constant_key) {
+            let instance_params = Instantiation::new(params);
+            if let Some(monomorphs) = self.instantiations_for_constant.get(&constant_key) {
                 for monomorph_params in monomorphs.clone() {
                     self.try_monomorphize(i, &monomorph_params, &instance_params);
                 }
@@ -132,10 +132,14 @@ impl Monomorphizer {
     // Monomorphizes a generic constant.
     // For every fact that uses this constant, we want to monomorphize the fact to use this
     // form of the generic constant.
-    fn monomorphize_constant(&mut self, constant_key: &ConstantKey, monomorph_params: &ParamList) {
-        monomorph_params.assert_monomorph();
+    fn monomorphize_constant(
+        &mut self,
+        constant_key: &ConstantKey,
+        monomorph_params: &Instantiation,
+    ) {
+        monomorph_params.assert_full();
         let monomorphs = self
-            .monomorphs_for_constant
+            .instantiations_for_constant
             .entry(constant_key.clone())
             .or_insert(vec![]);
         if monomorphs.contains(&monomorph_params) {
@@ -145,7 +149,7 @@ impl Monomorphizer {
         monomorphs.push(monomorph_params.clone());
 
         // Handle all the facts that mention this constant without monomorphizing it.
-        if let Some(instances) = self.generic_instances.get(&constant_key) {
+        if let Some(instances) = self.generic_constants.get(&constant_key) {
             for (fact_id, instance_params) in instances.clone() {
                 self.try_monomorphize(fact_id, monomorph_params, &instance_params);
             }
@@ -161,8 +165,8 @@ impl Monomorphizer {
     fn try_monomorphize(
         &mut self,
         fact_id: usize,
-        monomorph_params: &ParamList,
-        instance_params: &ParamList,
+        monomorph_params: &Instantiation,
+        instance_params: &Instantiation,
     ) {
         // Our goal is to find the "fact params", a way in which we can parametrize
         // the whole fact so that the instance params become the monomorph params.
@@ -182,9 +186,9 @@ impl Monomorphizer {
         // We sort because there's no inherently canonical order.
         let mut fact_params: Vec<_> = fact_params.into_iter().collect();
         fact_params.sort();
-        let fact_params = ParamList::new(fact_params);
+        let fact_params = Instantiation::new(fact_params);
 
-        if self.monomorphs_for_fact[fact_id].contains(&fact_params) {
+        if self.instantiations_for_fact[fact_id].contains(&fact_params) {
             // We already have this monomorph
             return;
         }
@@ -195,7 +199,7 @@ impl Monomorphizer {
             // Do not emit or remember an incomplete substitution.
             return;
         }
-        self.monomorphs_for_fact[fact_id].push(fact_params);
+        self.instantiations_for_fact[fact_id].push(fact_params);
         // Definitions can introduce concrete generic calls needed by the current proof.
         // Record this substitution before following those calls to break repeated demand.
         self.match_constants(&monomorphic_fact.value);
@@ -207,7 +211,10 @@ impl Monomorphizer {
         let mut monomorphs = vec![];
         value.find_monomorphic_constants(&mut monomorphs);
         for (constant_key, params) in monomorphs {
-            self.monomorphize_constant(&constant_key, &ParamList::new(params));
+            if params.is_empty() {
+                continue;
+            }
+            self.monomorphize_constant(&constant_key, &Instantiation::new(params));
         }
     }
 }
