@@ -162,13 +162,12 @@ impl Declaration {
         if name_token.text() == "self" {
             let token = tokens.expect_token()?;
             if token.token_type == TokenType::Colon {
-                return Err(Error::old(&token, "no type is needed after 'self'"));
+                return Err(token.error("no type is needed after 'self'"));
             }
             if !terminator.matches(&token.token_type) {
-                return Err(Error::old(
-                    &token,
-                    &format!("expected {} but found \"{}\"", terminator, token),
-                ));
+                return Err(
+                    token.error(&format!("expected {} but found \"{}\"", terminator, token))
+                );
             }
             return Ok((Declaration::SelfToken(name_token.clone()), token));
         }
@@ -274,6 +273,10 @@ impl Expression {
             Expression::IfThenElse(_, _, _, _, right_brace) => right_brace,
             Expression::Match(_, _, _, right_brace) => right_brace,
         }
+    }
+
+    pub fn error(&self, message: &str) -> Error {
+        Error::new(self.first_token(), self.last_token(), message)
     }
 
     pub fn print_one_level(&self) {
