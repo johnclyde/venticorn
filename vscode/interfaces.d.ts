@@ -88,9 +88,7 @@ interface InfoResponse {
   result: InfoResult | null;
 }
 
-// Editor guidance replaces proof data when there is no current saved selection.
-interface PreSaveHelp {
-  noFile?: boolean;
-  newDocument?: boolean;
-  unsaved?: boolean;
+// Exactly one guidance state replaces proof data when there is no current saved selection.
+interface AssistantHelp {
+  state: "inactive" | "newDocument" | "unsaved" | "noSelection";
 }

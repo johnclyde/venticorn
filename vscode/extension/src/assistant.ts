@@ -73,7 +73,7 @@ export class Assistant implements Disposable {
       workspace.onDidCloseTextDocument((document) => {
         if (this.lastEditor?.document === document) {
           this.lastEditor = undefined;
-          this.sendHelp({ noFile: true });
+          this.sendHelp({ state: "inactive" });
         }
       }),
     ];
@@ -93,7 +93,7 @@ export class Assistant implements Disposable {
     return undefined;
   }
 
-  sendHelp(help: PreSaveHelp) {
+  sendHelp(help: AssistantHelp) {
     this.currentSearchId++;
     this.currentParams = null;
     this.currentDocument = undefined;
@@ -103,11 +103,11 @@ export class Assistant implements Disposable {
   chooseHelp() {
     const document = this.selectedEditor()?.document;
     if (!document || document.languageId !== "acorn") {
-      this.sendHelp({ noFile: true });
+      this.sendHelp({ state: "inactive" });
     } else if (document.uri.scheme !== "file") {
-      this.sendHelp({ newDocument: true });
+      this.sendHelp({ state: "newDocument" });
     } else if (document.isDirty) {
-      this.sendHelp({ unsaved: true });
+      this.sendHelp({ state: "unsaved" });
     } else {
       let hasProofText = false;
       for (let line = 0; line < document.lineCount; line++) {
@@ -117,7 +117,7 @@ export class Assistant implements Disposable {
           break;
         }
       }
-      this.sendHelp(hasProofText ? {} : { newDocument: true });
+      this.sendHelp({ state: hasProofText ? "noSelection" : "newDocument" });
     }
   }
 
@@ -202,6 +202,7 @@ export class Assistant implements Disposable {
       }
       if (response.failure) {
         console.log("search failure:", response.failure);
+        this.chooseHelp();
         return;
       }
       if (!response.loading) {
