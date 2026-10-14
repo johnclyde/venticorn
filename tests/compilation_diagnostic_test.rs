@@ -136,3 +136,12 @@ fn misplaced_binders_are_highlighted_as_complete_parser_expressions() {
         "expected a grouping",
     );
 }
+
+#[test]
+fn pattern_arity_errors_cover_the_argument_group() {
+    assert_diagnostic(
+        "inductive Foo {\n bar(Bool)\n }\ndefine f(v: Foo) -> Bool { match v { Foo.bar(x, y) { x } } }",
+        "(x, y)",
+        "expected 1 arguments but got 2",
+    );
+}
