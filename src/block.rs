@@ -240,7 +240,11 @@ impl Block {
     }
 
     // Convert a boolean value from the block's environment to a value in the outer environment.
-    fn export_bool(&self, outer_env: &Environment, inner_value: &AcornValue) -> AcornValue {
+    fn export_bool(
+        &self,
+        outer_env: &Environment,
+        inner_value: &AcornValue,
+    ) -> Result<AcornValue, String> {
         // The constants that were block arguments will export as "forall" variables.
         let mut forall_names: Vec<String> = vec![];
         let mut forall_types: Vec<AcornType> = vec![];
@@ -253,7 +257,7 @@ impl Block {
         let mut unexportable: HashMap<String, AcornType> = HashMap::new();
         outer_env
             .bindings
-            .find_unknown_local_constants(inner_value, &mut unexportable);
+            .find_unknown_local_constants(inner_value, &mut unexportable)?;
 
         // Unexportable constants that are not arguments export as "exists" variables.
         let mut exists_names = vec![];
@@ -281,9 +285,20 @@ impl Block {
 
         // Replace all of the constants that only exist in the inside environment
         let replaced = inner_value.clone().insert_stack(0, shift_amount);
-        let replaced = replaced.replace_constants_with_vars(outer_env.module_id, &map);
+        let replaced = replaced.replace_constants(0, &|c, _depth| {
+            // These variables already refer to the enclosing exported quantifiers.
+            if c.module_id == outer_env.module_id {
+                map.get(&c.name)
+                    .map(|i| AcornValue::Variable(*i, c.instance_type.clone()))
+            } else {
+                None
+            }
+        });
         let replaced = replaced.parametrize(self.env.module_id, &self.type_params);
-        AcornValue::new_forall(forall_types, AcornValue::new_exists(exists_types, replaced))
+        Ok(AcornValue::new_forall(
+            forall_types,
+            AcornValue::new_exists(exists_types, replaced),
+        ))
     }
 
     // Returns a claim usable in the outer environment, and a range where it comes from.
@@ -298,7 +313,9 @@ impl Block {
                 return Err(token.error("expected a claim in this block"));
             }
         };
-        let outer_claim = self.export_bool(outer_env, inner_claim);
+        let outer_claim = self
+            .export_bool(outer_env, inner_claim)
+            .map_err(|message| token.error(&message))?;
         Ok((outer_claim, range))
     }
 

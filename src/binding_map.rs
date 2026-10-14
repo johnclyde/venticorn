@@ -1709,12 +1709,12 @@ impl BindingMap {
     }
 
     // Finds the names of all constants that are in this module but unknown to this binding map.
-    // Does not deduplicate
+    // Scoped polymorphic definitions cannot be represented by one exported variable.
     pub fn find_unknown_local_constants(
         &self,
         value: &AcornValue,
         answer: &mut HashMap<String, AcornType>,
-    ) {
+    ) -> Result<(), String> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Bool(_) => {}
             AcornValue::Unresolved(module, name, t, _) => {
@@ -1724,41 +1724,48 @@ impl BindingMap {
             }
             AcornValue::Constant(c) => {
                 if c.module_id == self.module && !self.constants.contains_key(&c.name) {
+                    if !c.params.is_empty() {
+                        return Err(format!(
+                            "cannot export scoped generic constant '{}' from this block",
+                            c.name
+                        ));
+                    }
                     answer.insert(c.name.to_string(), c.instance_type.clone());
                 }
             }
 
             AcornValue::Application(app) => {
-                self.find_unknown_local_constants(&app.function, answer);
+                self.find_unknown_local_constants(&app.function, answer)?;
                 for arg in &app.args {
-                    self.find_unknown_local_constants(arg, answer);
+                    self.find_unknown_local_constants(arg, answer)?;
                 }
             }
             AcornValue::Lambda(_, value)
             | AcornValue::ForAll(_, value)
             | AcornValue::Exists(_, value) => {
-                self.find_unknown_local_constants(value, answer);
+                self.find_unknown_local_constants(value, answer)?;
             }
             AcornValue::Binary(_, left, right) => {
-                self.find_unknown_local_constants(left, answer);
-                self.find_unknown_local_constants(right, answer);
+                self.find_unknown_local_constants(left, answer)?;
+                self.find_unknown_local_constants(right, answer)?;
             }
             AcornValue::IfThenElse(cond, then_value, else_value) => {
-                self.find_unknown_local_constants(cond, answer);
-                self.find_unknown_local_constants(then_value, answer);
-                self.find_unknown_local_constants(else_value, answer);
+                self.find_unknown_local_constants(cond, answer)?;
+                self.find_unknown_local_constants(then_value, answer)?;
+                self.find_unknown_local_constants(else_value, answer)?;
             }
             AcornValue::Match(scrutinee, cases) => {
-                self.find_unknown_local_constants(scrutinee, answer);
+                self.find_unknown_local_constants(scrutinee, answer)?;
                 for (_, pattern, result) in cases {
-                    self.find_unknown_local_constants(pattern, answer);
-                    self.find_unknown_local_constants(result, answer);
+                    self.find_unknown_local_constants(pattern, answer)?;
+                    self.find_unknown_local_constants(result, answer)?;
                 }
             }
             AcornValue::Not(value) => {
-                self.find_unknown_local_constants(value, answer);
+                self.find_unknown_local_constants(value, answer)?;
             }
         }
+        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////////
