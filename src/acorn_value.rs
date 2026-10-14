@@ -95,6 +95,32 @@ pub struct ConstantInstance {
     // The parameters that this constant was instantiated with.
     // Can be empty.
     pub params: Vec<(String, AcornType)>,
+
+    // The effective type after applying the ordered argument mapping.
+    pub instance_type: AcornType,
+}
+
+impl ConstantInstance {
+    fn new(
+        module_id: ModuleId,
+        name: String,
+        generic_type: AcornType,
+        params: Vec<(String, AcornType)>,
+    ) -> Self {
+        let instance_type = generic_type.instantiate(&params);
+        Self {
+            module_id,
+            name,
+            generic_type,
+            params,
+            instance_type,
+        }
+    }
+
+    // Actual arguments in declaration order, without duplicating the stored mapping.
+    pub fn type_arguments(&self) -> impl ExactSizeIterator<Item = &AcornType> {
+        self.params.iter().map(|(_, actual)| actual)
+    }
 }
 
 // Two AcornValue compare to equal if they are structurally identical.
@@ -182,7 +208,7 @@ impl fmt::Display for Subvalue<'_> {
                 if c.params.is_empty() {
                     return write!(f, "{}", c.name);
                 }
-                let types: Vec<_> = c.params.iter().map(|(_, t)| t.to_string()).collect();
+                let types: Vec<_> = c.type_arguments().map(|t| t.to_string()).collect();
                 write!(f, "{}<{}>", c.name, types.join(", "))
             }
             AcornValue::Bool(b) => write!(f, "{}", b),
@@ -268,7 +294,7 @@ impl AcornValue {
             AcornValue::Not(_) => AcornType::Bool,
             AcornValue::ForAll(_, _) => AcornType::Bool,
             AcornValue::Exists(_, _) => AcornType::Bool,
-            AcornValue::Constant(c) => c.generic_type.instantiate(&c.params),
+            AcornValue::Constant(c) => c.instance_type.clone(),
             AcornValue::Bool(_) => AcornType::Bool,
             AcornValue::IfThenElse(_, if_value, _) => if_value.get_type(),
             AcornValue::Match(_, cases) => {
@@ -346,12 +372,7 @@ impl AcornValue {
         generic_type: AcornType,
         params: Vec<(String, AcornType)>,
     ) -> AcornValue {
-        AcornValue::Constant(ConstantInstance {
-            module_id,
-            name,
-            generic_type,
-            params,
-        })
+        AcornValue::Constant(ConstantInstance::new(module_id, name, generic_type, params))
     }
 
     pub fn is_lambda(&self) -> bool {
@@ -1461,7 +1482,7 @@ impl AcornValue {
                 if c.module_id == module {
                     if let Some(i) = constants.get(&c.name) {
                         assert!(c.params.is_empty());
-                        return AcornValue::Variable(*i, c.generic_type.clone());
+                        return AcornValue::Variable(*i, c.instance_type.clone());
                     }
                 }
                 self.clone()
