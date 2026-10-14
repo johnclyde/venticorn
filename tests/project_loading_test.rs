@@ -178,3 +178,115 @@ theorem apparent_success { true } by {
     assert!(stdout.contains("2/3 OK"), "{stdout}");
     assert!(!stderr.contains("panicked"), "{stderr}");
 }
+
+#[cfg(unix)]
+#[test]
+fn canonical_targets_preserve_symlinked_root_identity_and_editor_overlays() {
+    let directory = TestDirectory::new();
+    let root = directory.0.join("library");
+    let alias = directory.0.join("alias");
+    fs::create_dir(&root).unwrap();
+    std::os::unix::fs::symlink(&root, &alias).unwrap();
+    fs::write(root.join("dependency.ac"), "let value: Bool = true").unwrap();
+    fs::write(
+        root.join("main.ac"),
+        "import dependency\ntheorem goal { dependency.value }",
+    )
+    .unwrap();
+    fs::write(root.join("invalid-name.ac"), "theorem goal { true }").unwrap();
+    let mut project = Project::new(alias.to_str().unwrap());
+
+    project.add_target_by_path(&root.join("main.ac")).unwrap();
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("main".to_string()))
+        .is_some());
+    assert_eq!(project.sync_build().0, BuildStatus::Good);
+    let error = project
+        .add_target_by_path(&root.join("invalid-name.ac"))
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("invalid character in module name"),
+        "{error}"
+    );
+
+    // Imports must continue reading the same lexical path used by editor updates.
+    let dependency = alias.join("dependency.ac");
+    project
+        .update_file(dependency.clone(), "let value: Bool = false", 1)
+        .unwrap();
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("dependency".to_string()))
+        .is_some());
+    assert_eq!(project.sync_build().0, BuildStatus::Warning);
+    project.close_file(dependency).unwrap();
+    assert_eq!(project.sync_build().0, BuildStatus::Good);
+
+    let outside = directory.0.join("outside.ac");
+    fs::write(&outside, "theorem goal { true }").unwrap();
+    let outside = outside.canonicalize().unwrap();
+    assert_eq!(
+        project.module_ref_from_path(&outside).unwrap(),
+        ModuleRef::File(outside)
+    );
+}
+
+#[test]
+fn canonical_targets_resolve_roots_with_relative_components() {
+    let directory = TestDirectory::new();
+    fs::create_dir(directory.0.join("child")).unwrap();
+    directory.write("main.ac", "theorem goal { true }");
+    let root = directory.0.join("child/..");
+    let mut project = Project::new(root.to_str().unwrap());
+    project
+        .add_target_by_path(&directory.0.join("main.ac").canonicalize().unwrap())
+        .unwrap();
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("main".to_string()))
+        .is_some());
+    assert_eq!(project.sync_build().0, BuildStatus::Good);
+
+    // Relative constructor roots keep their established manifest-directory meaning.
+    let mut project = Project::new("vscode/extension/acornlib");
+    let library = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vscode/extension/acornlib");
+    project
+        .add_target_by_path(&library.join("nat.ac").canonicalize().unwrap())
+        .unwrap();
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("nat".to_string()))
+        .is_some());
+}
+
+#[cfg(unix)]
+#[test]
+fn canonical_editor_overlay_keeps_its_original_external_file_identity() {
+    let directory = TestDirectory::new();
+    let root = directory.0.join("library");
+    let alias = directory.0.join("alias");
+    fs::create_dir(&root).unwrap();
+    std::os::unix::fs::symlink(&root, &alias).unwrap();
+    fs::write(root.join("main.ac"), "theorem goal { true }").unwrap();
+    let path = root.join("main.ac").canonicalize().unwrap();
+    let mut project = Project::new(alias.to_str().unwrap());
+    // Opening a canonical path under a legacy lexical root was already treated
+    // as an external file. Keep its exact overlay key and corresponding reader.
+    assert_eq!(
+        project.module_ref_from_path(&path).unwrap(),
+        ModuleRef::File(path.clone())
+    );
+    project
+        .update_file(path.clone(), "theorem goal { false }", 1)
+        .unwrap();
+    assert!(project
+        .get_env_by_ref(&ModuleRef::File(path.clone()))
+        .is_some());
+    assert!(project
+        .get_env_by_ref(&ModuleRef::Name("main".to_string()))
+        .is_none());
+    assert_eq!(project.sync_build().0, BuildStatus::Warning);
+    project
+        .update_file(path, "theorem goal { true }", 2)
+        .unwrap();
+    assert_eq!(project.sync_build().0, BuildStatus::Good);
+}
