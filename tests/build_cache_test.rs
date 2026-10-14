@@ -133,3 +133,31 @@ fn synchronous_reports_distinguish_empty_failed_and_interrupted_builds() {
     assert_eq!(invalid.goals_done, 0);
     assert!(invalid.cache.is_none());
 }
+
+#[test]
+fn completed_cache_can_be_taken_once_without_consuming_statistics() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", "theorem identity { true }");
+    let mut builder = Builder::new(|_| {});
+    assert!(builder.take_cache().is_none());
+    project.build(&mut builder);
+    let stats = (
+        builder.status,
+        builder.num_success,
+        builder.goals_done,
+        builder.goals_total,
+    );
+    let cache = builder.take_cache().unwrap();
+    assert_eq!(cache.num_modules(), 1);
+    assert!(builder.cache().is_none());
+    assert!(builder.take_cache().is_none());
+    assert_eq!(
+        stats,
+        (
+            builder.status,
+            builder.num_success,
+            builder.goals_done,
+            builder.goals_total
+        )
+    );
+}

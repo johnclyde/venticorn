@@ -157,7 +157,7 @@ pub struct Builder<'a> {
     // The current module we are proving. Not set when we are loading.
     current_module: Option<ModuleInfo>,
 
-    new_cache: BuildCache,
+    new_cache: Option<BuildCache>,
     cache_ready: bool,
 
     // If dataset is not None, we are gathering data for training.
@@ -199,7 +199,7 @@ impl<'a> Builder<'a> {
             goals_done: 0,
             log_when_slow: false,
             current_module: None,
-            new_cache: BuildCache::default(),
+            new_cache: Some(BuildCache::default()),
             cache_ready: false,
             dataset: None,
             num_success: 0,
@@ -308,14 +308,16 @@ impl<'a> Builder<'a> {
         let completed = (self.goals_done - info.goals_started_at) as usize;
         if info.good && info.expected_goals == Some(completed) && info.verified.len() == completed {
             if let Some(fingerprint) = info.fingerprint {
-                self.new_cache.modules.insert(
-                    info.module_ref,
-                    CachedModule {
-                        fingerprint,
-                        direct_dependencies: info.direct_dependencies,
-                        verified: info.verified,
-                    },
-                );
+                if let Some(cache) = &mut self.new_cache {
+                    cache.modules.insert(
+                        info.module_ref,
+                        CachedModule {
+                            fingerprint,
+                            direct_dependencies: info.direct_dependencies,
+                            verified: info.verified,
+                        },
+                    );
+                }
             }
         }
     }
@@ -325,16 +327,30 @@ impl<'a> Builder<'a> {
     pub(crate) fn finish_build(&mut self, completed: bool) {
         self.cache_ready = completed && !self.status.is_error() && self.current_module.is_none();
         if !self.cache_ready {
-            self.new_cache.modules.clear();
+            self.new_cache = None;
         }
     }
 
     pub fn cache(&self) -> Option<&BuildCache> {
-        self.cache_ready.then_some(&self.new_cache)
+        if self.cache_ready {
+            self.new_cache.as_ref()
+        } else {
+            None
+        }
     }
 
-    pub fn into_cache(self) -> Option<BuildCache> {
-        self.cache_ready.then_some(self.new_cache)
+    // Transfer completed metadata once, while keeping statistics available.
+    // Calling this during a build does not consume its unfinished state.
+    pub fn take_cache(&mut self) -> Option<BuildCache> {
+        if self.cache_ready {
+            self.new_cache.take()
+        } else {
+            None
+        }
+    }
+
+    pub fn into_cache(mut self) -> Option<BuildCache> {
+        self.take_cache()
     }
 
     // Called when a single proof search completes.
