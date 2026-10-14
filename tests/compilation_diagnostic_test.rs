@@ -168,3 +168,12 @@ fn function_argument_errors_cover_complete_argument_expressions() {
         "expected a function",
     );
 }
+
+#[test]
+fn conflicting_type_definitions_cover_the_full_statement() {
+    assert_diagnostic(
+        "type Thing: axiom\ntype Thing: Bool",
+        "type Thing: Bool",
+        "type name 'Thing' already defined",
+    );
+}
