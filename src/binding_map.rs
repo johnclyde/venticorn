@@ -1535,9 +1535,12 @@ impl BindingMap {
         }
     }
 
-    // Evaluate an expression that is scoped inside a bunch of variable declarations.
-    // type_params is a list of tokens for the parametrized types in this value.
-    // arg_exprs is a list of "<varname>: <typename>" expressions for the arguments.
+    // Evaluate an expression that creates a new scope for the value inside it.
+    // It has declarations, introducing new variables and types that exist just for this value,
+    // and it has the value itself, which can use those declarations.
+    //
+    // type_params is a list of tokens for the generic types introduced for this scope.
+    // args is a list of the new variables declared for this scope.
     // value_type_expr is an optional expression for the type of the value.
     //   (None means expect a boolean value.)
     // value_expr is the expression for the value itself.
@@ -1551,13 +1554,12 @@ impl BindingMap {
     //   an optional unbound value. (None means axiom.)
     //   the value type
     //
-    // Both the argument types and the value can be polymorphic, with the ith type parameter
-    // represented as AcornType::Generic(i).
+    // Generic parameters in the argument and value types are represented by type variables.
     // class_name should be provided if this is the definition of a member function.
     //
     // The return value is "unbound" in the sense that it has variable atoms that are not
     // bound within any lambda, exists, or forall value.
-    pub fn evaluate_subvalue(
+    pub fn evaluate_scoped_value(
         &mut self,
         project: &Project,
         type_param_tokens: &[Token],
@@ -1574,7 +1576,7 @@ impl BindingMap {
         AcornType,
     )> {
         let mut scope = self.clone();
-        scope.evaluate_subvalue_in_scope(
+        scope.evaluate_scoped_value_in_scope(
             project,
             type_param_tokens,
             args,
@@ -1585,7 +1587,7 @@ impl BindingMap {
         )
     }
 
-    fn evaluate_subvalue_in_scope(
+    fn evaluate_scoped_value_in_scope(
         &mut self,
         project: &Project,
         type_param_tokens: &[Token],
