@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
+use crate::build_cache::CachedGoal;
 use crate::compilation::Error;
 use crate::dataset::Dataset;
 use crate::environment::Environment;
@@ -90,6 +91,7 @@ struct ModuleInfo {
     expected_goals: Option<usize>,
     goals_started_at: i32,
     verified: Vec<(u32, u32)>,
+    goals: Vec<CachedGoal>,
 }
 
 // Preserve the existing metadata paths while storage lives in its own module.
@@ -272,6 +274,7 @@ impl<'a> Builder<'a> {
             expected_goals,
             goals_started_at: self.goals_done,
             verified: Vec::new(),
+            goals: Vec::new(),
         });
     }
 
@@ -287,6 +290,7 @@ impl<'a> Builder<'a> {
     // Only Project supplies the current parsed ranges and verifies all dependency entries.
     pub(crate) fn handle_current_module_from_cache(
         &mut self,
+        goals: &[GoalContext],
         expected: &[(u32, u32)],
         dependencies_verified: bool,
         stopped: &AtomicBool,
@@ -301,26 +305,65 @@ impl<'a> Builder<'a> {
         let Some(current) = &self.current_module else {
             return false;
         };
-        if current.expected_goals != Some(expected.len())
+        if goals.len() != expected.len()
+            || current.expected_goals != Some(expected.len())
             || !self.has_cached_module(&current.module_ref, current.hash.as_ref(), expected)
         {
             return false;
         }
-        for &(first_line, last_line) in expected {
+        for goal in goals {
             if stopped.load(Ordering::Relaxed) {
                 self.interrupted();
                 return true;
             }
-            self.goals_done += 1;
-            self.num_cached += 1;
-            self.current_module
-                .as_mut()
-                .unwrap()
-                .verified
-                .push((first_line, last_line));
-            self.log_proving_success(first_line, last_line);
+            self.log_proving_success_cached(goal);
         }
         true
+    }
+
+    // A partial hit is only available from a fully successful earlier module.
+    pub(crate) fn handle_goal_from_cache(
+        &mut self,
+        goal: &GoalContext,
+        dependencies_verified: bool,
+        stopped: &AtomicBool,
+    ) -> bool {
+        if stopped.load(Ordering::Relaxed) {
+            self.interrupted();
+            return true;
+        }
+        if self.dataset.is_some() || !dependencies_verified {
+            return false;
+        }
+        let Some(current) = &self.current_module else {
+            return false;
+        };
+        let Some(hash) = &current.hash else {
+            return false;
+        };
+        let index = (self.goals_done - current.goals_started_at) as usize;
+        if !self
+            .old_cache
+            .matches_prefix(&current.module_ref, hash, goal, index)
+        {
+            return false;
+        }
+        self.log_proving_success_cached(goal);
+        true
+    }
+
+    fn log_proving_success_cached(&mut self, goal: &GoalContext) {
+        self.goals_done += 1;
+        self.num_cached += 1;
+        self.record_verified_goal(goal);
+        self.log_proving_success(goal.first_line, goal.last_line);
+    }
+
+    fn record_verified_goal(&mut self, goal: &GoalContext) {
+        if let Some(module) = &mut self.current_module {
+            module.verified.push((goal.first_line, goal.last_line));
+            module.goals.push(CachedGoal::new(goal));
+        }
     }
 
     fn interrupted(&mut self) {
@@ -340,7 +383,11 @@ impl<'a> Builder<'a> {
         assert_eq!(self.module(), module);
         let info = self.current_module.take().expect("no current module");
         let completed = (self.goals_done - info.goals_started_at) as usize;
-        if info.good && info.expected_goals == Some(completed) && info.verified.len() == completed {
+        if info.good
+            && info.expected_goals == Some(completed)
+            && info.verified.len() == completed
+            && info.goals.len() == completed
+        {
             if let Some(hash) = info.hash {
                 if let Some(cache) = &mut self.new_cache {
                     cache.insert_completed(
@@ -348,6 +395,7 @@ impl<'a> Builder<'a> {
                         hash,
                         info.direct_dependencies,
                         info.verified,
+                        info.goals,
                     );
                 }
             }
@@ -418,11 +466,7 @@ impl<'a> Builder<'a> {
                     } else {
                         // Both of these count as a success.
                         self.num_success += 1;
-                        if let Some(module) = &mut self.current_module {
-                            module
-                                .verified
-                                .push((goal_context.first_line, goal_context.last_line));
-                        }
+                        self.record_verified_goal(goal_context);
                         if self.log_when_slow && elapsed_f64 > 0.1 {
                             self.log_proving_info(
                                 &prover,

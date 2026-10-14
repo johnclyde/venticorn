@@ -55,6 +55,10 @@ pub struct GoalContext {
     // Inclusive source bounds, including the entire proof block.
     pub first_line: u32,
     pub last_line: u32,
+
+    // Cache identity includes every enclosing proof block, whose later statements
+    // may affect this goal’s hypotheses or inconsistency policy.
+    pub(crate) cache_last_line: u32,
 }
 
 impl GoalContext {
@@ -90,6 +94,7 @@ impl GoalContext {
             inconsistency_okay: env.includes_explicit_false,
             first_line,
             last_line,
+            cache_last_line: last_line,
         }
     }
 }

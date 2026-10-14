@@ -478,7 +478,14 @@ impl Project {
             .into_iter()
             .map(|id| self.modules[id as usize].descriptor.clone())
             .collect();
-        let ranges = Self::goal_ranges(env);
+        let goals = env
+            .iter_goals()
+            .map(|node| node.goal_context().expect("no goal context"))
+            .collect::<Vec<_>>();
+        let ranges = goals
+            .iter()
+            .map(|goal| (goal.first_line, goal.last_line))
+            .collect::<Vec<_>>();
         builder.module_proving_started_with_metadata(
             target,
             dependencies,
@@ -496,13 +503,22 @@ impl Project {
             )
         });
         if !builder.handle_current_module_from_cache(
+            &goals,
             &ranges,
             dependencies_verified,
             &self.build_stopped,
         ) {
             // Fast and slow modes should be interchangeable here.
             self.for_each_prover_fast(env, &mut |prover, goal_context| {
-                self.prove(prover, goal_context, builder)
+                if builder.handle_goal_from_cache(
+                    &goal_context,
+                    dependencies_verified,
+                    &self.build_stopped,
+                ) {
+                    !builder.status.is_error()
+                } else {
+                    self.prove(prover, goal_context, builder)
+                }
             });
         }
 
