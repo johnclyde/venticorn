@@ -1,7 +1,7 @@
 // Modified for Venticorn: bounded build identity and explicit diagnostic events.
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
@@ -94,9 +94,9 @@ struct ModuleInfo {
     verified: Vec<(u32, u32)>,
 }
 
-// Completed verification metadata. These records are not proof certificates, and are
-// not used to skip verification. A future reader must also validate its trust policy.
-#[derive(Debug)]
+// Completed in-process verification metadata. Reuse also checks the current source,
+// complete goal ranges and successful transitive dependencies.
+#[derive(Debug, Clone)]
 pub struct CachedModule {
     fingerprint: ModuleFingerprint,
     direct_dependencies: Vec<ModuleRef>,
@@ -117,7 +117,7 @@ impl CachedModule {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BuildCache {
     modules: HashMap<ModuleRef, CachedModule>,
 }
@@ -157,6 +157,7 @@ pub struct Builder<'a> {
     // The current module we are proving. Not set when we are loading.
     current_module: Option<ModuleInfo>,
 
+    old_cache: BuildCache,
     new_cache: Option<BuildCache>,
     cache_ready: bool,
 
@@ -166,8 +167,11 @@ pub struct Builder<'a> {
     // The Builder also tracks statistics.
     // Think of these as having a "goal_done" denominator.
 
-    // Number of goals successfully proven
+    // Number of goals successfully proven by a fresh search.
     pub num_success: i32,
+
+    // Number of successful goals reused from a completed build.
+    pub num_cached: i32,
 
     // The total number of clauses activated.
     pub num_activated: i32,
@@ -184,6 +188,10 @@ pub struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     pub fn new(event_handler: impl FnMut(BuildEvent) + 'a) -> Self {
+        Self::with_cache(BuildCache::default(), event_handler)
+    }
+
+    pub fn with_cache(cache: BuildCache, event_handler: impl FnMut(BuildEvent) + 'a) -> Self {
         let event_handler = Box::new(event_handler);
         Builder {
             event_handler,
@@ -199,10 +207,12 @@ impl<'a> Builder<'a> {
             goals_done: 0,
             log_when_slow: false,
             current_module: None,
+            old_cache: cache,
             new_cache: Some(BuildCache::default()),
             cache_ready: false,
             dataset: None,
             num_success: 0,
+            num_cached: 0,
             num_activated: 0,
             sum_square_activated: 0,
             num_clauses: 0,
@@ -302,6 +312,69 @@ impl<'a> Builder<'a> {
         });
     }
 
+    pub(crate) fn has_cached_module(
+        &self,
+        module: &ModuleRef,
+        fingerprint: Option<ModuleFingerprint>,
+        expected: &[(u32, u32)],
+    ) -> bool {
+        self.old_cache.get(module).is_some_and(|cached| {
+            Some(cached.fingerprint) == fingerprint && cached.verified == expected
+        })
+    }
+
+    // Only Project supplies the current parsed ranges and verifies all dependency entries.
+    pub(crate) fn handle_current_module_from_cache(
+        &mut self,
+        expected: &[(u32, u32)],
+        dependencies_verified: bool,
+        stopped: &AtomicBool,
+    ) -> bool {
+        if stopped.load(Ordering::Relaxed) {
+            self.interrupted();
+            return true;
+        }
+        if self.dataset.is_some() || !dependencies_verified {
+            return false;
+        }
+        let Some(current) = &self.current_module else {
+            return false;
+        };
+        if current.expected_goals != Some(expected.len())
+            || !self.has_cached_module(&current.module_ref, current.fingerprint, expected)
+        {
+            return false;
+        }
+        for &(first_line, last_line) in expected {
+            if stopped.load(Ordering::Relaxed) {
+                self.interrupted();
+                return true;
+            }
+            self.goals_done += 1;
+            self.num_cached += 1;
+            self.current_module
+                .as_mut()
+                .unwrap()
+                .verified
+                .push((first_line, last_line));
+            self.log_proving_success(first_line, last_line);
+        }
+        true
+    }
+
+    fn interrupted(&mut self) {
+        self.status = BuildStatus::Error;
+        if let Some(module) = &mut self.current_module {
+            module.good = false;
+        }
+        let event = BuildEvent {
+            progress: Some((self.goals_total, self.goals_total)),
+            log_message: Some("verification was interrupted".into()),
+            ..self.default_event()
+        };
+        (self.event_handler)(event);
+    }
+
     pub fn module_proving_complete(&mut self, module: &ModuleRef) {
         assert_eq!(self.module(), module);
         let info = self.current_module.take().expect("no current module");
@@ -398,7 +471,10 @@ impl<'a> Builder<'a> {
                                 &format!("took {}", elapsed_str),
                             );
                         } else {
-                            self.log_proving_success(&goal_context);
+                            self.log_proving_success(
+                                goal_context.first_line,
+                                goal_context.last_line,
+                            );
                         }
                     }
 
@@ -438,10 +514,10 @@ impl<'a> Builder<'a> {
     }
 
     // Logs a successful proof.
-    fn log_proving_success(&mut self, goal_context: &GoalContext) {
+    fn log_proving_success(&mut self, first_line: u32, last_line: u32) {
         let event = BuildEvent {
             progress: Some((self.goals_done, self.goals_total)),
-            verified: Some((goal_context.first_line, goal_context.last_line)),
+            verified: Some((first_line, last_line)),
             ..self.default_event()
         };
         (self.event_handler)(event);
@@ -521,9 +597,20 @@ impl<'a> Builder<'a> {
                 println!("Build completed successfully.");
             }
         }
-        println!("{}/{} OK", self.num_success, self.goals_total);
-        let success_percent = 100.0 * self.num_success as f64 / self.goals_total as f64;
+        let verified = self.num_success + self.num_cached;
+        println!("{}/{} OK", verified, self.goals_total);
+        let success_percent = if self.goals_total == 0 {
+            100.0
+        } else {
+            100.0 * verified as f64 / self.goals_total as f64
+        };
         println!("{:.1}% success rate", success_percent);
+        if self.num_cached > 0 {
+            println!("{} goals reused from completed builds", self.num_cached);
+        }
+        if self.num_success == 0 {
+            return;
+        }
         let num_activated = self.num_activated as f64 / self.num_success as f64;
         println!("{:.2} average activations", num_activated);
         let mean_square_activated = self.sum_square_activated as f64 / self.num_success as f64;
@@ -577,6 +664,23 @@ mod tests {
             .get(&ModuleRef::Name("main".into()))
             .unwrap();
         assert_eq!(cached.verified(), &[(0, 0)]);
+    }
+
+    #[test]
+    fn stale_or_incomplete_goal_ranges_cannot_be_replayed() {
+        for ranges in [vec![], vec![(0, 1)], vec![(0, 0), (0, 0)]] {
+            let mut cache = simulate_result(Outcome::Success, 1).take_cache().unwrap();
+            cache
+                .modules
+                .get_mut(&ModuleRef::Name("main".into()))
+                .unwrap()
+                .verified = ranges;
+            let mut project = Project::new_mock();
+            project.mock("/mock/main.ac", "theorem identity { true }");
+            let mut builder = Builder::with_cache(cache, |_| {});
+            project.build(&mut builder);
+            assert_eq!((builder.num_success, builder.num_cached), (1, 0));
+        }
     }
 
     #[test]
