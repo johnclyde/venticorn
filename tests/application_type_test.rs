@@ -256,12 +256,7 @@ fn pending_generic_values_are_rejected_before_declaration_admission() {
                 &Statement::parse_str(source).unwrap(),
             )
             .unwrap_err();
-        assert!(
-            error
-                .message()
-                .contains("generic type arguments could not be inferred"),
-            "{error}"
-        );
+        assert_eq!(error.message(), "name identity has unresolved type");
         assert!(error.range().end.character > error.range().start.character);
         assert!(!env.bindings.has_identifier("bad"));
         assert!(!env.bindings.has_type_name("T"));
