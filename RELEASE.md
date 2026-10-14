@@ -112,6 +112,17 @@ VSCE="$VSCE_TOOLS/node_modules/.bin/vsce" ./package.sh
 
 `package.sh` checks synchronized versions, rebuilds the extension and Assistant UI, and creates `files/release/venticorn-extension-VERSION.vsix`. It then unpacks that archive, verifies runtime dependencies and license notices, excludes node_modules, test modules, development tools, and server binaries, and loads the compiled extension with a VS Code host stub. The command does not publish to a marketplace. Install the two project npm dependency sets before running it, as described in [the development guide](README.md). Generated release files are ignored by Git.
 
+## Publish the inspected extension package
+
+After publishing and verifying all matching server assets, publish the inspected VSIX to the VS Code Marketplace with the same pinned packaging tool:
+
+```sh
+"$VSCE_TOOLS/node_modules/.bin/vsce" publish --packagePath \
+  "files/release/venticorn-extension-$(python3 python/version.py).vsix"
+```
+
+This is a separate, explicit upload. It requires Marketplace credentials authorized for the publisher configured in the extension manifest. Reuse the `VSCE_TOOLS` installation from the packaging step above and the package that was inspected for this release; the command publishes that archive without rebuilding it. Local packaging and the GitHub upload helper do not run this command.
+
 ## Install a local build
 
 After packaging, install the generated VSIX into VS Code:
