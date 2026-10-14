@@ -306,7 +306,7 @@ function acornEditor(scheme = "file", name = "proof.ac") {
   };
 }
 
-test("untitled documents stay quiet until saved and the Assistant opens only once", async () => {
+test("untitled documents open the Assistant once without proof requests", async () => {
   const untitled = acornEditor("untitled");
   const extension = loadExtension();
   await extension.activate(extension.context);
@@ -317,7 +317,7 @@ test("untitled documents stay quiet until saved and the Assistant opens only onc
   const assistant = extension.context.subscriptions.find((value) => typeof value.autoDisplay === "function");
   await assistant.searchOnSelection(true);
   assert.equal(extension.state.requests, 0);
-  assert.equal(extension.state.panels.length, 0);
+  assert.equal(extension.state.panels.length, 1);
   const saved = acornEditor();
   extension.vscode.window.visibleTextEditors = [saved];
   extension.vscode.window.activeTextEditor = saved;
@@ -353,11 +353,11 @@ test("startup finds a visible saved proof even when the first Acorn document is 
   assert.ok(extension.state.requestCalls.some((call) => call.method === "acorn/search" && call.params.uri === "file:///visible.ac"));
 });
 
-test("startup leaves untitled Acorn documents quiet", async () => {
+test("startup opens guidance for an active untitled Acorn document", async () => {
   const untitled = acornEditor("untitled");
   const extension = loadExtension({ textDocuments: [untitled.document], visibleEditors: [untitled] });
   await extension.activate(extension.context);
-  assert.equal(extension.state.panels.length, 0);
+  assert.equal(extension.state.panels.length, 1);
   assert.equal(extension.state.requests, 0);
 });
 

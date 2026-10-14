@@ -160,7 +160,6 @@ export async function activate(context: ExtensionContext) {
     if (!client?.isRunning() || document.languageId !== "acorn" || document.uri.scheme !== "file") {
       return;
     }
-    assistant.autoDisplay(document);
     await tracker.track();
   };
 
@@ -168,21 +167,9 @@ export async function activate(context: ExtensionContext) {
     document.languageId === "acorn" && document.uri.scheme === "file")) {
     tracker.track();
   }
-  // Prefer the active document, then other visible editors. A hidden document
-  // must not prevent a visible Acorn file from opening the Assistant.
-  const active = window.activeTextEditor;
-  if (active) {
-    assistant.autoDisplay(active.document);
-  }
-  for (const editor of window.visibleTextEditors) {
-    assistant.autoDisplay(editor.document);
-  }
-
-  // Opening a document can precede its editor becoming visible.
-  context.subscriptions.push(window.onDidChangeActiveTextEditor((editor) => {
-    if (editor) {
-      assistant.autoDisplay(editor.document);
-    }
+  assistant.autoDisplay();
+  context.subscriptions.push(window.onDidChangeActiveTextEditor(() => {
+    assistant.autoDisplay();
   }));
   context.subscriptions.push(workspace.onDidSaveTextDocument(onDocumentChange));
   context.subscriptions.push(workspace.onDidOpenTextDocument(onDocumentChange));
