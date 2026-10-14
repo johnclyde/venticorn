@@ -42,14 +42,16 @@ fn token_storage_stays_in_bytes_while_positions_use_utf16() {
 
 #[test]
 fn empty_and_end_of_line_errors_keep_a_visible_caret() {
-    let error = Error::new(&Token::empty(), "missing expression");
+    let empty = Token::empty();
+    let error = Error::new(&empty, &empty, "missing expression");
     assert_eq!(
         error.range(),
         Range::new(Position::new(0, 0), Position::new(0, 0))
     );
     assert!(error.to_string().ends_with("\n^\n"));
     let tokens = Token::scan("x𐐀é");
-    let error = Error::new(tokens.last().unwrap(), "missing expression");
+    let last = tokens.last().unwrap();
+    let error = Error::new(last, last, "missing expression");
     assert_eq!(
         error.range(),
         Range::new(Position::new(0, 4), Position::new(0, 4))

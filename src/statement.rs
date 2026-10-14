@@ -296,7 +296,7 @@ fn parse_args(
                     continue;
                 }
                 _ => {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &token,
                         "expected '>' or ',' in template type list",
                     ));
@@ -306,7 +306,7 @@ fn parse_args(
         token = tokens.expect_token()?;
     }
     if token.token_type != TokenType::LeftParen {
-        return Err(Error::new(&token, "expected an argument list"));
+        return Err(Error::old(&token, "expected an argument list"));
     }
 
     // Parse the arguments list
@@ -361,7 +361,7 @@ fn parse_theorem_statement(
     };
     let (type_params, args, _) = parse_args(tokens, TokenType::LeftBrace)?;
     if type_params.len() > 1 {
-        return Err(Error::new(
+        return Err(Error::old(
             &type_params[1],
             "only one type parameter is supported",
         ));
@@ -484,7 +484,7 @@ fn parse_define_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stat
     let name_token = tokens.expect_variable_name(false)?;
     let (type_params, args, _) = parse_args(tokens, TokenType::RightArrow)?;
     if type_params.len() > 1 {
-        return Err(Error::new(
+        return Err(Error::old(
             &type_params[1],
             "only one type parameter is supported",
         ));
@@ -611,7 +611,7 @@ fn parse_structure_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
             }
             TokenType::RightBrace => {
                 if fields.len() == 0 {
-                    return Err(Error::new(&token, "structs must have at least one field"));
+                    return Err(Error::old(&token, "structs must have at least one field"));
                 }
                 return Ok(Statement {
                     first_token: keyword,
@@ -631,13 +631,13 @@ fn parse_structure_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
                     Terminator::Or(TokenType::NewLine, TokenType::RightBrace),
                 )?;
                 if t.token_type == TokenType::RightBrace {
-                    return Err(Error::new(&t, "field declarations must end with a newline"));
+                    return Err(Error::old(&t, "field declarations must end with a newline"));
                 }
                 fields.push((token, type_expr));
             }
         }
     }
-    Err(Error::new(&keyword, "unterminated structure statement"))
+    Err(Error::old(&keyword, "unterminated structure statement"))
 }
 
 // Parses an inductive statement where the "inductive" keyword has already been found.
@@ -657,7 +657,7 @@ fn parse_inductive_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
             }
             TokenType::RightBrace => {
                 if constructors.len() == 0 {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         &type_token,
                         "inductive types must have a constructor",
                     ));
@@ -685,13 +685,13 @@ fn parse_inductive_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
             continue;
         }
         if next_type != TokenType::LeftParen {
-            return Err(Error::new(&name_token, "expected a constructor definition"));
+            return Err(Error::old(&name_token, "expected a constructor definition"));
         }
         let (type_list_expr, _) =
             Expression::parse_type(tokens, Terminator::Is(TokenType::NewLine))?;
         constructors.push((name_token, Some(type_list_expr)));
     }
-    Err(Error::new(&keyword, "unterminated inductive statement"))
+    Err(Error::old(&keyword, "unterminated inductive statement"))
 }
 
 // Parses a module component list, like "foo.bar.baz".
@@ -711,7 +711,7 @@ fn parse_module_components(
         }
         match token.token_type {
             TokenType::Dot => continue,
-            _ => return Err(Error::new(&token, "unexpected token in module path")),
+            _ => return Err(Error::old(&token, "unexpected token in module path")),
         }
     };
     Ok((components, last_token))
@@ -749,7 +749,7 @@ fn parse_from_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statem
                 continue;
             }
             _ => {
-                return Err(Error::new(&token, "expected comma or newline"));
+                return Err(Error::old(&token, "expected comma or newline"));
             }
         }
     };
@@ -810,7 +810,7 @@ fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<State
     let last_token = loop {
         let next_type = match tokens.peek() {
             Some(token) => token.token_type,
-            None => return Err(Error::new(&keyword, "unterminated match statement")),
+            None => return Err(Error::old(&keyword, "unterminated match statement")),
         };
         if next_type == TokenType::NewLine {
             tokens.next();
@@ -830,7 +830,7 @@ fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<State
         cases.push((pattern, body));
     };
     if cases.is_empty() {
-        return Err(Error::new(&keyword, "match must have cases"));
+        return Err(Error::old(&keyword, "match must have cases"));
     }
     let ms = MatchStatement { scrutinee, cases };
     Ok(Statement {
@@ -1076,7 +1076,7 @@ impl Statement {
                     }
                     TokenType::RightBrace => {
                         if !in_block {
-                            return Err(Error::new(token, "unmatched right brace at top level"));
+                            return Err(Error::old(token, "unmatched right brace at top level"));
                         }
                         let brace = tokens.next().unwrap();
 
@@ -1157,7 +1157,7 @@ impl Statement {
                     }
                     _ => {
                         if !in_block {
-                            return Err(Error::new(token, "unexpected token at the top level"));
+                            return Err(Error::old(token, "unexpected token at the top level"));
                         }
                         let first_token = tokens.peek().unwrap().clone();
                         let (claim, token) = Expression::parse_value(

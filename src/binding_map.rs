@@ -140,7 +140,7 @@ pub fn check_type<'a>(
 ) -> compilation::Result<()> {
     if let Some(e) = expected_type {
         if e != actual_type {
-            return Err(Error::new(
+            return Err(Error::old(
                 error_token,
                 &format!("expected type {}, but got {}", e, actual_type),
             ));
@@ -176,11 +176,11 @@ impl NamedEntity {
                 check_type(token, expected_type, &value.get_type())?;
                 Ok(value)
             }
-            NamedEntity::Type(_) => Err(Error::new(
+            NamedEntity::Type(_) => Err(Error::old(
                 token,
                 "name refers to a type but we expected a value",
             )),
-            NamedEntity::Module(_) => Err(Error::new(
+            NamedEntity::Module(_) => Err(Error::old(
                 token,
                 "name refers to a module but we expected a value",
             )),
@@ -189,12 +189,12 @@ impl NamedEntity {
 
     fn expect_type(self, token: &Token) -> compilation::Result<AcornType> {
         match self {
-            NamedEntity::Value(_) => Err(Error::new(
+            NamedEntity::Value(_) => Err(Error::old(
                 token,
                 "name refers to a value but we expected a type",
             )),
             NamedEntity::Type(t) => Ok(t),
-            NamedEntity::Module(_) => Err(Error::new(
+            NamedEntity::Module(_) => Err(Error::old(
                 token,
                 "name refers to a module but we expected a type",
             )),
@@ -617,7 +617,7 @@ impl BindingMap {
         match expression {
             Expression::Singleton(token) => {
                 if token.token_type == TokenType::Axiom {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         token,
                         "axiomatic types can only be created at the top level",
                     ));
@@ -625,10 +625,10 @@ impl BindingMap {
                 if let Some(acorn_type) = self.type_names.get(token.text()) {
                     Ok(acorn_type.clone())
                 } else {
-                    Err(Error::new(token, "expected type name"))
+                    Err(Error::old(token, "expected type name"))
                 }
             }
-            Expression::Unary(token, _) => Err(Error::new(
+            Expression::Unary(token, _) => Err(Error::old(
                 token,
                 "unexpected unary operator in type expression",
             )),
@@ -646,20 +646,20 @@ impl BindingMap {
                     let entity = self.evaluate_entity(&mut Stack::new(), project, expression)?;
                     entity.expect_type(token)
                 }
-                _ => Err(Error::new(
+                _ => Err(Error::old(
                     token,
                     "unexpected binary operator in type expression",
                 )),
             },
-            Expression::Apply(left, _) => Err(Error::new(
+            Expression::Apply(left, _) => Err(Error::old(
                 left.token(),
                 "unexpected function application in type expression",
             )),
             Expression::Grouping(_, e, _) => self.evaluate_type(project, e),
             Expression::Binder(token, _, _, _) | Expression::IfThenElse(token, _, _, _, _) => {
-                Err(Error::new(token, "unexpected token in type expression"))
+                Err(Error::old(token, "unexpected token in type expression"))
             }
-            Expression::Match(token, _, _, _) => Err(Error::new(
+            Expression::Match(token, _, _, _) => Err(Error::old(
                 token,
                 "unexpected match token in type expression",
             )),
@@ -699,7 +699,7 @@ impl BindingMap {
                 return Ok((name_token.to_string(), acorn_type));
             }
             Declaration::SelfToken(name_token) => {
-                return Err(Error::new(
+                return Err(Error::old(
                     &name_token,
                     "cannot use 'self' as an argument here",
                 ));
@@ -733,7 +733,7 @@ impl BindingMap {
                         continue;
                     }
                     _ => {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             declaration.token(),
                             "first argument of a member function must be 'self'",
                         ));
@@ -742,13 +742,13 @@ impl BindingMap {
             }
             let (name, acorn_type) = self.evaluate_declaration(project, declaration)?;
             if self.name_in_use(&name) {
-                return Err(Error::new(
+                return Err(Error::old(
                     declaration.token(),
                     "cannot redeclare a name in an argument list",
                 ));
             }
             if names.contains(&name) {
-                return Err(Error::new(
+                return Err(Error::old(
                     declaration.token(),
                     "cannot declare a name twice in one argument list",
                 ));
@@ -778,21 +778,21 @@ impl BindingMap {
                 } else {
                     project
                         .get_bindings(*module)
-                        .ok_or_else(|| Error::new(token, "constructor module is unavailable"))?
+                        .ok_or_else(|| Error::old(token, "constructor module is unavailable"))?
                 };
                 bindings
                     .constants
                     .get(name)
-                    .ok_or_else(|| Error::new(token, "constructor metadata is unavailable"))?
+                    .ok_or_else(|| Error::old(token, "constructor metadata is unavailable"))?
             }
-            _ => return Err(Error::new(token, "invalid pattern")),
+            _ => return Err(Error::old(token, "invalid pattern")),
         };
         match &info.constructor {
             Some((constructor_type, i, total)) => {
                 check_type(token, Some(expected_type), &constructor_type)?;
                 Ok((*i, *total))
             }
-            None => Err(Error::new(token, "expected a constructor")),
+            None => Err(Error::old(token, "expected a constructor")),
         }
     }
 
@@ -819,7 +819,7 @@ impl BindingMap {
                     self.expect_constructor(project, expected_type, &constructor, token)?;
                 let pattern_type = constructor.get_type();
                 if pattern_type.is_functional() {
-                    return Err(Error::new(token, "constructor requires arguments"));
+                    return Err(Error::old(token, "constructor requires arguments"));
                 }
                 check_type(token, Some(expected_type), &pattern_type)?;
                 return Ok((constructor, vec![], i, total));
@@ -831,18 +831,18 @@ impl BindingMap {
         let arg_types = match fn_type {
             AcornType::Function(f) => {
                 if &*f.return_type != expected_type {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         pattern.token(),
                         "pattern type does not match scrutinee",
                     ));
                 }
                 f.arg_types
             }
-            _ => return Err(Error::new(fn_exp.token(), "expected a function")),
+            _ => return Err(Error::old(fn_exp.token(), "expected a function")),
         };
         let name_exps = args.flatten_list(false)?;
         if name_exps.len() != arg_types.len() {
-            return Err(Error::new(
+            return Err(Error::old(
                 token,
                 &format!(
                     "expected {} arguments but got {}",
@@ -858,20 +858,20 @@ impl BindingMap {
                     token.text().to_string()
                 }
                 _ => {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         name_exp.token(),
                         "expected a simple name in pattern",
                     ))
                 }
             };
             if self.name_in_use(&name) {
-                return Err(Error::new(
+                return Err(Error::old(
                     name_exp.token(),
                     &format!("name {} already bound", name),
                 ));
             }
             if args.iter().any(|(existing, _)| existing == &name) {
-                return Err(Error::new(
+                return Err(Error::old(
                     name_exp.token(),
                     "cannot use a name twice in one pattern",
                 ));
@@ -897,7 +897,7 @@ impl BindingMap {
         }
 
         if s.len() == 1 {
-            return Err(Error::new(
+            return Err(Error::old(
                 token,
                 &format!("digit {}.{} is not defined", type_name, s),
             ));
@@ -912,7 +912,7 @@ impl BindingMap {
         let read_fn = match self.evaluate_class_variable(project, module, type_name, "read") {
             Some(f) => f,
             None => {
-                return Err(Error::new(
+                return Err(Error::old(
                     token,
                     &format!(
                         "{}.read must be defined to read numeric literals",
@@ -972,7 +972,7 @@ impl BindingMap {
             let function = match bindings.get_constant_value(&constant_name) {
                 Some(value) => value,
                 None => {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         token,
                         &format!("unknown instance variable '{}'", constant_name),
                     ))
@@ -988,12 +988,12 @@ impl BindingMap {
                     )?;
                 }
                 _ => {
-                    return Err(Error::new(token, "expected member to be a function"));
+                    return Err(Error::old(token, "expected member to be a function"));
                 }
             };
             Ok(AcornValue::new_apply(function, vec![instance]))
         } else {
-            Err(Error::new(
+            Err(Error::old(
                 token,
                 &format!("objects of type {:?} have no members", base_type),
             ))
@@ -1030,20 +1030,20 @@ impl BindingMap {
                     }
                     match self.evaluate_class_variable(project, module, &type_name, name) {
                         Some(value) => Ok(NamedEntity::Value(value)),
-                        None => Err(Error::new(
+                        None => Err(Error::old(
                             name_token,
                             &format!("{} has no member named '{}'", type_name, name),
                         )),
                     }
                 } else {
-                    Err(Error::new(name_token, "expected a data type"))
+                    Err(Error::old(name_token, "expected a data type"))
                 }
             }
             Some(NamedEntity::Module(module)) => {
                 if let Some(bindings) = project.get_bindings(module) {
                     bindings.evaluate_name(name_token, project, stack, None)
                 } else {
-                    Err(Error::new(name_token, "could not load bindings for module"))
+                    Err(Error::old(name_token, "could not load bindings for module"))
                 }
             }
             None => {
@@ -1052,12 +1052,12 @@ impl BindingMap {
                         if self.is_module(name) {
                             match self.modules.get(name) {
                                 Some(module) => Ok(NamedEntity::Module(*module)),
-                                None => Err(Error::new(name_token, "unknown module")),
+                                None => Err(Error::old(name_token, "unknown module")),
                             }
                         } else if self.has_type_name(name) {
                             match self.get_type_for_name(name) {
                                 Some(t) => Ok(NamedEntity::Type(t.clone())),
-                                None => Err(Error::new(name_token, "unknown type")),
+                                None => Err(Error::old(name_token, "unknown type")),
                             }
                         } else if let Some((i, t)) = stack.get(name) {
                             // This is a stack variable
@@ -1065,7 +1065,7 @@ impl BindingMap {
                         } else if let Some(value) = self.get_constant_value(name) {
                             Ok(NamedEntity::Value(value))
                         } else {
-                            Err(Error::new(
+                            Err(Error::old(
                                 name_token,
                                 &format!("unknown identifier '{}'", name),
                             ))
@@ -1075,7 +1075,7 @@ impl BindingMap {
                         let (module, type_name) = match &self.default {
                             Some((module, type_name)) => (module, type_name),
                             None => {
-                                return Err(Error::new(
+                                return Err(Error::old(
                                     name_token,
                                     "you must set a default type for numeric literals",
                                 ));
@@ -1095,10 +1095,10 @@ impl BindingMap {
                             // This is a stack variable
                             Ok(NamedEntity::Value(AcornValue::Variable(*i, t.clone())))
                         } else {
-                            Err(Error::new(name_token, "unexpected location for 'self'"))
+                            Err(Error::old(name_token, "unexpected location for 'self'"))
                         }
                     }
-                    t => Err(Error::new(name_token, &format!("unexpected {:?} token", t))),
+                    t => Err(Error::old(name_token, &format!("unexpected {:?} token", t))),
                 }
             }
         }
@@ -1115,7 +1115,7 @@ impl BindingMap {
         let right_token = match right {
             Expression::Singleton(token) => token,
             _ => {
-                return Err(Error::new(
+                return Err(Error::old(
                     right.token(),
                     "expected an identifier after a dot",
                 ))
@@ -1170,7 +1170,7 @@ impl BindingMap {
         let mut fa = match partial {
             AcornValue::Application(fa) => fa,
             _ => {
-                return Err(Error::new(
+                return Err(Error::old(
                     token,
                     &format!(
                         "the '{}' operator requires a method named '{}'",
@@ -1182,7 +1182,7 @@ impl BindingMap {
         match fa.function.get_type() {
             AcornType::Function(f) => {
                 if f.arg_types.len() != 2 {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         token,
                         &format!("expected a binary function for '{}' method", name),
                     ));
@@ -1190,7 +1190,7 @@ impl BindingMap {
                 check_type(token, Some(&f.arg_types[1]), &right_value.get_type())?;
             }
             _ => {
-                return Err(Error::new(
+                return Err(Error::old(
                     token,
                     &format!("unexpected type for '{}' method", name),
                 ))
@@ -1212,7 +1212,7 @@ impl BindingMap {
         name_token: &Token,
     ) -> compilation::Result<()> {
         if self.name_in_use(&name_token.text()) {
-            return Err(Error::new(
+            return Err(Error::old(
                 name_token,
                 &format!("name {} already bound in this module", name_token.text()),
             ));
@@ -1220,7 +1220,7 @@ impl BindingMap {
         let bindings = match project.get_bindings(module) {
             Some(b) => b,
             None => {
-                return Err(Error::new(
+                return Err(Error::old(
                     name_token,
                     &format!("could not load bindings for imported module"),
                 ))
@@ -1236,7 +1236,7 @@ impl BindingMap {
                     }
                     _ => {
                         // I don't see how this branch can be reached.
-                        return Err(Error::new(name_token, "cannot import non-constant values"));
+                        return Err(Error::old(name_token, "cannot import non-constant values"));
                     }
                 }
                 Ok(())
@@ -1246,7 +1246,7 @@ impl BindingMap {
                 Ok(())
             }
             NamedEntity::Module(_) => {
-                Err(Error::new(name_token, "cannot import modules indirectly"))
+                Err(Error::old(name_token, "cannot import modules indirectly"))
             }
         }
     }
@@ -1265,7 +1265,7 @@ impl BindingMap {
             Expression::Singleton(token) => match token.token_type {
                 TokenType::Axiom => panic!("axiomatic values should be handled elsewhere"),
                 TokenType::ForAll | TokenType::Exists | TokenType::Function => {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         token,
                         "binder keywords cannot be used as values",
                     ));
@@ -1278,7 +1278,7 @@ impl BindingMap {
                     let entity = self.evaluate_name(token, project, stack, None)?;
                     Ok(entity.expect_value(expected_type, token)?)
                 }
-                token_type => Err(Error::new(
+                token_type => Err(Error::old(
                     token,
                     &format!("identifier expression has token type {:?}", token_type),
                 )),
@@ -1296,7 +1296,7 @@ impl BindingMap {
                 }
                 operator => {
                     let name = operator.to_prefix_magic_method_name().ok_or_else(|| {
-                        Error::new(token, "unexpected unary operator in value expression")
+                        Error::old(token, "unexpected unary operator in value expression")
                     })?;
                     let operand = self.evaluate_value_with_stack(stack, project, expr, None)?;
                     let value = self.evaluate_instance_variable(token, project, operand, name)?;
@@ -1404,7 +1404,7 @@ impl BindingMap {
                     Some(name) => {
                         self.evaluate_infix(stack, project, left, token, right, name, expected_type)
                     }
-                    None => Err(Error::new(
+                    None => Err(Error::old(
                         token,
                         "unhandled binary operator in value expression",
                     )),
@@ -1418,14 +1418,14 @@ impl BindingMap {
                 let function_type = match function_type {
                     AcornType::Function(f) => f,
                     _ => {
-                        return Err(Error::new(function_expr.token(), "expected a function"));
+                        return Err(Error::old(function_expr.token(), "expected a function"));
                     }
                 };
 
                 let arg_exprs = args_expr.flatten_list(false)?;
 
                 if function_type.arg_types.len() < arg_exprs.len() {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         args_expr.token(),
                         &format!(
                             "expected <= {} arguments, but got {}",
@@ -1442,7 +1442,7 @@ impl BindingMap {
                     let arg_value =
                         self.evaluate_value_with_stack(stack, project, arg_expr, None)?;
                     if !arg_type.match_specialized(&arg_value.get_type(), &mut mapping) {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             arg_expr.token(),
                             &format!(
                                 "expected type {}, but got {}",
@@ -1466,7 +1466,7 @@ impl BindingMap {
                     if let AcornValue::Constant(c_module, c_name, c_type, c_params) = function {
                         (c_module, c_name, c_type, c_params)
                     } else {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             function_expr.token(),
                             "a non-constant function cannot be a template",
                         ));
@@ -1477,7 +1477,7 @@ impl BindingMap {
                     match mapping.get(param_name) {
                         Some(t) => params.push((param_name.clone(), t.clone())),
                         None => {
-                            return Err(Error::new(
+                            return Err(Error::old(
                                 function_expr.token(),
                                 &format!("parameter {} could not be inferred", param_name),
                             ))
@@ -1502,7 +1502,7 @@ impl BindingMap {
             }
             Expression::Binder(token, args, body, _) => {
                 if args.len() < 1 {
-                    return Err(Error::new(token, "binders must have at least one argument"));
+                    return Err(Error::old(token, "binders must have at least one argument"));
                 }
                 let (arg_names, arg_types) = self.bind_args(stack, project, args, None)?;
                 let body_type = match token.token_type {
@@ -1516,7 +1516,7 @@ impl BindingMap {
                         TokenType::ForAll => Ok(AcornValue::ForAll(arg_types, Box::new(value))),
                         TokenType::Exists => Ok(AcornValue::Exists(arg_types, Box::new(value))),
                         TokenType::Function => Ok(AcornValue::Lambda(arg_types, Box::new(value))),
-                        _ => Err(Error::new(token, "expected a binder identifier token")),
+                        _ => Err(Error::old(token, "expected a binder identifier token")),
                     },
                     Err(e) => Err(e),
                 };
@@ -1566,14 +1566,14 @@ impl BindingMap {
                     // Check every outer-scope conflict before binding any case locals.
                     for (name, _) in &args {
                         if stack.get(name).is_some() {
-                            return Err(Error::new(
+                            return Err(Error::old(
                                 pattern_exp.token(),
                                 &format!("name {} already bound", name),
                             ));
                         }
                     }
                     if indices.contains(&i) {
-                        return Err(Error::new(
+                        return Err(Error::old(
                             pattern_exp.token(),
                             "cannot have multiple cases for the same constructor",
                         ));
@@ -1608,7 +1608,7 @@ impl BindingMap {
                     cases.push((arg_types, pattern, result));
                 }
                 if !all_cases {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         expression.token(),
                         "not all constructors are covered in this match",
                     ));
@@ -1691,7 +1691,7 @@ impl BindingMap {
         let mut type_param_names: Vec<String> = vec![];
         for token in type_param_tokens {
             if self.type_names.contains_key(token.text()) {
-                return Err(Error::new(
+                return Err(Error::old(
                     token,
                     "cannot redeclare a type in a generic type list",
                 ));
@@ -1711,7 +1711,7 @@ impl BindingMap {
                 .iter()
                 .any(|a| a.refers_to(self.module, &type_param_name))
             {
-                return Err(Error::new(
+                return Err(Error::old(
                     &type_param_tokens[i],
                     &format!(
                         "type parameter {} is not used in the function arguments",
@@ -1723,7 +1723,7 @@ impl BindingMap {
 
         if let Some(name) = function_name {
             if self.name_in_use(name) {
-                return Err(Error::new(
+                return Err(Error::old(
                     value_expr.token(),
                     "function name conflicts with a type parameter",
                 ));
@@ -1761,7 +1761,7 @@ impl BindingMap {
                     specific_arg_types.len(),
                 );
                 if !checker.check(&specific_value) {
-                    return Err(Error::new(
+                    return Err(Error::old(
                         value_expr.token(),
                         "the termination checker could not prove that this terminates",
                     ));

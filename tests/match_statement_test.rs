@@ -92,7 +92,8 @@ fn statement_error(env: &mut Environment, source: &str) -> String {
     let statement = Statement::parse_str(source).unwrap();
     env.add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err()
-        .message
+        .message()
+        .to_string()
 }
 
 #[test]
