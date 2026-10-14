@@ -882,11 +882,7 @@ impl Environment {
             }
 
             StatementInfo::Structure(ss) => {
-                if let Some(constraint) = &ss.constraint {
-                    return Err(constraint.error("constrained structures are not supported yet"));
-                }
-                self.add_other_lines(statement);
-                if self.bindings.has_type_name(&ss.name) {
+                if self.bindings.name_in_use(&ss.name) {
                     return Err(statement.error("type name already defined in this scope"));
                 }
 
@@ -897,14 +893,68 @@ impl Environment {
                 for (field_name_token, field_type_expr) in &ss.fields {
                     let field_type = self.bindings.evaluate_type(project, &field_type_expr)?;
                     field_types.push(field_type.clone());
-                    if TokenType::from_magic_method_name(&field_name_token.text()).is_some() {
+                    if field_name_token.text() == "new"
+                        || TokenType::from_magic_method_name(field_name_token.text()).is_some()
+                    {
                         return Err(field_name_token.error(&format!(
                             "'{}' is a reserved word. use a different name",
                             field_name_token.text()
                         )));
                     }
                     let member_fn_name = format!("{}.{}", ss.name, field_name_token.text());
+                    if member_fn_names.contains(&member_fn_name) {
+                        return Err(
+                            field_name_token.error("structure fields must have distinct names")
+                        );
+                    }
                     member_fn_names.push(member_fn_name);
+                }
+
+                // If there's a constraint, add a block to prove it can be satisfied.
+                // Validate the complete constraint and its proof before changing parent state.
+                let (unbound_constraint, constraint_block) =
+                    if let Some(constraint) = &ss.constraint {
+                        let mut stack = Stack::new();
+                        for ((name_token, _), t) in ss.fields.iter().zip(&field_types) {
+                            stack.insert(name_token.to_string(), t.clone());
+                        }
+                        let unbound = self.bindings.evaluate_value_with_stack(
+                            &mut stack,
+                            project,
+                            &constraint,
+                            Some(&AcornType::Bool),
+                        )?;
+                        let inhabited =
+                            AcornValue::Exists(field_types.clone(), Box::new(unbound.clone()));
+                        let params = BlockParams::Constraint(inhabited, constraint.range());
+                        let block = Block::new(
+                            project,
+                            &self,
+                            vec![], // no type params
+                            vec![], // no args, because we already handled them
+                            params,
+                            statement.first_line(),
+                            statement.last_line(),
+                            ss.body.as_ref(),
+                        )?;
+                        (Some(unbound), Some(block))
+                    } else {
+                        (None, None)
+                    };
+
+                self.add_line_types(
+                    LineType::Other,
+                    statement.first_line(),
+                    ss.first_right_brace.line_number,
+                );
+                if let Some(block) = constraint_block {
+                    let vacuous_prop = Proposition::anonymous(
+                        AcornValue::Bool(true),
+                        self.module_id,
+                        statement.range(),
+                    );
+                    let index = self.add_node(project, false, vacuous_prop, Some(block));
+                    self.add_node_lines(index, &statement.range());
                 }
 
                 // The member functions take the type itself to a particular member.
@@ -929,7 +979,13 @@ impl Environment {
                     vec![],
                     new_fn_type,
                     None,
-                    Some((struct_type.clone(), 0, 1)),
+                    // Invalid inputs can map to the same constrained object. They cannot
+                    // provide the unique constructor arguments required by match patterns.
+                    if unbound_constraint.is_none() {
+                        Some((struct_type.clone(), 0, 1))
+                    } else {
+                        None
+                    },
                 );
                 let new_fn = self.bindings.get_constant_value(&new_fn_name).unwrap();
 
@@ -965,8 +1021,11 @@ impl Environment {
                 );
 
                 // There are also formulas for new followed by member functions. Ie:
-                // Pair.first(Pair.new(a, b)) = a.
+                //   Pair.first(Pair.new(a, b)) = a.
                 // These are the "member equations".
+                //
+                // When there's a constraint, we need to add it as a condition here, like:
+                //   constraint(a, b) -> Pair.first(Pair.new(a, b)) = a.
                 let var_args = (0..ss.fields.len())
                     .map(|i| AcornValue::Variable(i as AtomId, field_types[i].clone()))
                     .collect::<Vec<_>>();
@@ -985,7 +1044,13 @@ impl Environment {
                         })),
                         Box::new(AcornValue::Variable(i as AtomId, field_types[i].clone())),
                     );
-                    let member_claim = AcornValue::ForAll(field_types.clone(), Box::new(member_eq));
+                    let unbound_member_claim = if let Some(constraint) = &unbound_constraint {
+                        AcornValue::new_implies(constraint.clone(), member_eq)
+                    } else {
+                        member_eq
+                    };
+                    let member_claim =
+                        AcornValue::ForAll(field_types.clone(), Box::new(unbound_member_claim));
                     let range = Range {
                         start: field_name_token.start_pos(),
                         end: field_type_expr.last_token().end_pos(),
