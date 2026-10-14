@@ -59,7 +59,7 @@ fn qualified_generic_application_has_function_call_precedence() {
 }
 
 #[test]
-fn malformed_type_lists_and_pending_evaluation_fail_without_panicking() {
+fn malformed_type_lists_fail_without_panicking() {
     for source in ["identity<>", "identity<Bool,>", "identity<Bool,, Bool>"] {
         let mut tokens = TokenIter::new(Token::scan(source));
         assert!(
@@ -69,7 +69,7 @@ fn malformed_type_lists_and_pending_evaluation_fail_without_panicking() {
     }
     let mut env = Environment::new_test();
     env.add("define identity<T>(value: T) -> T { value }");
-    env.bad("let bad: Bool = identity<Bool>(true)");
+    env.add("let explicit: Bool = identity<Bool>(true)");
     for source in [
         "let bad: Bool = identity<Bool,",
         "let bad: Bool = identity<(Bool -> Bool)",

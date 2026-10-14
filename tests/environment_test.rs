@@ -420,15 +420,17 @@ theorem add_assoc(a: Nat, b: Nat, c: Nat) { add(add(a, b), c) = add(a, add(b, c)
     }
 
     #[test]
-    fn test_parametric_types_required_in_function_args() {
+    fn test_unused_function_parameters_can_be_explicit() {
         let mut env = Environment::new_test();
-        env.bad("define foo<T>(a: Bool) -> Bool { a }");
+        env.add("define foo<T>(a: Bool) -> Bool { a }");
+        env.add("let explicit: Bool = foo<Bool>(true)");
     }
 
     #[test]
-    fn test_parametric_types_required_in_theorem_args() {
+    fn test_unused_theorem_parameters_can_be_explicit() {
         let mut env = Environment::new_test();
-        env.bad("theorem foo<T>(a: Bool) { a or not a }");
+        env.add("theorem foo<T>(a: Bool) { a or not a }");
+        env.add("let explicit: Bool = foo<Bool>(true)");
     }
 
     #[test]

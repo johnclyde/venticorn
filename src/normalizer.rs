@@ -161,9 +161,8 @@ impl Normalizer {
             | AcornValue::Not(_)
             | AcornValue::Binary(_, _, _)
             | AcornValue::Variable(_, _)
-            | AcornValue::Bool(_) => value,
-
-            AcornValue::Constant(ref c) if c.params.is_empty() => value,
+            | AcornValue::Bool(_)
+            | AcornValue::Constant(_) => value,
 
             _ => panic!(
                 "moving negation inwards should have eliminated this node: {:?}",
