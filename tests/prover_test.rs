@@ -1548,4 +1548,51 @@ mod prover_test {
         "#;
         verify_fails(text);
     }
+    #[test]
+    fn test_boolean_equality_from_both_implications() {
+        verify_succeeds(
+            r#"
+            let a: Bool = axiom
+            let b: Bool = axiom
+            axiom { a -> b }
+            axiom { b -> a }
+            theorem { a = b }
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_one_implication_does_not_establish_boolean_equality() {
+        verify_fails(
+            r#"
+            let a: Bool = axiom
+            let b: Bool = axiom
+            axiom { a -> b }
+            theorem { a = b }
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_binary_resolution_requires_the_shared_conclusion() {
+        verify_succeeds(
+            r#"
+            let a: Bool = axiom
+            let b: Bool = axiom
+            axiom { a or b }
+            axiom { not a or b }
+            theorem { b }
+        "#,
+        );
+        verify_fails(
+            r#"
+            let a: Bool = axiom
+            let b: Bool = axiom
+            let c: Bool = axiom
+            axiom { a or b }
+            axiom { not a or c }
+            theorem { b }
+        "#,
+        );
+    }
 }

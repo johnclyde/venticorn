@@ -20,7 +20,7 @@ pub struct ConstantMap {
     // The AtomId -> ConstantKey lookup direction.
     global_constants: Vec<Option<ConstantKey>>,
 
-    // For lobal constant i in the prover, local_constants[i] is the corresponding ConstantKey.
+    // For local constant i in the prover, local_constants[i] is the corresponding ConstantKey.
     // The AtomId -> ConstantKey lookup direction.
     local_constants: Vec<Option<ConstantKey>>,
 

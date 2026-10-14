@@ -64,7 +64,8 @@ impl Truthiness {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolutionInfo {
     // Which clauses were used as the sources.
-    // The short clause must have only one literal.
+    // The short clause supplies the resolved pivot; any remaining literal also occurs
+    // unchanged in the long clause.
     pub short_id: usize,
 
     // The long clause will usually have more than one literal. It can have just one literal
