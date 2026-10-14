@@ -1424,7 +1424,7 @@ impl BindingMap {
                         args.push(arg_value);
                     }
 
-                    // Extract the parameters for the unresolved function
+                    // Resolve the instance type using declaration names before keeping ordered actuals
                     let mut params = vec![];
                     for param_name in &c_params {
                         match mapping.get(param_name) {
@@ -1438,8 +1438,10 @@ impl BindingMap {
                         }
                     }
 
+                    let instance_type = c_type.instantiate(&params);
+                    let actuals = params.into_iter().map(|(_, actual)| actual).collect();
                     let instance_fn =
-                        AcornValue::new_generic_constant(c_module, c_name, c_type, params);
+                        AcornValue::new_constant(c_module, c_name, actuals, instance_type);
                     let value = AcornValue::new_apply(instance_fn, args);
                     check_type(&**function_expr, expected_type, &value.get_type())?;
                     return Ok(value);

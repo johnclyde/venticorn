@@ -107,21 +107,6 @@ impl fmt::Display for ConstantInstance {
 }
 
 impl ConstantInstance {
-    fn new(
-        module_id: ModuleId,
-        name: String,
-        generic_type: AcornType,
-        params: Vec<(String, AcornType)>,
-    ) -> Self {
-        let instance_type = generic_type.instantiate(&params);
-        Self {
-            module_id,
-            name,
-            params: params.into_iter().map(|(_, actual)| actual).collect(),
-            instance_type,
-        }
-    }
-
     // Substitute types from the surrounding scope. The declaration's formal names
     // belong to a separate namespace from the actual arguments of a polymorphic instance.
     pub fn instantiate(&self, substitutions: &[(String, AcornType)]) -> Self {
@@ -404,15 +389,6 @@ impl AcornValue {
             params,
             instance_type,
         })
-    }
-
-    pub fn new_generic_constant(
-        module_id: ModuleId,
-        name: String,
-        generic_type: AcornType,
-        params: Vec<(String, AcornType)>,
-    ) -> AcornValue {
-        AcornValue::Constant(ConstantInstance::new(module_id, name, generic_type, params))
     }
 
     pub fn is_lambda(&self) -> bool {
