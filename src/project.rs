@@ -420,6 +420,12 @@ impl Project {
         self.build_cache.lock().unwrap().clone()
     }
 
+    // Create a single-build handler using the last completed cache snapshot.
+    // The builder does not borrow the project, so callers retain their existing ownership model.
+    pub fn builder<'a>(&self, event_handler: impl FnMut(BuildEvent) + 'a) -> Builder<'a> {
+        Builder::with_cache(self.cached_build(), event_handler)
+    }
+
     // Builds all open modules, logging build events.
     // Returns the build status.
     pub fn build(&self, builder: &mut Builder) {
@@ -663,7 +669,7 @@ impl Project {
     pub fn sync_build_report(&self) -> BuildReport {
         let mut events = vec![];
         let (status, num_success, num_cached, goals_done, goals_total, cache) = {
-            let mut builder = Builder::with_cache(self.cached_build(), |event| events.push(event));
+            let mut builder = self.builder(|event| events.push(event));
             self.build(&mut builder);
             let stats = (
                 builder.status,

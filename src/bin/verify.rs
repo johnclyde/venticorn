@@ -10,7 +10,6 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
-use venticorn::builder::Builder;
 use venticorn::project::Project;
 
 #[derive(Parser)]
@@ -56,7 +55,7 @@ async fn main() -> ExitCode {
     }
 
     // Set up the builder
-    let mut builder = Builder::with_cache(project.cached_build(), |event| {
+    let mut builder = project.builder(|event| {
         if let Some(m) = event.log_message {
             if let Some(diagnostic) = event.diagnostic {
                 println!(

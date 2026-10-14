@@ -14,7 +14,6 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 use venticorn::block::NodeCursor;
 use venticorn::build_info::BuildInfo;
-use venticorn::builder::Builder;
 use venticorn::interfaces::{
     InfoParams, InfoResponse, ProgressParams, ProgressResponse, SearchParams, SearchResponse,
     SearchStatus,
@@ -322,11 +321,10 @@ impl Backend {
         let producer_project = project.clone();
         tokio::spawn(async move {
             tokio::task::block_in_place(move || {
-                let mut builder =
-                    Builder::with_cache(producer_project.cached_build(), move |event| {
-                        // A superseded consumer may already have stopped listening.
-                        let _ = tx.send(event);
-                    });
+                let mut builder = producer_project.builder(move |event| {
+                    // A superseded consumer may already have stopped listening.
+                    let _ = tx.send(event);
+                });
                 producer_project.build(&mut builder);
                 let seconds =
                     (chrono::Local::now() - start_time).num_milliseconds() as f64 / 1000.0;
