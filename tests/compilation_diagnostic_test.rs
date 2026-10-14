@@ -288,3 +288,30 @@ fn infix_member_and_type_errors_cover_the_complete_operation() {
         "unknown instance variable 'Number.mul'",
     );
 }
+
+#[test]
+fn terminal_diagnostics_underline_complete_spans_and_preserve_tab_prefixes() {
+    let tokens = Token::scan("\t𐐀é left + right suffix");
+    let first = tokens.iter().find(|token| token.text() == "left").unwrap();
+    let last = tokens.iter().find(|token| token.text() == "right").unwrap();
+    let error = Error::new(first, last, "bad operation");
+    assert_eq!(
+        error.to_string(),
+        "bad operation:\n\t𐐀é left + right suffix\n\t   ^^^^^^^^^^^^\n"
+    );
+    assert_eq!(
+        error.range(),
+        Range::new(Position::new(0, 5), Position::new(0, 17))
+    );
+}
+
+#[test]
+fn terminal_multiline_diagnostics_highlight_only_the_first_line_suffix() {
+    let tokens = Token::scan("\tleft +\n  right");
+    let first = tokens.iter().find(|token| token.text() == "left").unwrap();
+    let last = tokens.iter().find(|token| token.text() == "right").unwrap();
+    assert_eq!(
+        Error::new(first, last, "bad operation").to_string(),
+        "bad operation:\n\tleft +\n\t^^^^^^\n"
+    );
+}
