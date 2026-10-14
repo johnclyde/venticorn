@@ -1,9 +1,7 @@
 // Modified for Venticorn: match syntax and highlighting.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
-use std::iter::Peekable;
 use std::sync::{Arc, OnceLock};
-use std::vec::IntoIter;
 
 use tower_lsp::lsp_types::{Position, Range, SemanticTokenType};
 
@@ -672,7 +670,7 @@ impl Token {
 }
 
 pub struct TokenIter {
-    inner: Peekable<IntoIter<Token>>,
+    inner: VecDeque<Token>,
 
     last: Token,
 }
@@ -681,13 +679,18 @@ impl TokenIter {
     pub fn new(tokens: Vec<Token>) -> TokenIter {
         let last = tokens.last().cloned().unwrap_or_else(Token::empty);
         TokenIter {
-            inner: tokens.into_iter().peekable(),
+            inner: tokens.into(),
             last,
         }
     }
 
     pub fn peek(&mut self) -> Option<&Token> {
-        self.inner.peek()
+        self.inner.front()
+    }
+
+    // Borrow bounded lookahead without copying the remaining document.
+    pub(crate) fn peek_nth(&self, index: usize) -> Option<&Token> {
+        self.inner.get(index)
     }
 
     pub fn peek_type(&mut self) -> Option<TokenType> {
@@ -695,7 +698,7 @@ impl TokenIter {
     }
 
     pub fn next(&mut self) -> Option<Token> {
-        self.inner.next()
+        self.inner.pop_front()
     }
 
     pub fn error(&mut self, message: &str) -> Error {
@@ -707,7 +710,8 @@ impl TokenIter {
 
     // Pops off one token, expecting it to be there.
     pub fn expect_token(&mut self) -> Result<Token> {
-        self.next().ok_or(self.error("unexpected end of file"))
+        self.next()
+            .ok_or_else(|| self.error("unexpected end of file"))
     }
 
     // Pops off one token, expecting it to be of a known type.

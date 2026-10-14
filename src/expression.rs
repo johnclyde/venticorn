@@ -31,10 +31,10 @@ pub enum Expression {
     // An infix binary operator, with the left and right expressions.
     Binary(Box<Expression>, Token, Box<Expression>),
 
-    // The application of a function. The second expression must be an arg list.
+    // Apply a value argument list or an explicit type argument list.
     Apply(Box<Expression>, Box<Expression>),
 
-    // A grouping like ( <expr> ) or { <expr> }.
+    // A grouping delimited by parentheses or angle brackets.
     // The tokens of the bracey things that delimit the grouping are included.
     Grouping(Token, Box<Expression>, Token),
 
@@ -100,8 +100,8 @@ impl fmt::Display for Expression {
             Expression::Apply(left, right) => {
                 write!(f, "{}{}", left, right)
             }
-            Expression::Grouping(_, e, _) => {
-                write!(f, "({})", e)
+            Expression::Grouping(left, e, right) => {
+                write!(f, "{}{}{}", left, e, right)
             }
             Expression::Binder(token, args, sub, _) => {
                 write!(f, "{}", token)?;
@@ -595,6 +595,66 @@ impl ErrorSource for PartialExpression {
     }
 }
 
+// Recognize a complete type argument list without consuming a comparison's operands.
+// Only the candidate list is copied for parsing; unsuccessful lookahead leaves the stream intact.
+fn parse_type_arguments(less_than: &Token, tokens: &mut TokenIter) -> Result<Option<Expression>> {
+    let mut parens = 0usize;
+    let mut angles = 0usize;
+    let mut length = 0usize;
+    loop {
+        let Some(token) = tokens.peek_nth(length) else {
+            return Ok(None);
+        };
+        match token.token_type {
+            TokenType::GreaterThan if parens == 0 && angles == 0 => break,
+            TokenType::GreaterThan if angles > 0 => angles -= 1,
+            TokenType::LessThan => angles += 1,
+            TokenType::LeftParen => parens += 1,
+            TokenType::RightParen if parens > 0 => parens -= 1,
+            TokenType::Identifier
+            | TokenType::Comma
+            | TokenType::Dot
+            | TokenType::RightArrow
+            | TokenType::NewLine => {}
+            _ => return Ok(None),
+        }
+        length += 1;
+    }
+    // A following value operand belongs to a comparison chain, as in a < b > c.
+    if matches!(
+        tokens.peek_nth(length + 1).map(|t| t.token_type),
+        Some(
+            TokenType::Identifier
+                | TokenType::Numeral
+                | TokenType::True
+                | TokenType::False
+                | TokenType::SelfToken
+                | TokenType::ForAll
+                | TokenType::Exists
+                | TokenType::Function
+                | TokenType::If
+                | TokenType::Match
+                | TokenType::Not
+        )
+    ) {
+        return Ok(None);
+    }
+    let candidate = (0..=length)
+        .map(|i| tokens.peek_nth(i).unwrap().clone())
+        .collect();
+    let mut trial = TokenIter::new(candidate);
+    let (arguments, greater_than) =
+        Expression::parse_type(&mut trial, Terminator::Is(TokenType::GreaterThan))?;
+    for _ in 0..=length {
+        tokens.next();
+    }
+    Ok(Some(Expression::Grouping(
+        less_than.clone(),
+        Box::new(arguments),
+        greater_than,
+    )))
+}
+
 // Create partial expressions from tokens.
 // termination determines what tokens are allowed to be the terminator.
 // Consumes the terminating token from the iterator and returns it.
@@ -607,6 +667,26 @@ fn parse_partial_expressions(
     while let Some(token) = tokens.next() {
         if termination.matches(&token.token_type) {
             return Ok((partials, token));
+        }
+        // In values, adjacency distinguishes canonical generic application from
+        // a comparison chain such as `a < b > (c)`.
+        let adjacent_head = match partials.back() {
+            Some(PartialExpression::Expression(head)) => {
+                let previous = head.last_token();
+                previous.line_number == token.line_number
+                    && previous.start + previous.len == token.start
+            }
+            _ => false,
+        };
+        if token.token_type == TokenType::LessThan
+            && matches!(partials.back(), Some(PartialExpression::Expression(_)))
+            && (expected_type == ExpressionType::Type || adjacent_head)
+        {
+            if let Some(arguments) = parse_type_arguments(&token, tokens)? {
+                partials.push_back(PartialExpression::ImplicitApply(token.clone()));
+                partials.push_back(PartialExpression::Expression(arguments));
+                continue;
+            }
         }
         if token.token_type.is_binary() {
             if expected_type == ExpressionType::Value

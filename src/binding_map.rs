@@ -1535,6 +1535,13 @@ impl BindingMap {
                 },
             },
             Expression::Apply(function_expr, args_expr) => {
+                if let Expression::Grouping(left, _, _) = args_expr.as_ref() {
+                    if left.token_type == TokenType::LessThan {
+                        return Err(
+                            args_expr.error("explicit type arguments are not supported yet")
+                        );
+                    }
+                }
                 let function =
                     self.evaluate_potential_value(stack, project, function_expr, None)?;
                 let function_type = function.get_type();
