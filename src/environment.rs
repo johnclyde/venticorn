@@ -1332,7 +1332,7 @@ impl Environment {
                         &format!("error in '{}' module", full_name),
                     ));
                 }
-                self.bindings.add_module(local_name, module_id);
+                self.bindings.import_module(local_name, module_id);
                 self.definition_ranges
                     .insert(local_name.clone(), statement.range());
 
