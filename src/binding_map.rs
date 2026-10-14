@@ -341,6 +341,12 @@ impl BindingMap {
         self.constants.get(name)?.definition.as_ref()
     }
 
+    // Returns the defined value and its parameters in declaration order.
+    pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[String])> {
+        let info = self.constants.get(name)?;
+        Some((info.definition.as_ref()?, &info.params))
+    }
+
     // All other modules that we directly depend on, besides this one.
     // Sorted by the name of the import, so that the order will be consistent.
     pub fn direct_dependencies(&self) -> Vec<ModuleId> {
