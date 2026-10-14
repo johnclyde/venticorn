@@ -402,7 +402,7 @@ impl BindingMap {
         }
     }
 
-    pub fn add_module(&mut self, name: &str, module: ModuleId) {
+    pub fn import_module(&mut self, name: &str, module: ModuleId) {
         if self.name_in_use(name) {
             panic!("module name {} already bound", name);
         }
@@ -1847,10 +1847,18 @@ impl BindingMap {
             ));
         }
 
-        match self.reverse_type_names.get(acorn_type) {
-            Some(name) => Ok(Expression::generate_identifier(name)),
-            None => Err(CodeGenError::unnamed_type(acorn_type)),
+        if let Some(name) = self.reverse_type_names.get(acorn_type) {
+            return Ok(Expression::generate_identifier(name));
         }
+        if let AcornType::Data(module, type_name) = acorn_type {
+            if let Some(module_name) = self.reverse_modules.get(module) {
+                return Ok(Expression::generate_identifier_chain(&[
+                    module_name,
+                    type_name,
+                ]));
+            }
+        }
+        Err(CodeGenError::unnamed_type(acorn_type))
     }
 
     // We use variables named x0, x1, x2, etc when new temporary variables are needed.
