@@ -532,27 +532,33 @@ impl<'a> NodeCursor<'a> {
             ));
         }
 
-        if let Some(block) = &node.block {
+        let mut context = if let Some(block) = &node.block {
             let goal = match &block.goal {
                 Some(goal) => goal,
                 None => return Err(format!("block at {} has no goal", self)),
             };
-            Ok(GoalContext::new(
+            GoalContext::new(
                 &block.env,
                 goal.clone(),
                 block.env.last_line(),
                 block.env.first_line(),
                 block.env.last_line(),
-            ))
+            )
         } else {
-            return Ok(GoalContext::new(
+            GoalContext::new(
                 self.env(),
                 Goal::Prove(node.claim.clone()),
                 node.claim.source.range.start.line,
                 node.claim.source.range.start.line,
                 node.claim.source.range.end.line,
-            ));
+            )
+        };
+        for (env, _) in &self.annotated_path {
+            if !env.top_level {
+                context.cache_last_line = context.cache_last_line.max(env.last_line());
+            }
         }
+        Ok(context)
     }
 
     // Does a postorder traversal of everything with a goal, at and below this node
