@@ -9,11 +9,16 @@ use crate::token::Token;
 // We will want to report these along with a location in the source code.
 #[derive(Debug)]
 pub struct Error {
+    // The range of tokens the error occurred at.
+    first_token: Token,
+    last_token: Token,
+
     message: String,
-    token: Token,
 
     // When you try to import a module that itself had a compilation error, that is a "secondary error".
-    // We may or may not want to report these, depending on the context.
+    // We may or may not want to report these.
+    // If the primary location is visible, there's no point in also reporting the secondary.
+    // But if the primary location is inaccessible, we should report it at the secondary location.
     pub secondary: bool,
 }
 
@@ -38,9 +43,9 @@ impl fmt::Display for Error {
         write!(f, "{}:\n", self.message)?;
         fmt_line_part(
             f,
-            &self.token.text(),
-            &self.token.line,
-            self.token.start as usize,
+            &self.first_token.text(),
+            &self.first_token.line,
+            self.first_token.start as usize,
         )
     }
 }
@@ -49,15 +54,17 @@ impl Error {
     pub fn new(token: &Token, message: &str) -> Self {
         Error {
             message: message.to_string(),
-            token: token.clone(),
+            first_token: token.clone(),
+            last_token: token.clone(),
             secondary: false,
         }
     }
 
-    pub fn secondary(token: &Token, message: &str) -> Self {
+    pub fn secondary(first_token: &Token, last_token: &Token, message: &str) -> Self {
         Error {
+            first_token: first_token.clone(),
+            last_token: last_token.clone(),
             message: message.to_string(),
-            token: token.clone(),
             secondary: true,
         }
     }
@@ -67,7 +74,7 @@ impl Error {
     }
 
     pub fn range(&self) -> Range {
-        self.token.range()
+        Range::new(self.first_token.range().start, self.last_token.range().end)
     }
 }
 

@@ -56,3 +56,39 @@ fn empty_and_end_of_line_errors_keep_a_visible_caret() {
     );
     assert!(error.to_string().ends_with("   ^\n"));
 }
+
+#[test]
+fn secondary_import_errors_cover_the_import_without_duplicate_root_diagnostics() {
+    use venticorn::builder::BuildStatus;
+    use venticorn::module::ModuleRef;
+    let mut project = Project::new_mock();
+    project.mock("/mock/broken.ac", "theorem broken { missing }");
+    project.mock("/mock/main.ac", "import broken");
+    let errors = project.errors();
+    assert_eq!(errors.len(), 2);
+    let secondary = errors.iter().find(|(_, error)| error.secondary).unwrap().1;
+    assert_eq!(
+        secondary.range(),
+        Range::new(Position::new(0, 0), Position::new(0, 13))
+    );
+    let (status, events) = project.sync_build();
+    assert_eq!(status, BuildStatus::Error);
+    let located: Vec<_> = events
+        .iter()
+        .filter(|event| event.diagnostic.is_some())
+        .collect();
+    assert_eq!(located.len(), 1);
+    assert_eq!(located[0].module, ModuleRef::Name("broken".to_string()));
+    assert!(events.iter().all(|event| event.verified.is_none()));
+}
+
+#[test]
+fn error_ranges_preserve_endpoints_across_lines() {
+    let tokens = Token::scan("start\n  end𐐀");
+    let last = tokens.iter().find(|token| token.text() == "end𐐀").unwrap();
+    let error = Error::secondary(&tokens[0], last, "unavailable dependency");
+    assert_eq!(
+        error.range(),
+        Range::new(Position::new(0, 0), Position::new(1, 7))
+    );
+}
