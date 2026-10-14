@@ -14,6 +14,7 @@ import {
 
 import { getServerPath } from "./server";
 import { Assistant } from "./assistant";
+import { ProgressTracker } from "./progress";
 
 class VenticornLanguageClient extends LanguageClient {
   initializationFailed = false;
@@ -31,80 +32,6 @@ let outputChannel: OutputChannel | undefined;
 
 function log(message: string) {
   outputChannel?.appendLine(`[${new Date().toLocaleTimeString()}] ${message}`);
-}
-
-async function getProgress() {
-  if (!client?.isRunning()) {
-    return undefined;
-  }
-  try {
-    return await client.sendRequest("acorn/progress", {});
-  } catch (e) {
-    if (!client?.isRunning()) {
-      return undefined;
-    }
-    log(`Progress request failed: ${String(e)}`);
-    throw e;
-  }
-}
-
-// Automatically hides it when we are done.
-async function showProgressBar() {
-  let startTime = Date.now();
-
-  try {
-    let response: any = await getProgress();
-    if (!response) {
-      return;
-    }
-
-    while (response.done === response.total) {
-      // Maybe progress just hasn't started yet.
-      // Let's wait a bit and try again.
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      response = await getProgress();
-      if (!response) {
-        return;
-      }
-
-      let elapsed = Date.now() - startTime;
-      if (elapsed > 2000) {
-        // It's been a while. Let's give up.
-        log("No verification progress appeared before the notification timeout");
-        return;
-      }
-    }
-
-    let previousPercent = 0;
-    await window.withProgress(
-      {
-        location: ProgressLocation.Notification,
-        title: "Venticorn Validation",
-        cancellable: true,
-      },
-      async (progress, token) => {
-        token.onCancellationRequested(() => {
-          log("Validation progress notification canceled");
-        });
-
-        while (response.total !== response.done) {
-          let percent = Math.floor((100 * response.done) / response.total);
-          let increment = percent - previousPercent;
-          progress.report({ increment });
-          previousPercent = percent;
-
-          // We have something to show, so we can wait a bit before updating.
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          response = await getProgress();
-          if (!response) {
-            return;
-          }
-        }
-      }
-    );
-  } catch (e) {
-    log(`Progress notification failed: ${String(e)}`);
-  }
 }
 
 export async function activate(context: ExtensionContext) {
@@ -214,18 +141,20 @@ export async function activate(context: ExtensionContext) {
   let assistantPath = context.asAbsolutePath("build/assistant");
   const assistant = new Assistant(client, assistantPath);
   context.subscriptions.push(assistant);
+  const tracker = new ProgressTracker(client, log);
+  context.subscriptions.push(tracker);
 
   let onDocumentChange = async (document: TextDocument) => {
     if (!client?.isRunning() || document.languageId !== "acorn" || document.uri.scheme !== "file") {
       return;
     }
     assistant.autoDisplay(document);
-    await showProgressBar();
+    await tracker.track();
   };
 
   if (workspace.textDocuments.some((document) =>
     document.languageId === "acorn" && document.uri.scheme === "file")) {
-    showProgressBar();
+    tracker.track();
   }
   // Prefer the active document, then other visible editors. A hidden document
   // must not prevent a visible Acorn file from opening the Assistant.
