@@ -184,9 +184,10 @@ impl PotentialValue {
     pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
         match self {
             PotentialValue::Resolved(value) => Ok(value),
-            PotentialValue::Unresolved(unresolved) => {
-                Err(source.error(&format!("name {} has unresolved type", unresolved.name)))
-            }
+            PotentialValue::Unresolved(unresolved) => Err(source.error(&format!(
+                "value {} requires type arguments",
+                unresolved.name
+            ))),
         }
     }
 }
@@ -264,9 +265,10 @@ impl NamedEntity {
         source: &dyn ErrorSource,
     ) -> compilation::Result<AcornValue> {
         match self {
-            NamedEntity::Unresolved(unresolved) => {
-                Err(source.error(&format!("name {} has unresolved type", unresolved.name)))
-            }
+            NamedEntity::Unresolved(unresolved) => Err(source.error(&format!(
+                "value {} requires type arguments",
+                unresolved.name
+            ))),
             NamedEntity::Value(value) => {
                 check_type(source, expected_type, &value.get_type())?;
                 Ok(value)
@@ -282,9 +284,10 @@ impl NamedEntity {
 
     fn expect_type(self, source: &dyn ErrorSource) -> compilation::Result<AcornType> {
         match self {
-            NamedEntity::Unresolved(unresolved) => {
-                Err(source.error(&format!("name {} has unresolved type", unresolved.name)))
-            }
+            NamedEntity::Unresolved(unresolved) => Err(source.error(&format!(
+                "value {} requires type arguments",
+                unresolved.name
+            ))),
             NamedEntity::Value(_) => {
                 Err(source.error("name refers to a value but we expected a type"))
             }
@@ -1103,7 +1106,7 @@ impl BindingMap {
             Some(PotentialValue::Resolved(value)) => value,
             Some(PotentialValue::Unresolved(_)) => {
                 return Err(token.error(&format!(
-                    "read function {}.read has unresolved type",
+                    "read function {}.read requires type arguments",
                     type_name
                 )))
             }
