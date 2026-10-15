@@ -108,7 +108,10 @@ fn specialized_type_alias_members_never_discard_fixed_arguments() {
         AcornType::Data(env.module_id, "Box".into(), vec![AcornType::Bool]),
     );
     env.add("let okay: Box<Bool> = Box.new(true)");
-    env.bad("let bad: Box<Bool> = BoolBox.new(true)");
+    env.add("let alias: Box<Bool> = BoolBox.new(true)");
+    env.add("type Item: axiom\nlet item: Item = axiom");
+    env.bad("let bad: Box<Item> = BoolBox.new(item)");
+    env.bad("let bad: Box<Item> = BoolBox.new<Item>(item)");
     assert!(!env.bindings.has_identifier("bad"));
 }
 
