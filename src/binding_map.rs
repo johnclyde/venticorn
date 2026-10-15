@@ -1047,7 +1047,12 @@ impl BindingMap {
         s: &str,
     ) -> compilation::Result<AcornValue> {
         if let Some(potential) = self.evaluate_class_variable(project, module, type_name, s) {
-            return potential.value(token);
+            return match potential {
+                PotentialValue::Resolved(value) => Ok(value),
+                PotentialValue::Unresolved(_) => {
+                    Err(token.error(&format!("number {}.{} has unresolved type", type_name, s)))
+                }
+            };
         }
 
         if s.len() == 1 {
@@ -1061,7 +1066,13 @@ impl BindingMap {
         let initial_num =
             self.evaluate_number_with_type(token, project, module, type_name, initial_str)?;
         let read_fn = match self.evaluate_class_variable(project, module, type_name, "read") {
-            Some(potential) => potential.value(token)?,
+            Some(PotentialValue::Resolved(value)) => value,
+            Some(PotentialValue::Unresolved(_)) => {
+                return Err(token.error(&format!(
+                    "read function {}.read has unresolved type",
+                    type_name
+                )))
+            }
             None => {
                 return Err(token.error(&format!(
                     "{}.read must be defined to read numeric literals",
@@ -1123,28 +1134,10 @@ impl BindingMap {
                 project.get_bindings(module).unwrap()
             };
             let constant_name = format!("{}.{}", type_name, name);
-            let function = match bindings.get_constant_value(&constant_name) {
-                Some(potential) => potential.value(source)?,
-                None => {
-                    return Err(
-                        source.error(&format!("unknown instance variable '{}'", constant_name))
-                    )
-                }
-            };
-            // We need to typecheck that the apply is okay
-            match function.get_type() {
-                AcornType::Function(function_type) => {
-                    check_type(
-                        source,
-                        Some(&function_type.arg_types[0]),
-                        &instance.get_type(),
-                    )?;
-                }
-                _ => {
-                    return Err(source.error("expected member to be a function"));
-                }
-            };
-            Ok(AcornValue::new_apply(function, vec![instance]))
+            let function = bindings.get_constant_value(&constant_name).ok_or_else(|| {
+                source.error(&format!("unknown instance variable '{}'", constant_name))
+            })?;
+            self.apply_potential(source, function, vec![instance], None)
         } else {
             Err(source.error(&format!("objects of type {:?} have no members", base_type)))
         }
