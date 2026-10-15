@@ -243,3 +243,37 @@ fn unsupported_outer_type_signatures_restore_generic_structure_admission() {
     assert!(!env.bindings.has_identifier("Captured.new"));
     env.add("structure Captured<T> {\n inner: T\n}");
 }
+
+#[test]
+fn generic_instance_fields_infer_actuals_and_round_trip() {
+    let mut env = Environment::new_test();
+    env.add(PAIR);
+    env.add(TAGGED);
+    env.add("type Item: axiom\nlet item: Item = axiom");
+    env.add("let pair: Pair<Item, Bool> = Pair.new(item, true)");
+    env.add("let tagged: Tagged<Item, Bool> = Tagged.new<Item, Bool>(item)");
+    env.add("type ItemPair: Pair<Item, Bool>\nlet alias: ItemPair = pair");
+    let project = Project::new_mock();
+    for input in ["pair.first", "pair.second", "tagged.value", "alias.first"] {
+        let value = env
+            .bindings
+            .evaluate_value(&project, &Expression::expect_value(input), None)
+            .unwrap();
+        value.validate().unwrap();
+        let code = env.bindings.value_to_code(&value).unwrap();
+        let replay = env
+            .bindings
+            .evaluate_value(&project, &Expression::expect_value(&code), None)
+            .unwrap();
+        assert_eq!(value, replay, "{input} rendered as {code}");
+    }
+    env.bad("let wrong: Bool = pair.first");
+    env.bad("let wrong: Item = pair.second");
+    env.bad("let wrong: Item = pair.missing");
+    let source = format!("{PAIR}inductive Item {{\n one\n two\n}}\nlet pair: Pair<Item, Bool> = Pair.new(Item.one, true)\ntheorem goal {{ pair.first = Item.one }}");
+    assert_eq!(verify_all(&source), Outcome::Success);
+    assert_eq!(
+        verify_all(&source.replace("pair.first = Item.one", "pair.first = Item.two")),
+        Outcome::Exhausted
+    );
+}
