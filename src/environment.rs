@@ -709,6 +709,524 @@ impl Environment {
         Ok(())
     }
 
+    fn add_structure_statement(
+        &mut self,
+        project: &mut Project,
+        statement: &Statement,
+        ss: &crate::statement::StructureStatement,
+    ) -> compilation::Result<()> {
+        if self.bindings.name_in_use(&ss.name) {
+            return Err(statement.error("type name already defined in this scope"));
+        }
+
+        let mut param_names = vec![];
+        let mut arbitrary_params = vec![];
+        for token in &ss.type_params {
+            if token.text() == ss.name || self.bindings.name_in_use(token.text()) {
+                return Err(token.error("type parameter already defined in this scope"));
+            }
+            param_names.push(token.text().to_string());
+            arbitrary_params.push(self.bindings.add_arbitrary_type(token.text()));
+        }
+
+        // Parse the fields before adding the struct type so that we can't have
+        // self-referential structs.
+        let mut member_fn_names = vec![];
+        let mut field_types = vec![];
+        for (field_name_token, field_type_expr) in &ss.fields {
+            let field_type = self.bindings.evaluate_type(project, &field_type_expr)?;
+            field_types.push(field_type.clone());
+            if field_name_token.text() == "new"
+                || TokenType::from_magic_method_name(field_name_token.text()).is_some()
+            {
+                return Err(field_name_token.error(&format!(
+                    "'{}' is a reserved word. use a different name",
+                    field_name_token.text()
+                )));
+            }
+            let member_fn_name = format!("{}.{}", ss.name, field_name_token.text());
+            if member_fn_names.contains(&member_fn_name) {
+                return Err(field_name_token.error("structure fields must have distinct names"));
+            }
+            member_fn_names.push(member_fn_name);
+        }
+
+        if !param_names.is_empty()
+            && field_types
+                .iter()
+                .any(|t| t.parametrize(self.module_id, &param_names).has_arbitrary())
+        {
+            return Err(ss
+                .name_token
+                .error("generic structures cannot capture outer arbitrary types"));
+        }
+
+        // If there's a constraint, add a block to prove it can be satisfied.
+        // Validate the complete constraint and its proof before changing parent state.
+        let (unbound_constraint, constraint_block) = if let Some(constraint) = &ss.constraint {
+            let mut stack = Stack::new();
+            for ((name_token, _), t) in ss.fields.iter().zip(&field_types) {
+                stack.insert(name_token.to_string(), t.clone());
+            }
+            let unbound = self.bindings.evaluate_value_with_stack(
+                &mut stack,
+                project,
+                &constraint,
+                Some(&AcornType::Bool),
+            )?;
+            let inhabited = AcornValue::Exists(field_types.clone(), Box::new(unbound.clone()));
+            let params = BlockParams::Constraint(inhabited, constraint.range());
+            let block = Block::new(
+                project,
+                &self,
+                vec![], // no type params
+                vec![], // no args, because we already handled them
+                params,
+                statement.first_line(),
+                statement.last_line(),
+                ss.body.as_ref(),
+            )?;
+            (Some(unbound), Some(block))
+        } else {
+            (None, None)
+        };
+
+        self.add_line_types(
+            LineType::Other,
+            statement.first_line(),
+            ss.first_right_brace.line_number,
+        );
+        if let Some(block) = constraint_block {
+            let vacuous_prop =
+                Proposition::anonymous(AcornValue::Bool(true), self.module_id, statement.range());
+            let index = self.add_node(project, false, vacuous_prop, Some(block));
+            self.add_node_lines(index, &statement.range());
+        }
+
+        // The member functions take the type itself to a particular member.
+        let struct_type = self
+            .bindings
+            .add_potential_type(&ss.name, param_names.len())
+            .resolve(arbitrary_params.clone(), &ss.name_token)?;
+        self.definition_ranges
+            .insert(ss.name.clone(), statement.range());
+        let mut member_fns = vec![];
+        for (member_fn_name, field_type) in member_fn_names.iter().zip(&field_types) {
+            let member_fn_type =
+                AcornType::new_functional(vec![struct_type.clone()], field_type.clone());
+            self.bindings.add_constant(
+                &member_fn_name,
+                param_names.clone(),
+                member_fn_type.parametrize(self.module_id, &param_names),
+                None,
+                None,
+            );
+            member_fns.push(self.bindings.get_constant_value(&member_fn_name).unwrap());
+        }
+
+        // A "new" function to create one of these struct types.
+        let new_fn_name = format!("{}.new", ss.name);
+        let new_fn_type = AcornType::new_functional(field_types.clone(), struct_type.clone());
+        self.bindings.add_constant(
+            &new_fn_name,
+            param_names.clone(),
+            new_fn_type.parametrize(self.module_id, &param_names),
+            None,
+            // Invalid inputs can map to the same constrained object. They cannot
+            // provide the unique constructor arguments required by match patterns.
+            if unbound_constraint.is_none() {
+                Some((struct_type.parametrize(self.module_id, &param_names), 0, 1))
+            } else {
+                None
+            },
+        );
+        // The declaration fixes every actual here, including phantom parameters
+        // that a constructor's ordinary field arguments cannot infer.
+        let new_fn =
+            AcornValue::new_constant(self.module_id, new_fn_name, arbitrary_params, new_fn_type);
+
+        // Each object of this new type has certain properties.
+        let object_var = AcornValue::Variable(0, struct_type.clone());
+        let mut member_args = vec![];
+        for ((name, _), member) in ss.fields.iter().zip(&member_fns) {
+            member_args.push(self.bindings.apply_potential(
+                name,
+                member.clone(),
+                vec![object_var.clone()],
+                None,
+            )?);
+        }
+        let range = Range {
+            start: statement.first_token.start_pos(),
+            end: ss.name_token.end_pos(),
+        };
+
+        // If there is a constraint, it applies to all instances of the type.
+        // constraint(Pair.first(p), Pair.second(p))
+        // This is the "constraint equation".
+        if let Some(unbound_constraint) = &unbound_constraint {
+            let bound_constraint =
+                unbound_constraint
+                    .clone()
+                    .insert_stack(0, 1)
+                    .bind_values(1, 1, &member_args);
+            let constraint_claim =
+                AcornValue::ForAll(vec![struct_type.clone()], Box::new(bound_constraint));
+            self.add_node(
+                project,
+                true,
+                Proposition::type_definition(
+                    constraint_claim.parametrize(self.module_id, &param_names),
+                    self.module_id,
+                    range,
+                    ss.name.clone(),
+                ),
+                None,
+            );
+        }
+
+        // An object can be recreated by new'ing from its members. Ie:
+        // Pair.new(Pair.first(p), Pair.second(p)) = p.
+        // This is the "new equation" for a struct type.
+        let recreated = self.bindings.apply_potential(
+            &ss.name_token,
+            crate::binding_map::PotentialValue::Resolved(new_fn.clone()),
+            member_args,
+            None,
+        )?;
+        let new_eq =
+            AcornValue::Binary(BinaryOp::Equals, Box::new(recreated), Box::new(object_var));
+        let new_claim = AcornValue::ForAll(vec![struct_type], Box::new(new_eq))
+            .parametrize(self.module_id, &param_names);
+
+        self.add_node(
+            project,
+            true,
+            Proposition::type_definition(new_claim, self.module_id, range, ss.name.clone()),
+            None,
+        );
+
+        // There are also formulas for new followed by member functions. Ie:
+        //   Pair.first(Pair.new(a, b)) = a.
+        // These are the "member equations".
+        //
+        // When there's a constraint, we need to add it as a condition here, like:
+        //   constraint(a, b) -> Pair.first(Pair.new(a, b)) = a.
+        let var_args = (0..ss.fields.len())
+            .map(|i| AcornValue::Variable(i as AtomId, field_types[i].clone()))
+            .collect::<Vec<_>>();
+        let new_application = self.bindings.apply_potential(
+            &ss.name_token,
+            crate::binding_map::PotentialValue::Resolved(new_fn),
+            var_args,
+            None,
+        )?;
+        for i in 0..ss.fields.len() {
+            let (field_name_token, field_type_expr) = &ss.fields[i];
+            let member_fn = &member_fns[i];
+            let member_eq = AcornValue::Binary(
+                BinaryOp::Equals,
+                Box::new(self.bindings.apply_potential(
+                    field_name_token,
+                    member_fn.clone(),
+                    vec![new_application.clone()],
+                    None,
+                )?),
+                Box::new(AcornValue::Variable(i as AtomId, field_types[i].clone())),
+            );
+            let unbound_member_claim = if let Some(constraint) = &unbound_constraint {
+                AcornValue::new_implies(constraint.clone(), member_eq)
+            } else {
+                member_eq
+            };
+            let member_claim =
+                AcornValue::ForAll(field_types.clone(), Box::new(unbound_member_claim));
+            let range = Range {
+                start: field_name_token.start_pos(),
+                end: field_type_expr.last_token().end_pos(),
+            };
+            self.add_node(
+                project,
+                true,
+                Proposition::type_definition(
+                    member_claim.parametrize(self.module_id, &param_names),
+                    self.module_id,
+                    range,
+                    ss.name.clone(),
+                ),
+                None,
+            );
+        }
+
+        for name in &param_names {
+            self.bindings.remove_data_type(name);
+        }
+        Ok(())
+    }
+
+    fn add_inductive_statement(
+        &mut self,
+        project: &mut Project,
+        statement: &Statement,
+        is: &crate::statement::InductiveStatement,
+    ) -> compilation::Result<()> {
+        self.add_other_lines(statement);
+        if self.bindings.has_type_name(&is.name) {
+            return Err(statement.error("type name already defined in this scope"));
+        }
+        let range = Range {
+            start: statement.first_token.start_pos(),
+            end: is.name_token.end_pos(),
+        };
+
+        // Add the new type first, because we can have self-reference in the inductive type.
+        let inductive_type = self.bindings.add_data_type(&is.name);
+
+        // Parse (member name, list of arg types) for each constructor.
+        let mut constructors = vec![];
+        let mut has_base = false;
+        for (name_token, type_list_expr) in &is.constructors {
+            let type_list = match type_list_expr {
+                Some(expr) => {
+                    let mut type_list = vec![];
+                    self.bindings
+                        .evaluate_type_list(project, expr, &mut type_list)?;
+                    type_list
+                }
+                None => vec![],
+            };
+            if type_list
+                .iter()
+                .any(|field| field != &inductive_type && field.refers_to(self.module_id, &is.name))
+            {
+                self.bindings.remove_data_type(&is.name);
+                return Err(name_token
+                    .error("recursive constructor fields must use the inductive type directly"));
+            }
+            if !type_list.contains(&inductive_type) {
+                // This provides a base case
+                has_base = true;
+            }
+            let member_name = format!("{}.{}", is.name, name_token.text());
+            constructors.push((member_name, type_list));
+        }
+        if !has_base {
+            return Err(statement.error("inductive type must have a base case"));
+        }
+
+        // Define the constructors.
+        let mut constructor_fns = vec![];
+        let total = constructors.len();
+        for (i, (constructor_name, type_list)) in constructors.iter().enumerate() {
+            let constructor_type =
+                AcornType::new_functional(type_list.clone(), inductive_type.clone());
+            self.bindings.add_constant(
+                constructor_name,
+                vec![],
+                constructor_type,
+                None,
+                Some((inductive_type.clone(), i, total)),
+            );
+            constructor_fns.push(
+                self.bindings
+                    .get_constant_value(constructor_name)
+                    .unwrap()
+                    .resolved()
+                    .expect("generated datatype constants have no type parameters"),
+            );
+        }
+
+        // The "no confusion" property. Different constructors give different results.
+        for i in 0..constructors.len() {
+            let (_, i_arg_types) = &constructors[i];
+            let i_fn = constructor_fns[i].clone();
+            let i_vars: Vec<_> = i_arg_types
+                .iter()
+                .enumerate()
+                .map(|(k, t)| AcornValue::Variable(k as AtomId, t.clone()))
+                .collect();
+            let i_app = AcornValue::new_apply(i_fn, i_vars);
+            for j in 0..i {
+                let (_, j_arg_types) = &constructors[j];
+                let j_fn = constructor_fns[j].clone();
+                let j_vars: Vec<_> = j_arg_types
+                    .iter()
+                    .enumerate()
+                    .map(|(k, t)| {
+                        AcornValue::Variable((k + i_arg_types.len()) as AtomId, t.clone())
+                    })
+                    .collect();
+                let j_app = AcornValue::new_apply(j_fn, j_vars);
+                let inequality = AcornValue::new_not_equals(i_app.clone(), j_app);
+                let mut quantifiers = i_arg_types.clone();
+                quantifiers.extend(j_arg_types.clone());
+                let claim = AcornValue::new_forall(quantifiers, inequality);
+                self.add_node(
+                    project,
+                    true,
+                    Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
+                    None,
+                );
+            }
+        }
+
+        // The "canonical form" principle. Any item of this type must be created by one
+        // of the constructors.
+        // It seems like this is implied by induction but let's just stick it in.
+        // x0 is going to be the "generic item of this type".
+        let mut disjuncts = vec![];
+        for (i, constructor_fn) in constructor_fns.iter().enumerate() {
+            let (_, arg_types) = &constructors[i];
+            let args = arg_types
+                .iter()
+                .enumerate()
+                .map(|(k, t)| AcornValue::Variable((k + 1) as AtomId, t.clone()))
+                .collect();
+            let app = AcornValue::new_apply(constructor_fn.clone(), args);
+            let var = AcornValue::Variable(0, inductive_type.clone());
+            let equality = AcornValue::new_equals(var, app);
+            let exists = AcornValue::new_exists(arg_types.clone(), equality);
+            disjuncts.push(exists);
+        }
+        let disjunction = AcornValue::reduce(BinaryOp::Or, disjuncts);
+        let claim = AcornValue::new_forall(vec![inductive_type.clone()], disjunction);
+        self.add_node(
+            project,
+            true,
+            Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
+            None,
+        );
+
+        // The next principle is that each constructor is injective.
+        // Ie if Type.construct(x0, x1) = Type.construct(x2, x3) then x0 = x2 and x1 = x3.
+        for (i, constructor_fn) in constructor_fns.iter().enumerate() {
+            let (_, arg_types) = &constructors[i];
+            if arg_types.is_empty() {
+                continue;
+            }
+
+            // First construct the equality.
+            // "Type.construct(x0, x1) = Type.construct(x2, x3)"
+            let left_args = arg_types
+                .iter()
+                .enumerate()
+                .map(|(k, t)| AcornValue::Variable(k as AtomId, t.clone()))
+                .collect();
+            let lhs = AcornValue::new_apply(constructor_fn.clone(), left_args);
+            let right_args = arg_types
+                .iter()
+                .enumerate()
+                .map(|(k, t)| AcornValue::Variable((k + arg_types.len()) as AtomId, t.clone()))
+                .collect();
+            let rhs = AcornValue::new_apply(constructor_fn.clone(), right_args);
+            let equality = AcornValue::new_equals(lhs, rhs);
+
+            // Then construct the implication, that the corresponding args are equal.
+            let mut conjuncts = vec![];
+            for (i, arg_type) in arg_types.iter().enumerate() {
+                let left = AcornValue::Variable(i as AtomId, arg_type.clone());
+                let right = AcornValue::Variable((i + arg_types.len()) as AtomId, arg_type.clone());
+                let arg_equality = AcornValue::new_equals(left, right);
+                conjuncts.push(arg_equality);
+            }
+            let conjunction = AcornValue::reduce(BinaryOp::And, conjuncts);
+            let mut forall_types = arg_types.clone();
+            forall_types.extend_from_slice(&arg_types);
+            let claim = AcornValue::new_forall(
+                forall_types,
+                AcornValue::new_implies(equality, conjunction),
+            );
+            self.add_node(
+                project,
+                true,
+                Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
+                None,
+            );
+        }
+
+        // Structural induction.
+        // The type for the inductive hypothesis.
+        let hyp_type = AcornType::new_functional(vec![inductive_type.clone()], AcornType::Bool);
+        // x0 represents the inductive hypothesis.
+        // Think of the inductive principle as (conjunction) -> (conclusion).
+        // The conjunction is a case for each constructor.
+        // The conclusion is that x0 holds for all items of the type.
+        let mut conjuncts = vec![];
+        for (i, constructor_fn) in constructor_fns.iter().enumerate() {
+            let (_, arg_types) = &constructors[i];
+            let mut args = vec![];
+            let mut conditions = vec![];
+            for (j, arg_type) in arg_types.iter().enumerate() {
+                // x0 is the inductive hypothesis so we start at 1 for the
+                // constructor arguments.
+                let id = (j + 1) as AtomId;
+                args.push(AcornValue::Variable(id, arg_type.clone()));
+                if arg_type == &inductive_type {
+                    // The inductive case for this constructor includes a condition
+                    // that the inductive hypothesis holds for this argument.
+                    conditions.push(AcornValue::new_apply(
+                        AcornValue::Variable(0, hyp_type.clone()),
+                        vec![AcornValue::Variable(id, arg_type.clone())],
+                    ));
+                }
+            }
+
+            let new_instance = AcornValue::new_apply(constructor_fn.clone(), args);
+            let instance_claim = AcornValue::new_apply(
+                AcornValue::Variable(0, hyp_type.clone()),
+                vec![new_instance],
+            );
+            let unbound = if conditions.is_empty() {
+                // This is a base case. We just need to show that the inductive hypothesis
+                // holds for this constructor.
+                instance_claim
+            } else {
+                // This is an inductive case. Given the conditions, we show that
+                // the inductive hypothesis holds for this constructor.
+                AcornValue::new_implies(
+                    AcornValue::reduce(BinaryOp::And, conditions),
+                    instance_claim,
+                )
+            };
+            let conjunction_part = AcornValue::new_forall(arg_types.clone(), unbound);
+            conjuncts.push(conjunction_part);
+        }
+        let conjunction = AcornValue::reduce(BinaryOp::And, conjuncts);
+        let conclusion = AcornValue::new_forall(
+            vec![inductive_type.clone()],
+            AcornValue::new_apply(
+                AcornValue::Variable(0, hyp_type.clone()),
+                vec![AcornValue::Variable(1, inductive_type.clone())],
+            ),
+        );
+        let unbound_claim = AcornValue::new_implies(conjunction, conclusion);
+
+        // The lambda form is the functional form, which we bind in the environment.
+        let name = format!("{}.induction", is.name);
+        let lambda_claim = AcornValue::new_lambda(vec![hyp_type.clone()], unbound_claim.clone());
+        self.bindings.add_constant(
+            &name,
+            vec![],
+            lambda_claim.get_type(),
+            Some(lambda_claim),
+            None,
+        );
+        self.bindings.mark_as_theorem(&name);
+
+        // The forall form is the anonymous truth of induction. We add that as a proposition.
+        let forall_claim = AcornValue::new_forall(vec![hyp_type], unbound_claim);
+        self.add_node(
+            project,
+            true,
+            Proposition::theorem(true, forall_claim, self.module_id, range, Some(name)),
+            None,
+        );
+        self.definition_ranges
+            .insert(is.name.clone(), statement.range());
+
+        Ok(())
+    }
+
     // Adds a statement to the environment.
     // If the statement has a body, this call creates a sub-environment and adds the body
     // to that sub-environment.
@@ -925,534 +1443,9 @@ impl Environment {
                 self.add_function_satisfy_statement(project, statement, fss)
             }
 
-            StatementInfo::Structure(ss) => {
-                if self.bindings.name_in_use(&ss.name) {
-                    return Err(statement.error("type name already defined in this scope"));
-                }
+            StatementInfo::Structure(ss) => self.add_structure_statement(project, statement, ss),
 
-                let mut param_names = vec![];
-                let mut arbitrary_params = vec![];
-                for token in &ss.type_params {
-                    if token.text() == ss.name || self.bindings.name_in_use(token.text()) {
-                        return Err(token.error("type parameter already defined in this scope"));
-                    }
-                    param_names.push(token.text().to_string());
-                    arbitrary_params.push(self.bindings.add_arbitrary_type(token.text()));
-                }
-
-                // Parse the fields before adding the struct type so that we can't have
-                // self-referential structs.
-                let mut member_fn_names = vec![];
-                let mut field_types = vec![];
-                for (field_name_token, field_type_expr) in &ss.fields {
-                    let field_type = self.bindings.evaluate_type(project, &field_type_expr)?;
-                    field_types.push(field_type.clone());
-                    if field_name_token.text() == "new"
-                        || TokenType::from_magic_method_name(field_name_token.text()).is_some()
-                    {
-                        return Err(field_name_token.error(&format!(
-                            "'{}' is a reserved word. use a different name",
-                            field_name_token.text()
-                        )));
-                    }
-                    let member_fn_name = format!("{}.{}", ss.name, field_name_token.text());
-                    if member_fn_names.contains(&member_fn_name) {
-                        return Err(
-                            field_name_token.error("structure fields must have distinct names")
-                        );
-                    }
-                    member_fn_names.push(member_fn_name);
-                }
-
-                if !param_names.is_empty()
-                    && field_types
-                        .iter()
-                        .any(|t| t.parametrize(self.module_id, &param_names).has_arbitrary())
-                {
-                    return Err(ss
-                        .name_token
-                        .error("generic structures cannot capture outer arbitrary types"));
-                }
-
-                // If there's a constraint, add a block to prove it can be satisfied.
-                // Validate the complete constraint and its proof before changing parent state.
-                let (unbound_constraint, constraint_block) =
-                    if let Some(constraint) = &ss.constraint {
-                        let mut stack = Stack::new();
-                        for ((name_token, _), t) in ss.fields.iter().zip(&field_types) {
-                            stack.insert(name_token.to_string(), t.clone());
-                        }
-                        let unbound = self.bindings.evaluate_value_with_stack(
-                            &mut stack,
-                            project,
-                            &constraint,
-                            Some(&AcornType::Bool),
-                        )?;
-                        let inhabited =
-                            AcornValue::Exists(field_types.clone(), Box::new(unbound.clone()));
-                        let params = BlockParams::Constraint(inhabited, constraint.range());
-                        let block = Block::new(
-                            project,
-                            &self,
-                            vec![], // no type params
-                            vec![], // no args, because we already handled them
-                            params,
-                            statement.first_line(),
-                            statement.last_line(),
-                            ss.body.as_ref(),
-                        )?;
-                        (Some(unbound), Some(block))
-                    } else {
-                        (None, None)
-                    };
-
-                self.add_line_types(
-                    LineType::Other,
-                    statement.first_line(),
-                    ss.first_right_brace.line_number,
-                );
-                if let Some(block) = constraint_block {
-                    let vacuous_prop = Proposition::anonymous(
-                        AcornValue::Bool(true),
-                        self.module_id,
-                        statement.range(),
-                    );
-                    let index = self.add_node(project, false, vacuous_prop, Some(block));
-                    self.add_node_lines(index, &statement.range());
-                }
-
-                // The member functions take the type itself to a particular member.
-                let struct_type = self
-                    .bindings
-                    .add_potential_type(&ss.name, param_names.len())
-                    .resolve(arbitrary_params.clone(), &ss.name_token)?;
-                self.definition_ranges
-                    .insert(ss.name.clone(), statement.range());
-                let mut member_fns = vec![];
-                for (member_fn_name, field_type) in member_fn_names.iter().zip(&field_types) {
-                    let member_fn_type =
-                        AcornType::new_functional(vec![struct_type.clone()], field_type.clone());
-                    self.bindings.add_constant(
-                        &member_fn_name,
-                        param_names.clone(),
-                        member_fn_type.parametrize(self.module_id, &param_names),
-                        None,
-                        None,
-                    );
-                    member_fns.push(self.bindings.get_constant_value(&member_fn_name).unwrap());
-                }
-
-                // A "new" function to create one of these struct types.
-                let new_fn_name = format!("{}.new", ss.name);
-                let new_fn_type =
-                    AcornType::new_functional(field_types.clone(), struct_type.clone());
-                self.bindings.add_constant(
-                    &new_fn_name,
-                    param_names.clone(),
-                    new_fn_type.parametrize(self.module_id, &param_names),
-                    None,
-                    // Invalid inputs can map to the same constrained object. They cannot
-                    // provide the unique constructor arguments required by match patterns.
-                    if unbound_constraint.is_none() {
-                        Some((struct_type.parametrize(self.module_id, &param_names), 0, 1))
-                    } else {
-                        None
-                    },
-                );
-                // The declaration fixes every actual here, including phantom parameters
-                // that a constructor's ordinary field arguments cannot infer.
-                let new_fn = AcornValue::new_constant(
-                    self.module_id,
-                    new_fn_name,
-                    arbitrary_params,
-                    new_fn_type,
-                );
-
-                // Each object of this new type has certain properties.
-                let object_var = AcornValue::Variable(0, struct_type.clone());
-                let mut member_args = vec![];
-                for ((name, _), member) in ss.fields.iter().zip(&member_fns) {
-                    member_args.push(self.bindings.apply_potential(
-                        name,
-                        member.clone(),
-                        vec![object_var.clone()],
-                        None,
-                    )?);
-                }
-                let range = Range {
-                    start: statement.first_token.start_pos(),
-                    end: ss.name_token.end_pos(),
-                };
-
-                // If there is a constraint, it applies to all instances of the type.
-                // constraint(Pair.first(p), Pair.second(p))
-                // This is the "constraint equation".
-                if let Some(unbound_constraint) = &unbound_constraint {
-                    let bound_constraint = unbound_constraint
-                        .clone()
-                        .insert_stack(0, 1)
-                        .bind_values(1, 1, &member_args);
-                    let constraint_claim =
-                        AcornValue::ForAll(vec![struct_type.clone()], Box::new(bound_constraint));
-                    self.add_node(
-                        project,
-                        true,
-                        Proposition::type_definition(
-                            constraint_claim.parametrize(self.module_id, &param_names),
-                            self.module_id,
-                            range,
-                            ss.name.clone(),
-                        ),
-                        None,
-                    );
-                }
-
-                // An object can be recreated by new'ing from its members. Ie:
-                // Pair.new(Pair.first(p), Pair.second(p)) = p.
-                // This is the "new equation" for a struct type.
-                let recreated = self.bindings.apply_potential(
-                    &ss.name_token,
-                    crate::binding_map::PotentialValue::Resolved(new_fn.clone()),
-                    member_args,
-                    None,
-                )?;
-                let new_eq =
-                    AcornValue::Binary(BinaryOp::Equals, Box::new(recreated), Box::new(object_var));
-                let new_claim = AcornValue::ForAll(vec![struct_type], Box::new(new_eq))
-                    .parametrize(self.module_id, &param_names);
-
-                self.add_node(
-                    project,
-                    true,
-                    Proposition::type_definition(new_claim, self.module_id, range, ss.name.clone()),
-                    None,
-                );
-
-                // There are also formulas for new followed by member functions. Ie:
-                //   Pair.first(Pair.new(a, b)) = a.
-                // These are the "member equations".
-                //
-                // When there's a constraint, we need to add it as a condition here, like:
-                //   constraint(a, b) -> Pair.first(Pair.new(a, b)) = a.
-                let var_args = (0..ss.fields.len())
-                    .map(|i| AcornValue::Variable(i as AtomId, field_types[i].clone()))
-                    .collect::<Vec<_>>();
-                let new_application = self.bindings.apply_potential(
-                    &ss.name_token,
-                    crate::binding_map::PotentialValue::Resolved(new_fn),
-                    var_args,
-                    None,
-                )?;
-                for i in 0..ss.fields.len() {
-                    let (field_name_token, field_type_expr) = &ss.fields[i];
-                    let member_fn = &member_fns[i];
-                    let member_eq = AcornValue::Binary(
-                        BinaryOp::Equals,
-                        Box::new(self.bindings.apply_potential(
-                            field_name_token,
-                            member_fn.clone(),
-                            vec![new_application.clone()],
-                            None,
-                        )?),
-                        Box::new(AcornValue::Variable(i as AtomId, field_types[i].clone())),
-                    );
-                    let unbound_member_claim = if let Some(constraint) = &unbound_constraint {
-                        AcornValue::new_implies(constraint.clone(), member_eq)
-                    } else {
-                        member_eq
-                    };
-                    let member_claim =
-                        AcornValue::ForAll(field_types.clone(), Box::new(unbound_member_claim));
-                    let range = Range {
-                        start: field_name_token.start_pos(),
-                        end: field_type_expr.last_token().end_pos(),
-                    };
-                    self.add_node(
-                        project,
-                        true,
-                        Proposition::type_definition(
-                            member_claim.parametrize(self.module_id, &param_names),
-                            self.module_id,
-                            range,
-                            ss.name.clone(),
-                        ),
-                        None,
-                    );
-                }
-
-                for name in &param_names {
-                    self.bindings.remove_data_type(name);
-                }
-                Ok(())
-            }
-
-            StatementInfo::Inductive(is) => {
-                self.add_other_lines(statement);
-                if self.bindings.has_type_name(&is.name) {
-                    return Err(statement.error("type name already defined in this scope"));
-                }
-                let range = Range {
-                    start: statement.first_token.start_pos(),
-                    end: is.name_token.end_pos(),
-                };
-
-                // Add the new type first, because we can have self-reference in the inductive type.
-                let inductive_type = self.bindings.add_data_type(&is.name);
-
-                // Parse (member name, list of arg types) for each constructor.
-                let mut constructors = vec![];
-                let mut has_base = false;
-                for (name_token, type_list_expr) in &is.constructors {
-                    let type_list = match type_list_expr {
-                        Some(expr) => {
-                            let mut type_list = vec![];
-                            self.bindings
-                                .evaluate_type_list(project, expr, &mut type_list)?;
-                            type_list
-                        }
-                        None => vec![],
-                    };
-                    if type_list.iter().any(|field| {
-                        field != &inductive_type && field.refers_to(self.module_id, &is.name)
-                    }) {
-                        self.bindings.remove_data_type(&is.name);
-                        return Err(name_token.error(
-                            "recursive constructor fields must use the inductive type directly",
-                        ));
-                    }
-                    if !type_list.contains(&inductive_type) {
-                        // This provides a base case
-                        has_base = true;
-                    }
-                    let member_name = format!("{}.{}", is.name, name_token.text());
-                    constructors.push((member_name, type_list));
-                }
-                if !has_base {
-                    return Err(statement.error("inductive type must have a base case"));
-                }
-
-                // Define the constructors.
-                let mut constructor_fns = vec![];
-                let total = constructors.len();
-                for (i, (constructor_name, type_list)) in constructors.iter().enumerate() {
-                    let constructor_type =
-                        AcornType::new_functional(type_list.clone(), inductive_type.clone());
-                    self.bindings.add_constant(
-                        constructor_name,
-                        vec![],
-                        constructor_type,
-                        None,
-                        Some((inductive_type.clone(), i, total)),
-                    );
-                    constructor_fns.push(
-                        self.bindings
-                            .get_constant_value(constructor_name)
-                            .unwrap()
-                            .resolved()
-                            .expect("generated datatype constants have no type parameters"),
-                    );
-                }
-
-                // The "no confusion" property. Different constructors give different results.
-                for i in 0..constructors.len() {
-                    let (_, i_arg_types) = &constructors[i];
-                    let i_fn = constructor_fns[i].clone();
-                    let i_vars: Vec<_> = i_arg_types
-                        .iter()
-                        .enumerate()
-                        .map(|(k, t)| AcornValue::Variable(k as AtomId, t.clone()))
-                        .collect();
-                    let i_app = AcornValue::new_apply(i_fn, i_vars);
-                    for j in 0..i {
-                        let (_, j_arg_types) = &constructors[j];
-                        let j_fn = constructor_fns[j].clone();
-                        let j_vars: Vec<_> = j_arg_types
-                            .iter()
-                            .enumerate()
-                            .map(|(k, t)| {
-                                AcornValue::Variable((k + i_arg_types.len()) as AtomId, t.clone())
-                            })
-                            .collect();
-                        let j_app = AcornValue::new_apply(j_fn, j_vars);
-                        let inequality = AcornValue::new_not_equals(i_app.clone(), j_app);
-                        let mut quantifiers = i_arg_types.clone();
-                        quantifiers.extend(j_arg_types.clone());
-                        let claim = AcornValue::new_forall(quantifiers, inequality);
-                        self.add_node(
-                            project,
-                            true,
-                            Proposition::type_definition(
-                                claim,
-                                self.module_id,
-                                range,
-                                is.name.clone(),
-                            ),
-                            None,
-                        );
-                    }
-                }
-
-                // The "canonical form" principle. Any item of this type must be created by one
-                // of the constructors.
-                // It seems like this is implied by induction but let's just stick it in.
-                // x0 is going to be the "generic item of this type".
-                let mut disjuncts = vec![];
-                for (i, constructor_fn) in constructor_fns.iter().enumerate() {
-                    let (_, arg_types) = &constructors[i];
-                    let args = arg_types
-                        .iter()
-                        .enumerate()
-                        .map(|(k, t)| AcornValue::Variable((k + 1) as AtomId, t.clone()))
-                        .collect();
-                    let app = AcornValue::new_apply(constructor_fn.clone(), args);
-                    let var = AcornValue::Variable(0, inductive_type.clone());
-                    let equality = AcornValue::new_equals(var, app);
-                    let exists = AcornValue::new_exists(arg_types.clone(), equality);
-                    disjuncts.push(exists);
-                }
-                let disjunction = AcornValue::reduce(BinaryOp::Or, disjuncts);
-                let claim = AcornValue::new_forall(vec![inductive_type.clone()], disjunction);
-                self.add_node(
-                    project,
-                    true,
-                    Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
-                    None,
-                );
-
-                // The next principle is that each constructor is injective.
-                // Ie if Type.construct(x0, x1) = Type.construct(x2, x3) then x0 = x2 and x1 = x3.
-                for (i, constructor_fn) in constructor_fns.iter().enumerate() {
-                    let (_, arg_types) = &constructors[i];
-                    if arg_types.is_empty() {
-                        continue;
-                    }
-
-                    // First construct the equality.
-                    // "Type.construct(x0, x1) = Type.construct(x2, x3)"
-                    let left_args = arg_types
-                        .iter()
-                        .enumerate()
-                        .map(|(k, t)| AcornValue::Variable(k as AtomId, t.clone()))
-                        .collect();
-                    let lhs = AcornValue::new_apply(constructor_fn.clone(), left_args);
-                    let right_args = arg_types
-                        .iter()
-                        .enumerate()
-                        .map(|(k, t)| {
-                            AcornValue::Variable((k + arg_types.len()) as AtomId, t.clone())
-                        })
-                        .collect();
-                    let rhs = AcornValue::new_apply(constructor_fn.clone(), right_args);
-                    let equality = AcornValue::new_equals(lhs, rhs);
-
-                    // Then construct the implication, that the corresponding args are equal.
-                    let mut conjuncts = vec![];
-                    for (i, arg_type) in arg_types.iter().enumerate() {
-                        let left = AcornValue::Variable(i as AtomId, arg_type.clone());
-                        let right =
-                            AcornValue::Variable((i + arg_types.len()) as AtomId, arg_type.clone());
-                        let arg_equality = AcornValue::new_equals(left, right);
-                        conjuncts.push(arg_equality);
-                    }
-                    let conjunction = AcornValue::reduce(BinaryOp::And, conjuncts);
-                    let mut forall_types = arg_types.clone();
-                    forall_types.extend_from_slice(&arg_types);
-                    let claim = AcornValue::new_forall(
-                        forall_types,
-                        AcornValue::new_implies(equality, conjunction),
-                    );
-                    self.add_node(
-                        project,
-                        true,
-                        Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
-                        None,
-                    );
-                }
-
-                // Structural induction.
-                // The type for the inductive hypothesis.
-                let hyp_type =
-                    AcornType::new_functional(vec![inductive_type.clone()], AcornType::Bool);
-                // x0 represents the inductive hypothesis.
-                // Think of the inductive principle as (conjunction) -> (conclusion).
-                // The conjunction is a case for each constructor.
-                // The conclusion is that x0 holds for all items of the type.
-                let mut conjuncts = vec![];
-                for (i, constructor_fn) in constructor_fns.iter().enumerate() {
-                    let (_, arg_types) = &constructors[i];
-                    let mut args = vec![];
-                    let mut conditions = vec![];
-                    for (j, arg_type) in arg_types.iter().enumerate() {
-                        // x0 is the inductive hypothesis so we start at 1 for the
-                        // constructor arguments.
-                        let id = (j + 1) as AtomId;
-                        args.push(AcornValue::Variable(id, arg_type.clone()));
-                        if arg_type == &inductive_type {
-                            // The inductive case for this constructor includes a condition
-                            // that the inductive hypothesis holds for this argument.
-                            conditions.push(AcornValue::new_apply(
-                                AcornValue::Variable(0, hyp_type.clone()),
-                                vec![AcornValue::Variable(id, arg_type.clone())],
-                            ));
-                        }
-                    }
-
-                    let new_instance = AcornValue::new_apply(constructor_fn.clone(), args);
-                    let instance_claim = AcornValue::new_apply(
-                        AcornValue::Variable(0, hyp_type.clone()),
-                        vec![new_instance],
-                    );
-                    let unbound = if conditions.is_empty() {
-                        // This is a base case. We just need to show that the inductive hypothesis
-                        // holds for this constructor.
-                        instance_claim
-                    } else {
-                        // This is an inductive case. Given the conditions, we show that
-                        // the inductive hypothesis holds for this constructor.
-                        AcornValue::new_implies(
-                            AcornValue::reduce(BinaryOp::And, conditions),
-                            instance_claim,
-                        )
-                    };
-                    let conjunction_part = AcornValue::new_forall(arg_types.clone(), unbound);
-                    conjuncts.push(conjunction_part);
-                }
-                let conjunction = AcornValue::reduce(BinaryOp::And, conjuncts);
-                let conclusion = AcornValue::new_forall(
-                    vec![inductive_type.clone()],
-                    AcornValue::new_apply(
-                        AcornValue::Variable(0, hyp_type.clone()),
-                        vec![AcornValue::Variable(1, inductive_type.clone())],
-                    ),
-                );
-                let unbound_claim = AcornValue::new_implies(conjunction, conclusion);
-
-                // The lambda form is the functional form, which we bind in the environment.
-                let name = format!("{}.induction", is.name);
-                let lambda_claim =
-                    AcornValue::new_lambda(vec![hyp_type.clone()], unbound_claim.clone());
-                self.bindings.add_constant(
-                    &name,
-                    vec![],
-                    lambda_claim.get_type(),
-                    Some(lambda_claim),
-                    None,
-                );
-                self.bindings.mark_as_theorem(&name);
-
-                // The forall form is the anonymous truth of induction. We add that as a proposition.
-                let forall_claim = AcornValue::new_forall(vec![hyp_type], unbound_claim);
-                self.add_node(
-                    project,
-                    true,
-                    Proposition::theorem(true, forall_claim, self.module_id, range, Some(name)),
-                    None,
-                );
-                self.definition_ranges
-                    .insert(is.name.clone(), statement.range());
-
-                Ok(())
-            }
+            StatementInfo::Inductive(is) => self.add_inductive_statement(project, statement, is),
 
             StatementInfo::Import(is) => {
                 self.add_other_lines(statement);
