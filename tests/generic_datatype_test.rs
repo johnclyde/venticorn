@@ -68,3 +68,46 @@ fn pending_type_declarations_require_their_exact_arity() {
     bindings.assert_type_bad("Bool<Bool>");
     bindings.assert_type_bad("Pair(Bool, Bool)");
 }
+
+#[test]
+fn generic_type_names_can_resolve_canonical_member_heads() {
+    use venticorn::acorn_type::AcornType;
+    use venticorn::environment::Environment;
+    let mut env = Environment::new_test();
+    env.bindings.add_potential_type("Family", 1);
+    env.bindings.add_constant(
+        "Family.value",
+        vec!["T".into()],
+        AcornType::Variable("T".into(), None),
+        None,
+        None,
+    );
+    env.add("let value: Bool = Family.value<Bool>");
+    env.bad("let bad: Bool = Family.missing<Bool>");
+    assert!(!env.bindings.has_identifier("bad"));
+}
+
+#[test]
+fn specialized_type_alias_members_never_discard_fixed_arguments() {
+    use venticorn::environment::Environment;
+    let mut env = Environment::new_test();
+    env.bindings.add_potential_type("Box", 1);
+    let generic = AcornType::Variable("T".into(), None);
+    env.bindings.add_constant(
+        "Box.new",
+        vec!["T".into()],
+        AcornType::new_functional(
+            vec![generic.clone()],
+            AcornType::Data(env.module_id, "Box".into(), vec![generic]),
+        ),
+        None,
+        None,
+    );
+    env.bindings.add_type_alias(
+        "BoolBox",
+        AcornType::Data(env.module_id, "Box".into(), vec![AcornType::Bool]),
+    );
+    env.add("let okay: Box<Bool> = Box.new(true)");
+    env.bad("let bad: Box<Bool> = BoolBox.new(true)");
+    assert!(!env.bindings.has_identifier("bad"));
+}
