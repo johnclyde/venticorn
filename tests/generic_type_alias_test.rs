@@ -82,3 +82,28 @@ fn import_completion_lists_canonical_generic_families_and_excludes_aliases() {
     assert!(!labels.contains(&"Family".to_string()));
     assert!(!labels.contains(&"Concrete".to_string()));
 }
+
+#[test]
+fn qualified_nested_data_and_function_actuals_round_trip() {
+    let mut project = Project::new_mock();
+    project.mock("/mock/pair.ac", PAIR);
+    project.mock("/mock/main.ac", "import pair");
+    let id = project.expect_ok("main");
+    let env = project.get_env_by_id(id).unwrap();
+    for text in [
+        "forall(x0: pair.Pair<Bool, Bool>) { true }",
+        "function(x0: pair.Pair<pair.Pair<Bool, Bool>, (Bool -> Bool) -> Bool>) { x0 }",
+        "function(x0: (pair.Pair<Bool, Bool>, Bool) -> pair.Pair<Bool, Bool -> Bool>) { x0 }",
+    ] {
+        let value = env
+            .bindings
+            .evaluate_value(&project, &Expression::expect_value(text), None)
+            .unwrap();
+        let code = env.bindings.value_to_code(&value).unwrap();
+        let replay = env
+            .bindings
+            .evaluate_value(&project, &Expression::expect_value(&code), None)
+            .unwrap();
+        assert_eq!(value, replay, "{text} rendered as {code}");
+    }
+}

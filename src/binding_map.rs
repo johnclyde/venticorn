@@ -2226,31 +2226,28 @@ impl BindingMap {
                 })
             };
             if let Some(head) = head {
-                if actuals.is_empty() {
-                    return Ok(head);
-                }
-                let actuals = actuals
-                    .iter()
-                    .map(|t| self.type_to_expr(t))
-                    .collect::<Result<Vec<_>, _>>()?;
-                return Ok(Expression::Apply(
-                    Box::new(head),
-                    Box::new({
-                        let Expression::Grouping(_, args, _) =
-                            Expression::generate_grouping(actuals)
-                        else {
-                            unreachable!()
-                        };
-                        Expression::Grouping(
-                            TokenType::LessThan.generate(),
-                            args,
-                            TokenType::GreaterThan.generate(),
-                        )
-                    }),
-                ));
+                return self.parametrize_type_expr(head, actuals);
             }
         }
         Err(CodeGenError::unnamed_type(acorn_type))
+    }
+
+    fn parametrize_type_expr(
+        &self,
+        head: Expression,
+        actuals: &[AcornType],
+    ) -> Result<Expression, CodeGenError> {
+        if actuals.is_empty() {
+            return Ok(head);
+        }
+        let arguments = actuals
+            .iter()
+            .map(|t| self.type_to_expr(t))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Expression::Apply(
+            Box::new(head),
+            Box::new(Expression::generate_type_arguments(arguments)),
+        ))
     }
 
     // We use variables named x0, x1, x2, etc when new temporary variables are needed.
@@ -2560,16 +2557,9 @@ impl BindingMap {
                     .iter()
                     .map(|t| self.type_to_expr(t))
                     .collect::<Result<Vec<_>, _>>()?;
-                let Expression::Grouping(_, args, _) = Expression::generate_grouping(args) else {
-                    unreachable!("generate_grouping returns a grouping");
-                };
                 Ok(Expression::Apply(
                     Box::new(name),
-                    Box::new(Expression::Grouping(
-                        TokenType::LessThan.generate(),
-                        args,
-                        TokenType::GreaterThan.generate(),
-                    )),
+                    Box::new(Expression::generate_type_arguments(args)),
                 ))
             }
             AcornValue::IfThenElse(condition, if_value, else_value) => {
