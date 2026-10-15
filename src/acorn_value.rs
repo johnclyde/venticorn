@@ -126,6 +126,14 @@ impl ConstantInstance {
         self.instance_type.is_generic() || self.type_arguments().any(AcornType::is_generic)
     }
 
+    pub fn has_arbitrary(&self) -> bool {
+        self.instance_type.has_arbitrary() || self.type_arguments().any(AcornType::has_arbitrary)
+    }
+
+    pub fn has_generic(&self) -> bool {
+        self.is_generic()
+    }
+
     pub fn key(&self) -> ConstantKey {
         ConstantKey {
             module: self.module_id,
@@ -1674,6 +1682,40 @@ impl AcornValue {
                     })
             }
         }
+    }
+
+    // Whether any annotation or nested value contains an arbitrary type.
+    pub fn has_arbitrary(&self) -> bool {
+        match self {
+            AcornValue::Variable(_, t) => t.has_arbitrary(),
+            AcornValue::Application(app) => {
+                app.function.has_arbitrary() || app.args.iter().any(|x| x.has_arbitrary())
+            }
+            AcornValue::Lambda(args, value)
+            | AcornValue::ForAll(args, value)
+            | AcornValue::Exists(args, value) => {
+                args.iter().any(|x| x.has_arbitrary()) || value.has_arbitrary()
+            }
+            AcornValue::Binary(_, left, right) => left.has_arbitrary() || right.has_arbitrary(),
+            AcornValue::IfThenElse(cond, if_value, else_value) => {
+                cond.has_arbitrary() || if_value.has_arbitrary() || else_value.has_arbitrary()
+            }
+            AcornValue::Not(x) => x.has_arbitrary(),
+            AcornValue::Constant(c) => c.has_arbitrary(),
+            AcornValue::Bool(_) => false,
+            AcornValue::Match(scrutinee, cases) => {
+                scrutinee.has_arbitrary()
+                    || cases.iter().any(|(new_vars, pattern, result)| {
+                        new_vars.iter().any(AcornType::has_arbitrary)
+                            || pattern.has_arbitrary()
+                            || result.has_arbitrary()
+                    })
+            }
+        }
+    }
+
+    pub fn has_generic(&self) -> bool {
+        self.is_generic()
     }
 
     // Collect complete resolved instances selected by the caller.

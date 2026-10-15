@@ -420,6 +420,38 @@ impl AcornType {
         }
     }
 
+    // Converts arbitrary types back to generic parameters.
+    pub fn to_generic(&self) -> AcornType {
+        match self {
+            AcornType::Data(module, name, actuals) => AcornType::Data(
+                *module,
+                name.clone(),
+                actuals.iter().map(AcornType::to_generic).collect(),
+            ),
+            AcornType::Arbitrary(name, tc) => AcornType::Variable(name.to_string(), tc.clone()),
+            AcornType::Function(ftype) => AcornType::new_functional(
+                ftype.arg_types.iter().map(|t| t.to_generic()).collect(),
+                ftype.return_type.to_generic(),
+            ),
+            _ => self.clone(),
+        }
+    }
+
+    pub fn has_arbitrary(&self) -> bool {
+        match self {
+            AcornType::Arbitrary(..) => true,
+            AcornType::Function(f) => {
+                f.arg_types.iter().any(AcornType::has_arbitrary) || f.return_type.has_arbitrary()
+            }
+            AcornType::Data(_, _, actuals) => actuals.iter().any(AcornType::has_arbitrary),
+            _ => false,
+        }
+    }
+
+    pub fn has_generic(&self) -> bool {
+        self.is_generic()
+    }
+
     pub fn is_functional(&self) -> bool {
         match self {
             AcornType::Function(_) => true,
