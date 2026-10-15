@@ -863,13 +863,13 @@ impl BindingMap {
     }
 
     // Parses a list of named argument declarations and adds them to the stack.
-    // class_name should be provided if these are the arguments of a new member function.
+    // class_type should be provided if these are the arguments of a new member function.
     pub fn bind_args<'a, I>(
         &self,
         stack: &mut Stack,
         project: &Project,
         declarations: I,
-        class_name: Option<&str>,
+        class_type: Option<&AcornType>,
     ) -> compilation::Result<(Vec<String>, Vec<AcornType>)>
     where
         I: IntoIterator<Item = &'a Declaration>,
@@ -877,15 +877,11 @@ impl BindingMap {
         let mut names = Vec::new();
         let mut types = Vec::new();
         for (i, declaration) in declarations.into_iter().enumerate() {
-            if class_name.is_some() && i == 0 {
+            if class_type.is_some() && i == 0 {
                 match declaration {
                     Declaration::SelfToken(_) => {
                         names.push("self".to_string());
-                        types.push(AcornType::Data(
-                            self.module,
-                            class_name.unwrap().to_string(),
-                            vec![],
-                        ));
+                        types.push(class_type.unwrap().clone());
                         continue;
                     }
                     _ => {
@@ -1847,7 +1843,7 @@ impl BindingMap {
     //   the value type
     //
     // Generic parameters in the argument and value types are represented by type variables.
-    // class_name should be provided if this is the definition of a member function.
+    // class_type should be provided if this is the definition of a member function.
     //
     // The return value is "unbound" in the sense that it has variable atoms that are not
     // bound within any lambda, exists, or forall value.
@@ -1858,7 +1854,7 @@ impl BindingMap {
         args: &[Declaration],
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
-        class_name: Option<&str>,
+        class_type: Option<&AcornType>,
         function_name: Option<&str>,
     ) -> compilation::Result<(
         Vec<String>,
@@ -1874,7 +1870,7 @@ impl BindingMap {
             args,
             value_type_expr,
             value_expr,
-            class_name,
+            class_type,
             function_name,
         )
     }
@@ -1886,7 +1882,7 @@ impl BindingMap {
         args: &[Declaration],
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
-        class_name: Option<&str>,
+        class_type: Option<&AcornType>,
         function_name: Option<&str>,
     ) -> compilation::Result<(
         Vec<String>,
@@ -1905,7 +1901,7 @@ impl BindingMap {
             type_param_names.push(token.text().to_string());
         }
         let mut stack = Stack::new();
-        let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_name)?;
+        let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_type)?;
 
         if let Some(name) = function_name {
             if self.name_in_use(name) {

@@ -407,7 +407,7 @@ impl Environment {
     fn add_define_statement(
         &mut self,
         project: &Project,
-        class_name: Option<&str>,
+        class_type: Option<&AcornType>,
         ds: &DefineStatement,
         range: Range,
     ) -> compilation::Result<()> {
@@ -417,8 +417,9 @@ impl Environment {
                 ds.name
             )));
         }
-        let name = match class_name {
-            Some(c) => format!("{}.{}", c, ds.name),
+        let name = match class_type {
+            Some(AcornType::Data(_, name, _)) => format!("{}.{}", name, ds.name),
+            Some(_) => return Err(ds.name_token.error("class type must be a data type")),
             None => ds.name.clone(),
         };
         if self.bindings.name_in_use(&name) {
@@ -428,7 +429,7 @@ impl Environment {
             )));
         }
 
-        if class_name.is_some() && ds.args.is_empty() {
+        if class_type.is_some() && ds.args.is_empty() {
             return Err(ds
                 .name_token
                 .error("a member function must have a 'self' argument"));
@@ -442,21 +443,21 @@ impl Environment {
                 &ds.args,
                 Some(&ds.return_type),
                 &ds.return_value,
-                class_name,
+                class_type,
                 Some(&name),
             )?;
 
-        if let Some(class_name) = class_name {
-            let class_type = AcornType::Data(self.module_id, class_name.to_string(), vec![]);
-            if arg_types[0] != class_type {
+        if let Some(class_type) = class_type {
+            if &arg_types[0] != class_type {
                 return Err(ds.args[0].token().error("self must be the class type"));
             }
 
             if ds.name == "read" {
-                if arg_types.len() != 2 || arg_types[1] != class_type || value_type != class_type {
+                if arg_types.len() != 2 || &arg_types[1] != class_type || &value_type != class_type
+                {
                     return Err(ds.name_token.error(&format!(
                         "{}.read should be type ({}, {}) -> {}",
-                        class_name, class_name, class_name, class_name
+                        class_type, class_type, class_type, class_type
                     )));
                 }
             }
@@ -1459,6 +1460,7 @@ impl Environment {
                             .error(&format!("undefined type name '{}'", cs.name)));
                     }
                 };
+                let class_type = self.bindings.get_type_for_name(&cs.name).unwrap().clone();
                 for substatement in &cs.body.statements {
                     match &substatement.statement {
                         StatementInfo::Let(ls) => {
@@ -1472,7 +1474,7 @@ impl Environment {
                         StatementInfo::Define(ds) => {
                             self.add_define_statement(
                                 project,
-                                Some(&cs.name),
+                                Some(&class_type),
                                 ds,
                                 substatement.range(),
                             )?;
