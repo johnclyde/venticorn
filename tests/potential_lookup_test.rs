@@ -32,7 +32,7 @@ fn generic_numeral_readers_return_a_located_error() {
     use venticorn::project::Project;
     let mut env = Environment::new_test();
     env.add("type Number: axiom\nclass Number {\n let 0: Number = axiom\n}\nnumerals Number");
-    let number = AcornType::Data(env.module_id, "Number".into());
+    let number = AcornType::Data(env.module_id, "Number".into(), vec![]);
     // Pending metadata can come from a declaration producer; numeral evaluation must
     // reject it before constructing an application, even when its result type is fixed.
     env.bindings.add_constant(

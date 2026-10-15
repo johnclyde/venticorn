@@ -116,7 +116,7 @@ fn match_type_errors_restore_case_and_function_bindings() {
 fn malformed_match_values_report_validation_errors() {
     use venticorn::acorn_type::AcornType;
     use venticorn::acorn_value::AcornValue;
-    let item_type = AcornType::Data(0, "Item".to_string());
+    let item_type = AcornType::Data(0, "Item".to_string(), vec![]);
     let item = AcornValue::new_constant(0, "Item.empty".to_string(), vec![], item_type);
     let empty = AcornValue::Match(Box::new(item.clone()), vec![]);
     assert!(empty.validate().unwrap_err().contains("at least one case"));

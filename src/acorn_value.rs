@@ -1816,8 +1816,8 @@ impl AcornValue {
                 }
                 let type_name = parts[0];
                 let member_name = parts[1];
-                let type_id = AcornType::Data(c.module_id, type_name.to_string());
-                if type_id == *class {
+                if matches!(class, AcornType::Data(module, name, _) if *module == c.module_id && name == type_name)
+                {
                     Some(member_name.to_string())
                 } else {
                     None

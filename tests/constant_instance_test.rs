@@ -19,7 +19,7 @@ fn first(params: Vec<(String, AcornType)>) -> AcornValue {
 
 #[test]
 fn nested_instantiation_distinguishes_definition_and_outer_type_names() {
-    let nat = AcornType::Data(10, "Nat".into());
+    let nat = AcornType::Data(10, "Nat".into(), vec![]);
     // The declaration's T/U are bound to the surrounding U/T respectively.
     let swapped = first(vec![
         ("T".into(), variable("U")),
@@ -73,7 +73,7 @@ fn scoped_plain_constants_follow_the_surrounding_type_substitution() {
 
 #[test]
 fn opaque_scope_types_transform_in_effective_types_and_arguments_together() {
-    let scoped = AcornType::Data(20, "T".into());
+    let scoped = AcornType::Data(20, "T".into(), vec![]);
     let instance = first(vec![
         ("T".into(), scoped.clone()),
         ("U".into(), AcornType::Bool),

@@ -12,7 +12,7 @@ enum Value {
 }
 
 fn item_type() -> AcornType {
-    AcornType::Data(0, "Item".to_string())
+    AcornType::Data(0, "Item".to_string(), vec![])
 }
 
 fn domain(t: &AcornType) -> Vec<Value> {
