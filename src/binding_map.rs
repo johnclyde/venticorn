@@ -472,6 +472,25 @@ impl BindingMap {
         if self.name_in_use(name) {
             panic!("constant name {} already bound", name);
         }
+        if params.is_empty() {
+            assert!(
+                !constant_type.has_generic(),
+                "generic constant type needs declared parameters"
+            );
+            assert!(
+                !definition.as_ref().is_some_and(AcornValue::has_generic),
+                "generic definition needs declared parameters"
+            );
+        } else {
+            assert!(
+                !constant_type.has_arbitrary(),
+                "generic constant type cannot capture arbitrary types"
+            );
+            assert!(
+                !definition.as_ref().is_some_and(AcornValue::has_arbitrary),
+                "generic definition cannot capture arbitrary types"
+            );
+        }
         self.identifier_types
             .insert(name.to_string(), constant_type);
 
@@ -1914,6 +1933,13 @@ impl BindingMap {
             Some(e) => self.evaluate_type(project, e)?,
             None => AcornType::Bool,
         };
+        if !type_param_names.is_empty()
+            && (arg_types.iter().any(AcornType::has_arbitrary) || value_type.has_arbitrary())
+        {
+            return Err(
+                value_expr.error("generic declarations cannot capture outer arbitrary types")
+            );
+        }
         if let Some(name) = function_name {
             let function_type = AcornType::new_functional(arg_types.clone(), value_type.clone());
             self.add_constant(name, type_param_names.clone(), function_type, None, None);
@@ -1938,6 +1964,11 @@ impl BindingMap {
             Some(value)
         };
 
+        if !type_param_names.is_empty() && value.as_ref().is_some_and(AcornValue::has_arbitrary) {
+            return Err(
+                value_expr.error("generic declarations cannot capture outer arbitrary types")
+            );
+        }
         Ok((type_param_names, arg_names, arg_types, value, value_type))
     }
 

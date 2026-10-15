@@ -111,3 +111,65 @@ fn specialized_type_alias_members_never_discard_fixed_arguments() {
     env.bad("let bad: Box<Bool> = BoolBox.new(true)");
     assert!(!env.bindings.has_identifier("bad"));
 }
+
+#[test]
+fn arbitrary_type_detection_visits_effective_and_binder_metadata() {
+    use venticorn::acorn_value::{AcornValue, ConstantInstance};
+    let arbitrary = AcornType::Arbitrary("T".into(), None);
+    let wrapped = data("Wrap", vec![arbitrary.clone()]);
+    let constant = AcornValue::Constant(ConstantInstance {
+        module_id: 10,
+        name: "hidden".into(),
+        params: vec![],
+        instance_type: wrapped.clone(),
+    });
+    assert!(constant.has_arbitrary());
+    assert!(
+        AcornValue::ForAll(vec![wrapped.clone()], Box::new(AcornValue::Bool(true))).has_arbitrary()
+    );
+    assert!(AcornValue::Match(
+        Box::new(AcornValue::Bool(true)),
+        vec![(
+            vec![wrapped],
+            AcornValue::Bool(true),
+            AcornValue::Bool(true)
+        )]
+    )
+    .has_arbitrary());
+    assert_eq!(
+        data("Wrap", vec![arbitrary]).to_generic(),
+        data("Wrap", vec![AcornType::Variable("T".into(), None)])
+    );
+}
+
+#[test]
+fn generic_theorem_signatures_reject_outer_captures_before_binding() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    for inner in [
+        "theorem inner<T>(x: A) { true }",
+        "theorem<T>(x: A) { true }",
+        "define inner<T>(x: A) -> Bool { true }",
+    ] {
+        let mut env = Environment::new_test();
+        let text = format!("theorem outer<A> {{ true }} by {{\n {inner}\n}}");
+        let statement = Statement::parse_str(&text).unwrap();
+        let error = env
+            .add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("cannot capture outer arbitrary types"),
+            "{error}"
+        );
+        assert!(!env.bindings.has_identifier("outer"));
+        assert!(!env.bindings.has_identifier("inner"));
+        assert!(!env.bindings.has_type_name("A"));
+        assert!(!env.bindings.has_type_name("T"));
+        assert!(env.nodes.is_empty());
+    }
+    let mut env = Environment::new_test();
+    env.add("theorem outer<A> { true } by {\n theorem inner(x: A) { x = x }\n define identity(x: A) -> A { x }\n}");
+}
