@@ -24,7 +24,7 @@ use crate::token::Token;
 // visible to the outside world.
 pub struct Block {
     // The generic types that this block is polymorphic over.
-    // Internally to the block, these are opaque data types.
+    // Internally to the block, these are fixed arbitrary types.
     // Externally, these are generic data types.
     type_params: Vec<String>,
 

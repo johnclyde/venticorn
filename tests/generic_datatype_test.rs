@@ -239,3 +239,37 @@ fn typed_application_checks_both_resolved_and_pending_heads() {
         )
         .is_err());
 }
+
+#[test]
+fn arbitrary_conversion_preserves_effective_types_and_unused_binders() {
+    use venticorn::acorn_value::AcornValue;
+    let arbitrary = data("Wrap", vec![AcornType::Arbitrary("T".into(), None)]);
+    for value in [
+        AcornValue::new_constant(10, "hidden".into(), vec![], arbitrary.clone()),
+        AcornValue::new_constant(
+            10,
+            "phantom".into(),
+            vec![arbitrary.clone()],
+            AcornType::Bool,
+        ),
+        AcornValue::Lambda(vec![arbitrary.clone()], Box::new(AcornValue::Bool(true))),
+        AcornValue::ForAll(vec![arbitrary.clone()], Box::new(AcornValue::Bool(true))),
+        AcornValue::Exists(vec![arbitrary.clone()], Box::new(AcornValue::Bool(true))),
+        AcornValue::Match(
+            Box::new(AcornValue::Bool(true)),
+            vec![(
+                vec![arbitrary],
+                AcornValue::Bool(true),
+                AcornValue::Bool(true),
+            )],
+        ),
+    ] {
+        let generic = value.to_generic();
+        if let AcornValue::Constant(instance) = &value {
+            assert_eq!(generic, AcornValue::Constant(instance.to_generic()));
+        }
+        assert!(!generic.has_arbitrary(), "{value:?}");
+        assert!(generic.has_generic(), "{value:?}");
+        assert_eq!(generic.to_arbitrary(), value);
+    }
+}
