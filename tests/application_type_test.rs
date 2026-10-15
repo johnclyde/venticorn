@@ -119,7 +119,7 @@ fn pending_generic_names_cannot_create_alias_facts() {
     let error = env
         .add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err();
-    assert_eq!(error.message(), "name pending has unresolved type");
+    assert_eq!(error.message(), "value pending requires type arguments");
     assert_eq!(error.range().start.character, 18);
     assert_eq!(error.range().end.character, 25);
     assert!(!env.bindings.has_identifier("alias"));
@@ -258,7 +258,7 @@ fn pending_generic_values_are_rejected_before_declaration_admission() {
                 &Statement::parse_str(source).unwrap(),
             )
             .unwrap_err();
-        assert_eq!(error.message(), "name identity has unresolved type");
+        assert_eq!(error.message(), "value identity requires type arguments");
         assert!(error.range().end.character > error.range().start.character);
         assert!(!env.bindings.has_identifier("bad"));
         assert!(!env.bindings.has_type_name("T"));

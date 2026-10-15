@@ -13,7 +13,10 @@ fn lookup_distinguishes_pending_generics_and_canonical_aliases() {
     assert!(matches!(&pending, PotentialValue::Unresolved(..)));
     let source = Expression::expect_value("identity");
     let error = pending.value(&source).unwrap_err();
-    assert!(error.message().contains("unresolved"), "{error}");
+    assert!(
+        error.message().contains("requires type arguments"),
+        "{error}"
+    );
     assert_eq!(error.range(), source.range());
     let alias = env
         .bindings
@@ -47,6 +50,9 @@ fn generic_numeral_readers_return_a_located_error() {
         .bindings
         .evaluate_value(&Project::new_mock(), &expression, None)
         .unwrap_err();
-    assert_eq!(error.message(), "name Number.read has unresolved type");
+    assert_eq!(
+        error.message(),
+        "read function Number.read requires type arguments"
+    );
     assert_eq!(error.range(), expression.range());
 }

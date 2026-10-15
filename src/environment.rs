@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use tower_lsp::lsp_types::{CompletionItem, Range};
 
-use crate::acorn_type::AcornType;
+use crate::acorn_type::{AcornType, PotentialType};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, Stack};
@@ -337,10 +337,19 @@ impl Environment {
     fn add_let_statement(
         &mut self,
         project: &Project,
-        class: Option<&str>,
+        class_info: Option<(&str, &[String])>,
         ls: &LetStatement,
         range: Range,
     ) -> compilation::Result<()> {
+        let (class, class_params) = match class_info {
+            Some((name, params)) => (Some(name), params),
+            None => (None, &[][..]),
+        };
+        if !class_params.is_empty() && ls.name_token.token_type == TokenType::Numeral {
+            return Err(ls
+                .name_token
+                .error("numeric literals cannot have type parameters"));
+        }
         if class.is_none() && ls.name_token.token_type == TokenType::Numeral {
             return Err(ls
                 .name_token
@@ -382,6 +391,27 @@ impl Environment {
                     .evaluate_value(project, &ls.value, Some(&acorn_type))?,
             )
         };
+        if !class_params.is_empty() {
+            let constant_type = acorn_type.parametrize(self.module_id, class_params);
+            let definition = value.map(|v| v.parametrize(self.module_id, class_params));
+            if constant_type.has_arbitrary()
+                || definition.as_ref().is_some_and(AcornValue::has_arbitrary)
+            {
+                return Err(ls
+                    .name_token
+                    .error("generic member cannot capture arbitrary types"));
+            }
+            self.bindings.add_constant(
+                &name,
+                class_params.to_vec(),
+                constant_type,
+                definition,
+                None,
+            );
+            self.definition_ranges.insert(name.clone(), range);
+            self.add_identity_props(project, &name);
+            return Ok(());
+        }
         if let Some(value) = &value {
             if let Some((canonical_module, canonical_name)) = value.as_simple_constant() {
                 // 'let x = y' creates an alias for y, not a new constant.
@@ -407,7 +437,7 @@ impl Environment {
     fn add_define_statement(
         &mut self,
         project: &Project,
-        class_type: Option<&AcornType>,
+        class_info: Option<(&AcornType, &[String])>,
         ds: &DefineStatement,
         range: Range,
     ) -> compilation::Result<()> {
@@ -416,6 +446,14 @@ impl Environment {
                 "'{}' is a reserved word. use a different name",
                 ds.name
             )));
+        }
+        let (class_type, class_params) = match class_info {
+            Some((class_type, params)) => (Some(class_type), params),
+            None => (None, &[][..]),
+        };
+        if !class_params.is_empty() && !ds.type_params.is_empty() {
+            return Err(ds.type_params[0]
+                .error("generic class members cannot declare additional type parameters"));
         }
         let name = match class_type {
             Some(AcornType::Data(_, name, _)) => format!("{}.{}", name, ds.name),
@@ -463,21 +501,52 @@ impl Environment {
             }
         }
 
-        if let Some(v) = unbound_value {
-            let fn_value = AcornValue::new_lambda(arg_types, v);
-            // Add the function value to the environment
-            self.bindings.add_constant(
-                &name,
-                param_names,
-                fn_value.get_type(),
-                Some(fn_value),
-                None,
-            );
-        } else {
-            let new_axiom_type = AcornType::new_functional(arg_types, value_type);
-            self.bindings
-                .add_constant(&name, param_names, new_axiom_type, None, None);
+        let (mut constant_type, mut definition) = match unbound_value {
+            Some(value) => {
+                let definition = AcornValue::new_lambda(arg_types, value);
+                (definition.get_type(), Some(definition))
+            }
+            None => (AcornType::new_functional(arg_types, value_type), None),
         };
+        let param_names = if class_params.is_empty() {
+            param_names
+        } else {
+            // Only the class's declared fixed types become generic. Outer proof types
+            // must remain fixed and are rejected if this declaration would capture them.
+            constant_type = constant_type.parametrize(self.module_id, class_params);
+            definition = definition.map(|value| {
+                value
+                    .parametrize(self.module_id, class_params)
+                    .replace_constants(0, &|constant, _| {
+                        if constant.module_id == self.module_id
+                            && constant.name == name
+                            && constant.params.is_empty()
+                        {
+                            Some(AcornValue::new_constant(
+                                constant.module_id,
+                                constant.name.clone(),
+                                class_params
+                                    .iter()
+                                    .map(|name| AcornType::Variable(name.clone(), None))
+                                    .collect(),
+                                constant.instance_type.clone(),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+            });
+            if constant_type.has_arbitrary()
+                || definition.as_ref().is_some_and(AcornValue::has_arbitrary)
+            {
+                return Err(ds
+                    .name_token
+                    .error("generic member cannot capture arbitrary types"));
+            }
+            class_params.to_vec()
+        };
+        self.bindings
+            .add_constant(&name, param_names, constant_type, definition, None);
 
         self.definition_ranges.insert(name.clone(), range);
         self.add_identity_props(project, &name);
@@ -1489,43 +1558,50 @@ impl Environment {
             }
 
             StatementInfo::Class(cs) => {
-                if !cs.type_params.is_empty() {
-                    return Err(
-                        cs.type_params[0].error("generic class definitions are not supported yet")
-                    );
-                }
                 self.add_other_lines(statement);
-                match self.bindings.get_type_for_name(&cs.name) {
-                    Some(AcornType::Data(module, name, _)) => {
-                        if module != &self.module_id {
-                            return Err(cs
-                                .name_token
-                                .error("we can only bind members to types in the current module"));
-                        }
-                        if name != &cs.name {
-                            return Err(cs
-                                .name_token
-                                .error("we cannot bind members to type aliases"));
-                        }
-                    }
-                    Some(_) => {
+                let potential = self
+                    .bindings
+                    .get_potential_type_for_name(&cs.name)
+                    .cloned()
+                    .ok_or_else(|| {
+                        cs.name_token
+                            .error(&format!("undefined type name '{}'", cs.name))
+                    })?;
+                let canonical = match &potential {
+                    PotentialType::Resolved(AcornType::Data(module, name, _)) => (*module, name),
+                    PotentialType::Unresolved(t) => (t.module_id, &t.name),
+                    _ => {
                         return Err(cs
                             .name_token
-                            .error(&format!("we can only bind members to data types")));
-                    }
-                    None => {
-                        return Err(cs
-                            .name_token
-                            .error(&format!("undefined type name '{}'", cs.name)));
+                            .error("we can only bind members to data types"))
                     }
                 };
-                let class_type = self.bindings.get_type_for_name(&cs.name).unwrap().clone();
+                if canonical.0 != self.module_id {
+                    return Err(cs
+                        .name_token
+                        .error("we can only bind members to types in the current module"));
+                }
+                if canonical.1 != &cs.name {
+                    return Err(cs
+                        .name_token
+                        .error("we cannot bind members to type aliases"));
+                }
+                let mut param_names = Vec::with_capacity(cs.type_params.len());
+                let mut actuals = Vec::with_capacity(cs.type_params.len());
+                for token in &cs.type_params {
+                    if self.bindings.name_in_use(token.text()) {
+                        return Err(token.error("type parameter already defined in this scope"));
+                    }
+                    actuals.push(self.bindings.add_arbitrary_type(token.text()));
+                    param_names.push(token.text().to_string());
+                }
+                let class_type = potential.resolve(actuals, &cs.name_token)?;
                 for substatement in &cs.body.statements {
                     match &substatement.statement {
                         StatementInfo::Let(ls) => {
                             self.add_let_statement(
                                 project,
-                                Some(&cs.name),
+                                Some((&cs.name, &param_names)),
                                 ls,
                                 substatement.range(),
                             )?;
@@ -1533,7 +1609,7 @@ impl Environment {
                         StatementInfo::Define(ds) => {
                             self.add_define_statement(
                                 project,
-                                Some(&class_type),
+                                Some((&class_type, &param_names)),
                                 ds,
                                 substatement.range(),
                             )?;
@@ -1541,9 +1617,12 @@ impl Environment {
                         _ => {
                             return Err(substatement.error(
                                 "only let and define statements are allowed in class bodies",
-                            ));
+                            ))
                         }
                     }
+                }
+                for name in param_names {
+                    self.bindings.remove_data_type(&name);
                 }
                 Ok(())
             }
