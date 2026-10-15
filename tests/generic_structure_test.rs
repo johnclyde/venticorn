@@ -277,3 +277,25 @@ fn generic_instance_fields_infer_actuals_and_round_trip() {
         Outcome::Exhausted
     );
 }
+
+#[test]
+fn standalone_generic_functions_keep_datatype_parameters_scoped() {
+    let prefix = format!("{PAIR}inductive Item {{\n one\n two\n}}\ndefine flip<T, U>(p: Pair<T, U>) -> Pair<U, T> {{ Pair.new(p.second, p.first) }}\n");
+    let mut env = Environment::new_test();
+    env.add(&prefix);
+    env.get_definition("flip").unwrap().validate().unwrap();
+    assert!(!env.bindings.has_type_name("T"));
+    assert!(!env.bindings.has_type_name("U"));
+    assert_eq!(
+        verify_all(&format!(
+            "{prefix}theorem goal {{ flip(Pair.new(Item.one, true)).second = Item.one }}"
+        )),
+        Outcome::Success
+    );
+    assert_eq!(
+        verify_all(&format!(
+            "{prefix}theorem goal {{ flip(Pair.new(Item.one, true)).second = Item.two }}"
+        )),
+        Outcome::Exhausted
+    );
+}

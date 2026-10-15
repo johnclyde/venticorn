@@ -326,3 +326,35 @@ fn quantified_function_bodies_must_match_the_declared_result() {
         assert_eq!(env.nodes.len(), count);
     }
 }
+
+#[test]
+fn constant_admission_validates_definitions_before_mutating_bindings() {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use venticorn::binding_map::BindingMap;
+    let mut bindings = BindingMap::new(10);
+    let malformed = AcornValue::new_apply(
+        identity(AcornType::Bool),
+        vec![AcornValue::new_constant(
+            10,
+            "item".into(),
+            vec![],
+            AcornType::Data(10, "Item".into(), vec![]),
+        )],
+    );
+    assert!(catch_unwind(AssertUnwindSafe(|| bindings.add_constant(
+        "invalid",
+        vec![],
+        AcornType::Bool,
+        Some(malformed),
+        None
+    )))
+    .is_err());
+    assert!(!bindings.has_identifier("invalid"));
+    bindings.add_constant(
+        "invalid",
+        vec![],
+        AcornType::Bool,
+        Some(AcornValue::Bool(true)),
+        None,
+    );
+}

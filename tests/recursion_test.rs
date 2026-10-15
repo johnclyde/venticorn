@@ -286,3 +286,34 @@ fn curried_recursive_calls_still_require_a_decreasing_argument() {
     "#,
     );
 }
+
+#[test]
+fn explicit_recursive_actuals_preserve_declaration_order() {
+    let mut env = naturals();
+    env.add(
+        r#"
+        define repeat<U, T>(n: Nat, unused: U, value: T) -> T {
+            match n {
+                Nat.zero { value }
+                Nat.suc(pred) { repeat<U, T>(pred, unused, value) }
+            }
+        }
+    "#,
+    );
+    let definition = env.get_definition("repeat").unwrap();
+    definition.validate().unwrap();
+    let mut recursive = vec![];
+    definition.find_constants(&|c| c.name == "repeat", &mut recursive);
+    assert!(!recursive.is_empty());
+    for constant in recursive {
+        assert_eq!(
+            constant.params,
+            vec![
+                venticorn::acorn_type::AcornType::Variable("U".into(), None),
+                venticorn::acorn_type::AcornType::Variable("T".into(), None),
+            ]
+        );
+    }
+    assert!(!env.bindings.has_type_name("T"));
+    assert!(!env.bindings.has_type_name("U"));
+}

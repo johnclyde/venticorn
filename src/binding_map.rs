@@ -472,6 +472,11 @@ impl BindingMap {
         if self.name_in_use(name) {
             panic!("constant name {} already bound", name);
         }
+        if let Some(value) = &definition {
+            value.validate().unwrap_or_else(|error| {
+                panic!("invalid definition for constant {}: {}", name, error)
+            });
+        }
         if params.is_empty() {
             assert!(
                 !constant_type.has_generic(),
