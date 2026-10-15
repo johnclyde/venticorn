@@ -2218,6 +2218,14 @@ impl BindingMap {
             return Ok(Expression::generate_identifier(name));
         }
         if let AcornType::Data(module, type_name, actuals) = acorn_type {
+            let family = UnresolvedType {
+                module_id: *module,
+                name: type_name.clone(),
+                num_params: actuals.len(),
+            };
+            if let Some(alias) = self.generic_type_aliases.get(&family) {
+                return self.parametrize_type_expr(Expression::generate_identifier(alias), actuals);
+            }
             let head = if *module == self.module && self.has_type_name(type_name) {
                 Some(Expression::generate_identifier(type_name))
             } else {
