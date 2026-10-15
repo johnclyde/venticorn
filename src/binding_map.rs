@@ -73,6 +73,9 @@ pub struct BindingMap {
     // Maps the type object to the name of a type.
     reverse_type_names: HashMap<AcornType, String>,
 
+    // Family aliases are distinct from aliases for one complete specialized type.
+    generic_type_aliases: HashMap<UnresolvedType, String>,
+
     // Maps an identifier name to its type.
     // Has entries for both defined constants and aliases.
     identifier_types: BTreeMap<String, AcornType>,
@@ -310,6 +313,7 @@ impl BindingMap {
             module,
             type_names: BTreeMap::new(),
             reverse_type_names: HashMap::new(),
+            generic_type_aliases: HashMap::new(),
             identifier_types: BTreeMap::new(),
             constants: BTreeMap::new(),
             alias_to_canonical: HashMap::new(),
@@ -393,6 +397,24 @@ impl BindingMap {
             }
         }
         self.insert_type_name(name.to_string(), acorn_type);
+    }
+
+    // Add a name for a complete type or an unspecialized generic family.
+    pub fn add_potential_type_alias(&mut self, name: &str, potential: PotentialType) {
+        match potential {
+            PotentialType::Resolved(t) => self.add_type_alias(name, t),
+            PotentialType::Unresolved(t) => {
+                assert!(!self.name_in_use(name), "type alias {} already bound", name);
+                self.generic_type_aliases
+                    .entry(t.clone())
+                    .or_insert_with(|| name.to_string());
+                self.canonical_to_alias
+                    .entry((t.module_id, t.name.clone()))
+                    .or_insert_with(|| name.to_string());
+                self.type_names
+                    .insert(name.to_string(), PotentialType::Unresolved(t));
+            }
+        }
     }
 
     fn add_type_variable(&mut self, name: &str, typeclass: Option<TypeClass>) {
@@ -767,10 +789,19 @@ impl BindingMap {
             if !visible(name) {
                 continue;
             }
-            if importing
-                && !matches!(self.type_names.get(name), Some(PotentialType::Resolved(AcornType::Data(module, canonical, _))) if *module == self.module && canonical == name)
-            {
-                continue;
+            if importing {
+                let canonical = match self.type_names.get(name) {
+                    Some(PotentialType::Resolved(AcornType::Data(module, canonical, _))) => {
+                        *module == self.module && canonical == name
+                    }
+                    Some(PotentialType::Unresolved(t)) => {
+                        t.module_id == self.module && &t.name == name
+                    }
+                    _ => false,
+                };
+                if !canonical {
+                    continue;
+                }
             }
             items.push(CompletionItem {
                 label: name.clone(),
@@ -1460,7 +1491,10 @@ impl BindingMap {
                 Ok(())
             }
             NamedEntity::Unresolved(_) => Err(name_token.error("direct imports of generic constants are not supported; import the module and use a qualified name")),
-            NamedEntity::UnresolvedType(_) => Err(name_token.error("direct imports of generic types are not supported; import the module and use a qualified name")),
+            NamedEntity::UnresolvedType(t) => {
+                self.add_potential_type_alias(name_token.text(), PotentialType::Unresolved(t));
+                Ok(())
+            }
             NamedEntity::Module(_) => Err(name_token.error("cannot import modules indirectly")),
         }
     }
@@ -2301,6 +2335,9 @@ impl BindingMap {
 
         // If it's a member function, check if there's a local alias for its struct.
         if parts.len() == 2 {
+            if let Some(alias) = self.canonical_to_alias.get(&(module, parts[0].to_string())) {
+                return Ok(Expression::generate_identifier_chain(&[alias, parts[1]]));
+            }
             let data_type = AcornType::Data(module, parts[0].to_string(), vec![]);
             if let Some(type_alias) = self.reverse_type_names.get(&data_type) {
                 let lhs = Expression::generate_identifier(type_alias);

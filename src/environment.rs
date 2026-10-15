@@ -1350,8 +1350,10 @@ impl Environment {
                 if ts.type_expr.is_axiom() {
                     self.bindings.add_data_type(&ts.name);
                 } else {
-                    let acorn_type = self.bindings.evaluate_type(project, &ts.type_expr)?;
-                    self.bindings.add_type_alias(&ts.name, acorn_type);
+                    let potential = self
+                        .bindings
+                        .evaluate_potential_type(project, &ts.type_expr)?;
+                    self.bindings.add_potential_type_alias(&ts.name, potential);
                 };
                 self.definition_ranges
                     .insert(ts.name.clone(), statement.range());
