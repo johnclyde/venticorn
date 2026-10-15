@@ -1531,7 +1531,10 @@ impl BindingMap {
                         name,
                         expected_type,
                     ),
-                    None => Err(expression.error("unhandled binary operator in value expression")),
+                    None => Err(expression.error(&format!(
+                        "unexpected operator '{}' in value expression",
+                        token
+                    ))),
                 },
             },
             Expression::Apply(function_expr, args_expr) => {

@@ -334,3 +334,12 @@ fn empty_expression_errors_point_to_the_consumed_terminator() {
         "expected an expression here",
     );
 }
+
+#[test]
+fn unexpected_value_operators_name_the_operator_and_cover_the_expression() {
+    assert_diagnostic(
+        "let bad: Bool = true, false",
+        "true, false",
+        "unexpected operator ',' in value expression",
+    );
+}
