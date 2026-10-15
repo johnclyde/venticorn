@@ -40,3 +40,14 @@ fn proof_scope_generalizes_only_its_declared_parameters() {
     env.add("theorem reflexive<T>(value: T) { value = value } by { value = value }");
     assert!(!env.bindings.has_type_name("T"));
 }
+
+#[test]
+fn generic_class_syntax_round_trips() {
+    let source = "class Pair<T, U> {\n    define swap(self) -> Pair<U, T> { Pair.new(self.second, self.first) }\n}";
+    let formatted = Statement::parse_str(source).unwrap().to_string();
+    assert_eq!(
+        Statement::parse_str(&formatted).unwrap().to_string(),
+        formatted
+    );
+    assert!(formatted.contains("Pair<T, U>"));
+}
