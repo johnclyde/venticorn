@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tower_lsp::lsp_types::{CompletionItem, Range};
 
 use crate::acorn_type::AcornType;
-use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
+use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, Stack};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
@@ -492,6 +492,35 @@ impl Environment {
         project: &mut Project,
         statement: &Statement,
     ) -> compilation::Result<()> {
+        if !matches!(
+            statement.statement,
+            StatementInfo::Structure(_) | StatementInfo::Class(_)
+        ) {
+            return self.add_statement_inner(project, statement);
+        }
+        // Declaration admission is transactional; failures cannot leak temporary parameters,
+        // generated members, proof facts, or source visibility into the parent environment.
+        let bindings = self.bindings.clone();
+        let definitions = self.definition_ranges.clone();
+        let line_count = self.line_types.len();
+        let node_count = self.nodes.len();
+        let explicit_false = self.includes_explicit_false;
+        let result = self.add_statement_inner(project, statement);
+        if result.is_err() {
+            self.bindings = bindings;
+            self.definition_ranges = definitions;
+            self.line_types.truncate(line_count);
+            self.nodes.truncate(node_count);
+            self.includes_explicit_false = explicit_false;
+        }
+        result
+    }
+
+    fn add_statement_inner(
+        &mut self,
+        project: &mut Project,
+        statement: &Statement,
+    ) -> compilation::Result<()> {
         if self.includes_explicit_false {
             return Err(
                 statement.error("an explicit 'false' may not be followed by other statements")
@@ -891,11 +920,18 @@ impl Environment {
             }
 
             StatementInfo::Structure(ss) => {
-                if !ss.type_params.is_empty() {
-                    return Err(ss.type_params[0].error("generic structures are not supported yet"));
-                }
                 if self.bindings.name_in_use(&ss.name) {
                     return Err(statement.error("type name already defined in this scope"));
+                }
+
+                let mut param_names = vec![];
+                let mut arbitrary_params = vec![];
+                for token in &ss.type_params {
+                    if token.text() == ss.name || self.bindings.name_in_use(token.text()) {
+                        return Err(token.error("type parameter already defined in this scope"));
+                    }
+                    param_names.push(token.text().to_string());
+                    arbitrary_params.push(self.bindings.add_arbitrary_type(token.text()));
                 }
 
                 // Parse the fields before adding the struct type so that we can't have
@@ -920,6 +956,16 @@ impl Environment {
                         );
                     }
                     member_fn_names.push(member_fn_name);
+                }
+
+                if !param_names.is_empty()
+                    && field_types
+                        .iter()
+                        .any(|t| t.parametrize(self.module_id, &param_names).has_arbitrary())
+                {
+                    return Err(ss
+                        .name_token
+                        .error("generic structures cannot capture outer arbitrary types"));
                 }
 
                 // If there's a constraint, add a block to prove it can be satisfied.
@@ -970,22 +1016,24 @@ impl Environment {
                 }
 
                 // The member functions take the type itself to a particular member.
-                let struct_type = self.bindings.add_data_type(&ss.name);
+                let struct_type = self
+                    .bindings
+                    .add_potential_type(&ss.name, param_names.len())
+                    .resolve(arbitrary_params.clone(), &ss.name_token)?;
                 self.definition_ranges
                     .insert(ss.name.clone(), statement.range());
                 let mut member_fns = vec![];
                 for (member_fn_name, field_type) in member_fn_names.iter().zip(&field_types) {
                     let member_fn_type =
                         AcornType::new_functional(vec![struct_type.clone()], field_type.clone());
-                    self.bindings
-                        .add_constant(&member_fn_name, vec![], member_fn_type, None, None);
-                    member_fns.push(
-                        self.bindings
-                            .get_constant_value(&member_fn_name)
-                            .unwrap()
-                            .resolved()
-                            .expect("generated datatype constants have no type parameters"),
+                    self.bindings.add_constant(
+                        &member_fn_name,
+                        param_names.clone(),
+                        member_fn_type.parametrize(self.module_id, &param_names),
+                        None,
+                        None,
                     );
+                    member_fns.push(self.bindings.get_constant_value(&member_fn_name).unwrap());
                 }
 
                 // A "new" function to create one of these struct types.
@@ -994,35 +1042,37 @@ impl Environment {
                     AcornType::new_functional(field_types.clone(), struct_type.clone());
                 self.bindings.add_constant(
                     &new_fn_name,
-                    vec![],
-                    new_fn_type,
+                    param_names.clone(),
+                    new_fn_type.parametrize(self.module_id, &param_names),
                     None,
                     // Invalid inputs can map to the same constrained object. They cannot
                     // provide the unique constructor arguments required by match patterns.
                     if unbound_constraint.is_none() {
-                        Some((struct_type.clone(), 0, 1))
+                        Some((struct_type.parametrize(self.module_id, &param_names), 0, 1))
                     } else {
                         None
                     },
                 );
-                let new_fn = self
-                    .bindings
-                    .get_constant_value(&new_fn_name)
-                    .unwrap()
-                    .resolved()
-                    .expect("generated datatype constants have no type parameters");
+                // The declaration fixes every actual here, including phantom parameters
+                // that a constructor's ordinary field arguments cannot infer.
+                let new_fn = AcornValue::new_constant(
+                    self.module_id,
+                    new_fn_name,
+                    arbitrary_params,
+                    new_fn_type,
+                );
 
                 // Each object of this new type has certain properties.
                 let object_var = AcornValue::Variable(0, struct_type.clone());
-                let member_args = member_fns
-                    .iter()
-                    .map(|f| {
-                        AcornValue::Application(FunctionApplication {
-                            function: Box::new(f.clone()),
-                            args: vec![object_var.clone()],
-                        })
-                    })
-                    .collect::<Vec<_>>();
+                let mut member_args = vec![];
+                for ((name, _), member) in ss.fields.iter().zip(&member_fns) {
+                    member_args.push(self.bindings.apply_potential(
+                        name,
+                        member.clone(),
+                        vec![object_var.clone()],
+                        None,
+                    )?);
+                }
                 let range = Range {
                     start: statement.first_token.start_pos(),
                     end: ss.name_token.end_pos(),
@@ -1042,7 +1092,7 @@ impl Environment {
                         project,
                         true,
                         Proposition::type_definition(
-                            constraint_claim,
+                            constraint_claim.parametrize(self.module_id, &param_names),
                             self.module_id,
                             range,
                             ss.name.clone(),
@@ -1054,13 +1104,16 @@ impl Environment {
                 // An object can be recreated by new'ing from its members. Ie:
                 // Pair.new(Pair.first(p), Pair.second(p)) = p.
                 // This is the "new equation" for a struct type.
-                let recreated = AcornValue::Application(FunctionApplication {
-                    function: Box::new(new_fn.clone()),
-                    args: member_args,
-                });
+                let recreated = self.bindings.apply_potential(
+                    &ss.name_token,
+                    crate::binding_map::PotentialValue::Resolved(new_fn.clone()),
+                    member_args,
+                    None,
+                )?;
                 let new_eq =
                     AcornValue::Binary(BinaryOp::Equals, Box::new(recreated), Box::new(object_var));
-                let new_claim = AcornValue::ForAll(vec![struct_type], Box::new(new_eq));
+                let new_claim = AcornValue::ForAll(vec![struct_type], Box::new(new_eq))
+                    .parametrize(self.module_id, &param_names);
 
                 self.add_node(
                     project,
@@ -1078,19 +1131,23 @@ impl Environment {
                 let var_args = (0..ss.fields.len())
                     .map(|i| AcornValue::Variable(i as AtomId, field_types[i].clone()))
                     .collect::<Vec<_>>();
-                let new_application = AcornValue::Application(FunctionApplication {
-                    function: Box::new(new_fn),
-                    args: var_args,
-                });
+                let new_application = self.bindings.apply_potential(
+                    &ss.name_token,
+                    crate::binding_map::PotentialValue::Resolved(new_fn),
+                    var_args,
+                    None,
+                )?;
                 for i in 0..ss.fields.len() {
                     let (field_name_token, field_type_expr) = &ss.fields[i];
                     let member_fn = &member_fns[i];
                     let member_eq = AcornValue::Binary(
                         BinaryOp::Equals,
-                        Box::new(AcornValue::Application(FunctionApplication {
-                            function: Box::new(member_fn.clone()),
-                            args: vec![new_application.clone()],
-                        })),
+                        Box::new(self.bindings.apply_potential(
+                            field_name_token,
+                            member_fn.clone(),
+                            vec![new_application.clone()],
+                            None,
+                        )?),
                         Box::new(AcornValue::Variable(i as AtomId, field_types[i].clone())),
                     );
                     let unbound_member_claim = if let Some(constraint) = &unbound_constraint {
@@ -1108,7 +1165,7 @@ impl Environment {
                         project,
                         true,
                         Proposition::type_definition(
-                            member_claim,
+                            member_claim.parametrize(self.module_id, &param_names),
                             self.module_id,
                             range,
                             ss.name.clone(),
@@ -1117,6 +1174,9 @@ impl Environment {
                     );
                 }
 
+                for name in &param_names {
+                    self.bindings.remove_data_type(name);
+                }
                 Ok(())
             }
 
