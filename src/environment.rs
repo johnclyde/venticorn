@@ -1429,6 +1429,11 @@ impl Environment {
             }
 
             StatementInfo::Class(cs) => {
+                if !cs.type_params.is_empty() {
+                    return Err(
+                        cs.type_params[0].error("generic class definitions are not supported yet")
+                    );
+                }
                 self.add_other_lines(statement);
                 match self.bindings.get_type_for_name(&cs.name) {
                     Some(AcornType::Data(module, name)) => {
