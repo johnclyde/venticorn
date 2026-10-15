@@ -121,6 +121,35 @@ pub struct UnresolvedConstant {
     generic_type: AcornType,
 }
 
+impl UnresolvedConstant {
+    fn resolve(
+        &self,
+        source: &dyn ErrorSource,
+        actuals: Vec<AcornType>,
+    ) -> compilation::Result<AcornValue> {
+        if actuals.len() != self.params.len() {
+            return Err(source.error(&format!(
+                "expected {} type parameters, but got {}",
+                self.params.len(),
+                actuals.len()
+            )));
+        }
+        let substitutions = self
+            .params
+            .iter()
+            .cloned()
+            .zip(actuals.iter().cloned())
+            .collect::<Vec<_>>();
+        let instance_type = self.generic_type.instantiate(&substitutions);
+        Ok(AcornValue::new_constant(
+            self.module_id,
+            self.name.clone(),
+            actuals,
+            instance_type,
+        ))
+    }
+}
+
 // A named declaration may still need type arguments before it becomes a proof value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PotentialValue {
@@ -1169,10 +1198,12 @@ impl BindingMap {
             }
             Some(NamedEntity::Type(t)) => {
                 if let AcornType::Data(module, type_name, actuals) = t {
-                    if !actuals.is_empty() {
-                        return Err(name_token.error("member lookup on specialized type aliases is not supported; use the generic type name with explicit arguments"));
-                    }
                     if name_token.token_type == TokenType::Numeral {
+                        if !actuals.is_empty() {
+                            return Err(
+                                name_token.error("numeric literals cannot have type parameters")
+                            );
+                        }
                         let value = self.evaluate_number_with_type(
                             name_token,
                             project,
@@ -1183,9 +1214,20 @@ impl BindingMap {
                         return Ok(NamedEntity::Value(value));
                     }
                     match self.evaluate_class_variable(project, module, &type_name, name) {
-                        Some(PotentialValue::Resolved(value)) => Ok(NamedEntity::Value(value)),
+                        Some(PotentialValue::Resolved(value)) => {
+                            if !actuals.is_empty() {
+                                return Err(
+                                    name_token.error("member does not accept type parameters")
+                                );
+                            }
+                            Ok(NamedEntity::Value(value))
+                        }
                         Some(PotentialValue::Unresolved(unresolved)) => {
-                            Ok(NamedEntity::Unresolved(unresolved))
+                            if actuals.is_empty() {
+                                Ok(NamedEntity::Unresolved(unresolved))
+                            } else {
+                                Ok(NamedEntity::Value(unresolved.resolve(name_token, actuals)?))
+                            }
                         }
                         None => Err(name_token
                             .error(&format!("{} has no member named '{}'", type_name, name))),
@@ -1301,7 +1343,29 @@ impl BindingMap {
             }
         }
 
-        // If it isn't a name or a dot, it must be a value.
+        // Resolve the head by its binding, rather than guessing from capitalization.
+        // A type application can be the namespace of a subsequent member lookup.
+        if let Expression::Apply(head, arguments) = expression {
+            if let Expression::Grouping(opening, inner, _) = arguments.as_ref() {
+                if opening.token_type == TokenType::LessThan {
+                    let potential = match self.evaluate_entity(stack, project, head)? {
+                        NamedEntity::Type(t) => Some(PotentialType::Resolved(t)),
+                        NamedEntity::UnresolvedType(t) => Some(PotentialType::Unresolved(t)),
+                        _ => None,
+                    };
+                    if let Some(potential) = potential {
+                        let actuals = inner
+                            .flatten_comma_separated_list()
+                            .into_iter()
+                            .map(|arg| self.evaluate_type(project, arg))
+                            .collect::<compilation::Result<Vec<_>>>()?;
+                        return Ok(NamedEntity::Type(potential.resolve(actuals, expression)?));
+                    }
+                }
+            }
+        }
+
+        // All remaining expressions must be values.
         let value = self.evaluate_value_with_stack(stack, project, expression, None)?;
         Ok(NamedEntity::Value(value))
     }
