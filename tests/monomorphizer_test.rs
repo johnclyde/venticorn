@@ -104,7 +104,7 @@ fn conflicting_repeated_parameters_do_not_create_or_cache_an_instance() {
     ));
     mono.add_monomorphs(&predicate(
         "f",
-        vec![AcornType::Bool, AcornType::Data(10, "Nat".into())],
+        vec![AcornType::Bool, AcornType::Data(10, "Nat".into(), vec![])],
     ));
     assert!(mono.take_facts().is_empty());
     mono.add_monomorphs(&predicate("f", vec![AcornType::Bool, AcornType::Bool]));
@@ -136,7 +136,7 @@ fn constant_matching_uses_declared_positions_and_rejects_wrong_arity() {
     // An inconsistent request cannot truncate a zip or contaminate later requests.
     mono.add_monomorphs(&predicate("ordered", vec![AcornType::Bool]));
     assert!(mono.take_facts().is_empty());
-    let nat = AcornType::Data(10, "Nat".into());
+    let nat = AcornType::Data(10, "Nat".into(), vec![]);
     mono.add_monomorphs(&predicate("ordered", vec![nat.clone(), AcornType::Bool]));
     let emitted = mono.take_facts();
     assert_eq!(emitted.len(), 1);

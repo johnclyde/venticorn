@@ -33,6 +33,12 @@ pub enum Normalization {
 // Check the first-order type boundary before assigning prover type IDs.
 fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
     match acorn_type {
+        AcornType::Data(_, _, actuals) => {
+            for actual in actuals {
+                check_normalized_type(actual)?;
+            }
+            Ok(())
+        }
         AcornType::Function(function) => {
             if function.arg_types.is_empty() {
                 return Err(NormalizationError(format!(
@@ -55,9 +61,7 @@ fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
             "Type variables must be instantiated before normalization: {}",
             acorn_type
         ))),
-        AcornType::Bool | AcornType::Data(..) | AcornType::Empty | AcornType::Arbitrary(..) => {
-            Ok(())
-        }
+        AcornType::Bool | AcornType::Empty | AcornType::Arbitrary(..) => Ok(()),
     }
 }
 

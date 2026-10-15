@@ -18,7 +18,7 @@ fn bound_match(acorn_type: AcornType) -> AcornValue {
 
 #[test]
 fn match_case_binders_follow_type_transformations() {
-    let concrete = AcornType::Data(FIRST_NORMAL, "T".to_string());
+    let concrete = AcornType::Data(FIRST_NORMAL, "T".to_string(), vec![]);
     let value = bound_match(concrete);
     let parameterized = value.parametrize(FIRST_NORMAL, &["T".to_string()]);
     let AcornValue::Match(_, cases) = &parameterized else {

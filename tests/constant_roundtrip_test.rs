@@ -12,7 +12,7 @@ fn instance(left: AcornType, right: AcornType) -> AcornValue {
 
 #[test]
 fn normalized_instances_retain_distinct_order_and_complete_roundtrip_metadata() {
-    let nat = AcornType::Data(10, "Nat".into());
+    let nat = AcornType::Data(10, "Nat".into(), vec![]);
     let original = instance(nat.clone(), AcornType::Bool);
     let reversed = instance(AcornType::Bool, nat);
     let mut normalizer = Normalizer::new();

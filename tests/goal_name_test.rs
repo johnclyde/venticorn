@@ -8,7 +8,7 @@ use venticorn::goal::{Goal, GoalContext};
 #[test]
 fn solve_goal_falls_back_to_its_source_location_for_an_unavailable_type() {
     let env = Environment::new_test();
-    let hidden = AcornType::Data(123, "Hidden".to_string());
+    let hidden = AcornType::Data(123, "Hidden".to_string(), vec![]);
     let value = AcornValue::new_lambda(vec![hidden.clone()], AcornValue::Variable(0, hidden));
     value.validate().unwrap();
     assert_eq!(

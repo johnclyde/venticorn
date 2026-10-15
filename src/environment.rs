@@ -368,7 +368,7 @@ impl Environment {
         }
         let acorn_type = self.bindings.evaluate_type(project, &ls.type_expr)?;
         if ls.name_token.token_type == TokenType::Numeral {
-            if acorn_type != AcornType::Data(self.module_id, class.unwrap().to_string()) {
+            if acorn_type != AcornType::Data(self.module_id, class.unwrap().to_string(), vec![]) {
                 return Err(ls
                     .type_expr
                     .error("numeric class variables must be the class type"));
@@ -447,7 +447,7 @@ impl Environment {
             )?;
 
         if let Some(class_name) = class_name {
-            let class_type = AcornType::Data(self.module_id, class_name.to_string());
+            let class_type = AcornType::Data(self.module_id, class_name.to_string(), vec![]);
             if arg_types[0] != class_type {
                 return Err(ds.args[0].token().error("self must be the class type"));
             }
@@ -1436,7 +1436,7 @@ impl Environment {
                 }
                 self.add_other_lines(statement);
                 match self.bindings.get_type_for_name(&cs.name) {
-                    Some(AcornType::Data(module, name)) => {
+                    Some(AcornType::Data(module, name, _)) => {
                         if module != &self.module_id {
                             return Err(cs
                                 .name_token
@@ -1490,7 +1490,12 @@ impl Environment {
             StatementInfo::Numerals(ds) => {
                 self.add_other_lines(statement);
                 let acorn_type = self.bindings.evaluate_type(project, &ds.type_expr)?;
-                if let AcornType::Data(module, typename) = acorn_type {
+                if let AcornType::Data(module, typename, actuals) = acorn_type {
+                    if !actuals.is_empty() {
+                        return Err(ds
+                            .type_expr
+                            .error("numerals type cannot have type parameters"));
+                    }
                     self.bindings.set_default(module, typename);
                     Ok(())
                 } else {
