@@ -75,8 +75,12 @@ fn multiple_parameters_keep_invalid_declarations_and_arguments_rejected() {
     env.add("define first<T, U>(left: T, right: U) -> T { left }");
     env.bad("let bad: Bool = first(true)");
     env.bad("let bad: Bool = first(true, true, true)");
-    // Named theorem declarations still have their separate current syntax limit.
-    assert!(Statement::parse_str("theorem same<T, U>(left: T, right: U) { left = left }").is_err());
+    env.add("theorem same<T, U>(left: T, right: U) { left = left }");
+    assert!(!env.bindings.has_type_name("T"));
+    assert!(!env.bindings.has_type_name("U"));
+    env.bad("theorem duplicate_theorem<T, T>(value: T) { value = value }");
+    assert!(!env.bindings.has_identifier("duplicate_theorem"));
+    assert!(!env.bindings.has_type_name("T"));
 }
 
 #[test]
