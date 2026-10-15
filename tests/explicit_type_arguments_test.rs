@@ -109,3 +109,31 @@ fn comparisons_of_qualified_calls_do_not_look_like_type_arguments() {
         assert!(matches!(*right, Expression::Apply(..)));
     }
 }
+
+#[test]
+fn several_type_arguments_bind_before_higher_order_value_arguments() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        type Nat: axiom
+        define maps_to<T, U>(f: T -> U, u: U) -> Bool {
+            exists(t: T) { f(t) = u }
+        }
+        define not2(b: Bool) -> Bool { not b }
+        theorem application {
+            maps_to<Bool, Bool>(not2, false)
+        }
+        "#,
+    );
+    let source = "maps_to<Bool, Bool>(not2, false)";
+    let expression = parse(source);
+    assert_eq!(expression.to_string(), source);
+    let Expression::Apply(function, arguments) = expression else {
+        panic!("expected value application");
+    };
+    let Expression::Apply(_, type_arguments) = *function else {
+        panic!("expected type application before value application");
+    };
+    assert_eq!(type_arguments.flatten_list(true).unwrap().len(), 2);
+    assert_eq!(arguments.flatten_list(true).unwrap().len(), 2);
+}
