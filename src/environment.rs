@@ -484,6 +484,231 @@ impl Environment {
         Ok(())
     }
 
+    fn add_theorem_statement(
+        &mut self,
+        project: &mut Project,
+        statement: &Statement,
+        ts: &crate::statement::TheoremStatement,
+    ) -> compilation::Result<()> {
+        if let Some(name) = &ts.name {
+            if self.bindings.name_in_use(name) {
+                return Err(statement.first_token.error(&format!(
+                    "theorem name '{}' already defined in this scope",
+                    name
+                )));
+            }
+        }
+        if ts.axiomatic && ts.body.is_some() {
+            return Err(statement.error("axioms cannot have proof blocks"));
+        }
+
+        // Figure out the range for this theorem definition.
+        // It's smaller than the whole theorem statement because it doesn't
+        // include the proof block.
+        let range = Range {
+            start: statement.first_token.start_pos(),
+            end: ts.claim_right_brace.end_pos(),
+        };
+
+        let (type_params, arg_names, arg_types, value, _) = self.bindings.evaluate_scoped_value(
+            project,
+            &ts.type_params,
+            &ts.args,
+            None,
+            &ts.claim,
+            None,
+            None,
+        )?;
+
+        let unbound_claim = value.ok_or_else(|| ts.claim.error("theorems must have values"))?;
+
+        let is_citation = self.bindings.is_citation(project, &unbound_claim);
+        if is_citation && ts.body.is_some() {
+            return Err(statement.error("citations do not need proof blocks"));
+        }
+
+        let mut block_args = vec![];
+        for (arg_name, arg_type) in arg_names.iter().zip(&arg_types) {
+            block_args.push((arg_name.clone(), arg_type.clone()));
+        }
+
+        // Externally we use the theorem in unnamed, "forall" form
+        let external_claim = AcornValue::new_forall(arg_types.clone(), unbound_claim.clone());
+
+        let (premise, goal) = match &unbound_claim {
+            AcornValue::Binary(BinaryOp::Implies, left, right) => {
+                let premise_range = match ts.claim.premise() {
+                    Some(p) => p.range(),
+                    None => {
+                        // I don't think this should happen, but it's awkward for the
+                        // compiler to enforce, so pick a not-too-wrong default.
+                        ts.claim.range()
+                    }
+                };
+                (Some((*left.clone(), premise_range)), *right.clone())
+            }
+            c => (None, c.clone()),
+        };
+
+        // Stage only the new binding and range. Existing proof nodes are not cloned.
+        // A malformed body must not leave an axiom-like theorem name behind.
+        let mut staged = self.child(statement.first_line(), true);
+        if let Some(name) = &ts.name {
+            if arg_names.contains(name) || type_params.contains(name) {
+                return Err(statement.error("theorem name conflicts with a parameter"));
+            }
+            let lambda_claim = AcornValue::new_lambda(arg_types, unbound_claim);
+            staged.bindings.add_constant(
+                name,
+                type_params.clone(),
+                lambda_claim.get_type(),
+                Some(lambda_claim),
+                None,
+            );
+            staged.definition_ranges.insert(name.clone(), range);
+        }
+
+        let already_proven = ts.axiomatic || is_citation;
+
+        let block = if already_proven {
+            None
+        } else {
+            Some(Block::new(
+                project,
+                &staged,
+                type_params,
+                block_args,
+                BlockParams::Theorem(ts.name.as_deref(), range, premise, goal),
+                statement.first_line(),
+                statement.last_line(),
+                ts.body.as_ref(),
+            )?)
+        };
+
+        if let Some(name) = &ts.name {
+            self.bindings = staged.bindings;
+            self.definition_ranges.insert(name.clone(), range);
+        }
+
+        let index = self.add_node(
+            project,
+            already_proven,
+            Proposition::theorem(
+                ts.axiomatic,
+                external_claim,
+                self.module_id,
+                range,
+                ts.name.clone(),
+            ),
+            block,
+        );
+        self.add_node_lines(index, &statement.range());
+        if let Some(name) = &ts.name {
+            self.bindings.mark_as_theorem(name);
+        }
+
+        Ok(())
+    }
+
+    fn add_function_satisfy_statement(
+        &mut self,
+        project: &mut Project,
+        statement: &Statement,
+        fss: &crate::statement::FunctionSatisfyStatement,
+    ) -> compilation::Result<()> {
+        if fss.name == "new" || fss.name == "self" {
+            return Err(fss.name_token.error(&format!(
+                "'{}' is a reserved word. use a different name",
+                fss.name
+            )));
+        }
+        if self.bindings.name_in_use(&fss.name) {
+            return Err(statement.error(&format!(
+                "function name '{}' already defined in this scope",
+                fss.name
+            )));
+        }
+
+        // Figure out the range for this function definition.
+        // It's smaller than the whole function statement because it doesn't
+        // include the proof block.
+        let definition_range = Range {
+            start: statement.first_token.start_pos(),
+            end: fss.satisfy_token.end_pos(),
+        };
+        self.definition_ranges
+            .insert(fss.name.clone(), definition_range);
+
+        let (_, mut arg_names, mut arg_types, condition, _) = self.bindings.evaluate_scoped_value(
+            project,
+            &[],
+            &fss.declarations,
+            None,
+            &fss.condition,
+            None,
+            None,
+        )?;
+
+        let unbound_condition = condition.ok_or_else(|| statement.error("missing condition"))?;
+        if unbound_condition.get_type() != AcornType::Bool {
+            return Err(fss.condition.error("condition must be a boolean"));
+        }
+
+        // The return variable shouldn't become a block arg, because we're trying to
+        // prove its existence.
+        let _return_name = arg_names.pop().unwrap();
+        let return_type = arg_types.pop().unwrap();
+        let block_args: Vec<_> = arg_names
+            .iter()
+            .cloned()
+            .zip(arg_types.iter().cloned())
+            .collect();
+        let num_args = block_args.len() as AtomId;
+
+        let block = Block::new(
+            project,
+            &self,
+            vec![],
+            block_args,
+            BlockParams::FunctionSatisfy(
+                unbound_condition.clone(),
+                return_type.clone(),
+                fss.condition.range(),
+            ),
+            statement.first_line(),
+            statement.last_line(),
+            fss.body.as_ref(),
+        )?;
+
+        // We define this function not with an equality, but via the condition.
+        let function_type = AcornType::new_functional(arg_types.clone(), return_type);
+        self.bindings
+            .add_constant(&fss.name, vec![], function_type.clone(), None, None);
+        let function_constant =
+            AcornValue::new_constant(self.module_id, fss.name.clone(), vec![], function_type);
+        let function_term = AcornValue::new_apply(
+            function_constant.clone(),
+            arg_types
+                .iter()
+                .enumerate()
+                .map(|(i, t)| AcornValue::Variable(i as AtomId, t.clone()))
+                .collect(),
+        );
+        let return_bound = unbound_condition.bind_values(num_args, num_args, &[function_term]);
+        let external_condition = AcornValue::ForAll(arg_types, Box::new(return_bound));
+
+        let prop = Proposition::constant_definition(
+            external_condition,
+            self.module_id,
+            definition_range,
+            function_constant,
+        );
+
+        let index = self.add_node(project, false, prop, Some(block));
+        self.add_node_lines(index, &statement.range());
+        Ok(())
+    }
+
     // Adds a statement to the environment.
     // If the statement has a body, this call creates a sub-environment and adds the body
     // to that sub-environment.
@@ -556,129 +781,7 @@ impl Environment {
                 self.add_define_statement(project, None, ds, statement.range())
             }
 
-            StatementInfo::Theorem(ts) => {
-                if let Some(name) = &ts.name {
-                    if self.bindings.name_in_use(name) {
-                        return Err(statement.first_token.error(&format!(
-                            "theorem name '{}' already defined in this scope",
-                            name
-                        )));
-                    }
-                }
-                if ts.axiomatic && ts.body.is_some() {
-                    return Err(statement.error("axioms cannot have proof blocks"));
-                }
-
-                // Figure out the range for this theorem definition.
-                // It's smaller than the whole theorem statement because it doesn't
-                // include the proof block.
-                let range = Range {
-                    start: statement.first_token.start_pos(),
-                    end: ts.claim_right_brace.end_pos(),
-                };
-
-                let (type_params, arg_names, arg_types, value, _) =
-                    self.bindings.evaluate_scoped_value(
-                        project,
-                        &ts.type_params,
-                        &ts.args,
-                        None,
-                        &ts.claim,
-                        None,
-                        None,
-                    )?;
-
-                let unbound_claim =
-                    value.ok_or_else(|| ts.claim.error("theorems must have values"))?;
-
-                let is_citation = self.bindings.is_citation(project, &unbound_claim);
-                if is_citation && ts.body.is_some() {
-                    return Err(statement.error("citations do not need proof blocks"));
-                }
-
-                let mut block_args = vec![];
-                for (arg_name, arg_type) in arg_names.iter().zip(&arg_types) {
-                    block_args.push((arg_name.clone(), arg_type.clone()));
-                }
-
-                // Externally we use the theorem in unnamed, "forall" form
-                let external_claim =
-                    AcornValue::new_forall(arg_types.clone(), unbound_claim.clone());
-
-                let (premise, goal) = match &unbound_claim {
-                    AcornValue::Binary(BinaryOp::Implies, left, right) => {
-                        let premise_range = match ts.claim.premise() {
-                            Some(p) => p.range(),
-                            None => {
-                                // I don't think this should happen, but it's awkward for the
-                                // compiler to enforce, so pick a not-too-wrong default.
-                                ts.claim.range()
-                            }
-                        };
-                        (Some((*left.clone(), premise_range)), *right.clone())
-                    }
-                    c => (None, c.clone()),
-                };
-
-                // Stage only the new binding and range. Existing proof nodes are not cloned.
-                // A malformed body must not leave an axiom-like theorem name behind.
-                let mut staged = self.child(statement.first_line(), true);
-                if let Some(name) = &ts.name {
-                    if arg_names.contains(name) || type_params.contains(name) {
-                        return Err(statement.error("theorem name conflicts with a parameter"));
-                    }
-                    let lambda_claim = AcornValue::new_lambda(arg_types, unbound_claim);
-                    staged.bindings.add_constant(
-                        name,
-                        type_params.clone(),
-                        lambda_claim.get_type(),
-                        Some(lambda_claim),
-                        None,
-                    );
-                    staged.definition_ranges.insert(name.clone(), range);
-                }
-
-                let already_proven = ts.axiomatic || is_citation;
-
-                let block = if already_proven {
-                    None
-                } else {
-                    Some(Block::new(
-                        project,
-                        &staged,
-                        type_params,
-                        block_args,
-                        BlockParams::Theorem(ts.name.as_deref(), range, premise, goal),
-                        statement.first_line(),
-                        statement.last_line(),
-                        ts.body.as_ref(),
-                    )?)
-                };
-
-                if let Some(name) = &ts.name {
-                    self.bindings = staged.bindings;
-                    self.definition_ranges.insert(name.clone(), range);
-                }
-
-                let index = self.add_node(
-                    project,
-                    already_proven,
-                    Proposition::theorem(
-                        ts.axiomatic,
-                        external_claim,
-                        self.module_id,
-                        range,
-                        ts.name.clone(),
-                    ),
-                    block,
-                );
-                self.add_node_lines(index, &statement.range());
-                if let Some(name) = &ts.name {
-                    self.bindings.mark_as_theorem(name);
-                }
-
-                Ok(())
-            }
+            StatementInfo::Theorem(ts) => self.add_theorem_statement(project, statement, ts),
 
             StatementInfo::Prop(ps) => {
                 let claim =
@@ -819,104 +922,7 @@ impl Environment {
             }
 
             StatementInfo::FunctionSatisfy(fss) => {
-                if fss.name == "new" || fss.name == "self" {
-                    return Err(fss.name_token.error(&format!(
-                        "'{}' is a reserved word. use a different name",
-                        fss.name
-                    )));
-                }
-                if self.bindings.name_in_use(&fss.name) {
-                    return Err(statement.error(&format!(
-                        "function name '{}' already defined in this scope",
-                        fss.name
-                    )));
-                }
-
-                // Figure out the range for this function definition.
-                // It's smaller than the whole function statement because it doesn't
-                // include the proof block.
-                let definition_range = Range {
-                    start: statement.first_token.start_pos(),
-                    end: fss.satisfy_token.end_pos(),
-                };
-                self.definition_ranges
-                    .insert(fss.name.clone(), definition_range);
-
-                let (_, mut arg_names, mut arg_types, condition, _) =
-                    self.bindings.evaluate_scoped_value(
-                        project,
-                        &[],
-                        &fss.declarations,
-                        None,
-                        &fss.condition,
-                        None,
-                        None,
-                    )?;
-
-                let unbound_condition =
-                    condition.ok_or_else(|| statement.error("missing condition"))?;
-                if unbound_condition.get_type() != AcornType::Bool {
-                    return Err(fss.condition.error("condition must be a boolean"));
-                }
-
-                // The return variable shouldn't become a block arg, because we're trying to
-                // prove its existence.
-                let _return_name = arg_names.pop().unwrap();
-                let return_type = arg_types.pop().unwrap();
-                let block_args: Vec<_> = arg_names
-                    .iter()
-                    .cloned()
-                    .zip(arg_types.iter().cloned())
-                    .collect();
-                let num_args = block_args.len() as AtomId;
-
-                let block = Block::new(
-                    project,
-                    &self,
-                    vec![],
-                    block_args,
-                    BlockParams::FunctionSatisfy(
-                        unbound_condition.clone(),
-                        return_type.clone(),
-                        fss.condition.range(),
-                    ),
-                    statement.first_line(),
-                    statement.last_line(),
-                    fss.body.as_ref(),
-                )?;
-
-                // We define this function not with an equality, but via the condition.
-                let function_type = AcornType::new_functional(arg_types.clone(), return_type);
-                self.bindings
-                    .add_constant(&fss.name, vec![], function_type.clone(), None, None);
-                let function_constant = AcornValue::new_constant(
-                    self.module_id,
-                    fss.name.clone(),
-                    vec![],
-                    function_type,
-                );
-                let function_term = AcornValue::new_apply(
-                    function_constant.clone(),
-                    arg_types
-                        .iter()
-                        .enumerate()
-                        .map(|(i, t)| AcornValue::Variable(i as AtomId, t.clone()))
-                        .collect(),
-                );
-                let return_bound =
-                    unbound_condition.bind_values(num_args, num_args, &[function_term]);
-                let external_condition = AcornValue::ForAll(arg_types, Box::new(return_bound));
-
-                let prop = Proposition::constant_definition(
-                    external_condition,
-                    self.module_id,
-                    definition_range,
-                    function_constant,
-                );
-
-                let index = self.add_node(project, false, prop, Some(block));
-                self.add_node_lines(index, &statement.range());
-                Ok(())
+                self.add_function_satisfy_statement(project, statement, fss)
             }
 
             StatementInfo::Structure(ss) => {
