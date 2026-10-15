@@ -890,6 +890,9 @@ impl Environment {
             }
 
             StatementInfo::Structure(ss) => {
+                if !ss.type_params.is_empty() {
+                    return Err(ss.type_params[0].error("generic structures are not supported yet"));
+                }
                 if self.bindings.name_in_use(&ss.name) {
                     return Err(statement.error("type name already defined in this scope"));
                 }
