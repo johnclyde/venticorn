@@ -123,7 +123,6 @@ fn evaluate(value: &AcornValue, stack: &[Value]) -> Value {
             }
             panic!("nonexhaustive test match")
         }
-        other => panic!("unexpected finite-model value {:?}", other),
     }
 }
 

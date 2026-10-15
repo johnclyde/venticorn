@@ -11,6 +11,7 @@ fn outcomes(source: &str) -> Vec<Outcome> {
         .map(|node| {
             let context = node.goal_context().unwrap();
             context.goal.value().validate().unwrap();
+            assert!(!context.goal.value().is_generic());
             let mut prover = Prover::new(&project, false);
             for fact in node.usable_facts(&project) {
                 fact.value.validate().unwrap();
@@ -115,4 +116,50 @@ fn nested_generic_definitions_preserve_automatic_proofs() {
             vec![Outcome::Exhausted]
         );
     }
+}
+
+#[test]
+fn generic_goals_keep_phantom_type_arguments_concrete() {
+    let declarations = r#"
+        define phantom<T>(flag: Bool) -> Bool { flag }
+    "#;
+    for (goal, expected) in [
+        ("phantom<T>(true)", Outcome::Success),
+        ("not phantom<T>(true)", Outcome::Exhausted),
+    ] {
+        assert_eq!(
+            outcomes(&format!("{declarations} theorem goal<T> {{ {goal} }}")),
+            vec![expected],
+        );
+    }
+}
+
+#[test]
+fn solve_goals_inside_generic_theorems_use_the_opaque_local_type() {
+    let source = r#"
+        define identity<T>(value: T) -> T { value }
+        theorem goal<T>(value: T) { value = value } by {
+            solve identity<T>(value) by {}
+        }
+    "#;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", source);
+    let id = project.expect_ok("main");
+    let env = project.get_env_by_id(id).unwrap();
+    let mut saw_solve = false;
+    for node in env.iter_goals() {
+        let context = node.goal_context().unwrap();
+        if matches!(context.goal, venticorn::goal::Goal::Solve(..)) {
+            saw_solve = true;
+            context.goal.value().validate().unwrap();
+            assert!(!context.goal.value().is_generic());
+            let mut prover = Prover::new(&project, false);
+            for fact in node.usable_facts(&project) {
+                prover.add_fact(fact);
+            }
+            prover.set_goal(&context);
+            assert_eq!(prover.error, None);
+        }
+    }
+    assert!(saw_solve);
 }
