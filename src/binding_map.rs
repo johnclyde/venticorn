@@ -1400,7 +1400,106 @@ impl BindingMap {
         }
     }
 
-    // Apply a pending generic declaration while preserving its canonical parameter order.
+    pub fn apply_potential(
+        &self,
+        source: &dyn ErrorSource,
+        potential: PotentialValue,
+        args: Vec<AcornValue>,
+        expected_type: Option<&AcornType>,
+    ) -> compilation::Result<AcornValue> {
+        match potential {
+            PotentialValue::Resolved(function) => {
+                self.apply_resolved(source, function, args, expected_type)
+            }
+            PotentialValue::Unresolved(unresolved) => {
+                self.resolve_function(source, unresolved, args, &[], expected_type)
+            }
+        }
+    }
+
+    fn apply_resolved(
+        &self,
+        source: &dyn ErrorSource,
+        function: AcornValue,
+        args: Vec<AcornValue>,
+        expected_type: Option<&AcornType>,
+    ) -> compilation::Result<AcornValue> {
+        if !args.is_empty() {
+            let AcornType::Function(ft) = function.get_type() else {
+                return Err(source.error("expected a function"));
+            };
+            if args.len() > ft.arg_types.len() {
+                return Err(source.error(&format!(
+                    "expected <= {} arguments, but got {}",
+                    ft.arg_types.len(),
+                    args.len()
+                )));
+            }
+            for (arg, expected) in args.iter().zip(&ft.arg_types) {
+                check_type(source, Some(expected), &arg.get_type())?;
+            }
+        }
+        let value = AcornValue::new_apply(function, args);
+        check_type(source, expected_type, &value.get_type())?;
+        Ok(value)
+    }
+
+    // Apply a pending declaration while keeping its ordered actuals and source argument ranges.
+    fn resolve_function(
+        &self,
+        source: &dyn ErrorSource,
+        unresolved: UnresolvedConstant,
+        args: Vec<AcornValue>,
+        arg_sources: &[&Expression],
+        expected_type: Option<&AcornType>,
+    ) -> compilation::Result<AcornValue> {
+        let function_type = match &unresolved.generic_type {
+            AcornType::Function(ft) => ft,
+            _ => return Err(source.error("expected a function")),
+        };
+        if args.len() > function_type.arg_types.len() {
+            return Err(source.error(&format!(
+                "expected <= {} arguments, but got {}",
+                function_type.arg_types.len(),
+                args.len()
+            )));
+        }
+        if unresolved.generic_type.has_arbitrary() {
+            return Err(source.error("generic function cannot capture arbitrary types"));
+        }
+        let mut mapping = HashMap::new();
+        for (i, (arg, expected)) in args.iter().zip(&function_type.arg_types).enumerate() {
+            if !expected.match_instance(&arg.get_type(), &mut mapping) {
+                let arg_source: &dyn ErrorSource = arg_sources.get(i).map_or(source, |expr| *expr);
+                return Err(arg_source.error(&format!(
+                    "expected type {}, but got {}",
+                    expected,
+                    arg.get_type()
+                )));
+            }
+        }
+        let substitutions = unresolved
+            .params
+            .iter()
+            .map(|name| {
+                mapping
+                    .get(name)
+                    .map(|actual| (name.clone(), actual.clone()))
+                    .ok_or_else(|| {
+                        source.error(&format!("parameter {} could not be inferred", name))
+                    })
+            })
+            .collect::<compilation::Result<Vec<_>>>()?;
+        let instance_type = unresolved.generic_type.instantiate(&substitutions);
+        let instance = AcornValue::new_constant(
+            unresolved.module_id,
+            unresolved.name,
+            substitutions.into_iter().map(|(_, t)| t).collect(),
+            instance_type,
+        );
+        self.apply_resolved(source, instance, args, expected_type)
+    }
+
     fn infer_and_apply(
         &self,
         stack: &mut Stack,
@@ -1410,57 +1509,21 @@ impl BindingMap {
         arg_exprs: Vec<&Expression>,
         expected_type: Option<&AcornType>,
     ) -> compilation::Result<AcornValue> {
-        let function_type = match &unresolved.generic_type {
-            AcornType::Function(function_type) => function_type,
-            _ => return Err(source.error("expected a function")),
+        let AcornType::Function(ft) = &unresolved.generic_type else {
+            return Err(source.error("expected a function"));
         };
-        if arg_exprs.len() > function_type.arg_types.len() {
+        if arg_exprs.len() > ft.arg_types.len() {
             return Err(source.error(&format!(
                 "expected <= {} arguments, but got {}",
-                function_type.arg_types.len(),
+                ft.arg_types.len(),
                 arg_exprs.len()
             )));
         }
-        // Do the actual inference
-        let mut args = vec![];
-        let mut mapping = HashMap::new();
-        for (i, arg_expr) in arg_exprs.iter().enumerate() {
-            let arg_type: &AcornType = &function_type.arg_types[i];
-            let arg_value = self.evaluate_value_with_stack(stack, project, arg_expr, None)?;
-            if !arg_type.match_instance(&arg_value.get_type(), &mut mapping) {
-                return Err(arg_expr.error(&format!(
-                    "expected type {}, but got {}",
-                    arg_type,
-                    arg_value.get_type()
-                )));
-            }
-            args.push(arg_value);
-        }
-
-        // Resolve the instance type using declaration names before keeping ordered actuals
-        let mut params = vec![];
-        for param_name in &unresolved.params {
-            match mapping.get(param_name) {
-                Some(t) => params.push((param_name.clone(), t.clone())),
-                None => {
-                    return Err(
-                        source.error(&format!("parameter {} could not be inferred", param_name))
-                    )
-                }
-            }
-        }
-
-        let instance_type = unresolved.generic_type.instantiate(&params);
-        let actuals = params.into_iter().map(|(_, actual)| actual).collect();
-        let instance_fn = AcornValue::new_constant(
-            unresolved.module_id,
-            unresolved.name,
-            actuals,
-            instance_type,
-        );
-        let value = AcornValue::new_apply(instance_fn, args);
-        check_type(source, expected_type, &value.get_type())?;
-        Ok(value)
+        let args = arg_exprs
+            .iter()
+            .map(|expr| self.evaluate_value_with_stack(stack, project, expr, None))
+            .collect::<compilation::Result<Vec<_>>>()?;
+        self.resolve_function(source, unresolved, args, &arg_exprs, expected_type)
     }
 
     // Evaluate a completed value; unresolved declarations cannot enter nested proof expressions.
