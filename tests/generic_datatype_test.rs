@@ -51,3 +51,20 @@ fn parameterized_numerals_reject_without_erasing_actuals() {
         .term_from_value(&value, false)
         .is_err());
 }
+
+#[test]
+fn pending_type_declarations_require_their_exact_arity() {
+    use venticorn::binding_map::BindingMap;
+    use venticorn::module::FIRST_NORMAL;
+    let mut bindings = BindingMap::new(FIRST_NORMAL);
+    bindings.add_potential_type("Pair", 2);
+    bindings.add_data_type("Nat");
+    bindings.assert_type_ok("Pair<Bool, Nat>");
+    bindings.assert_type_ok("Pair<Nat, Bool>");
+    bindings.assert_type_ok("Pair<Pair<Bool, Nat>, (Bool -> Bool) -> Bool>");
+    bindings.assert_type_bad("Pair");
+    bindings.assert_type_bad("Pair<Bool>");
+    bindings.assert_type_bad("Pair<Bool, Bool, Bool>");
+    bindings.assert_type_bad("Bool<Bool>");
+    bindings.assert_type_bad("Pair(Bool, Bool)");
+}

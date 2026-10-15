@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
-use crate::acorn_type::{AcornType, TypeClass};
+use crate::acorn_type::{AcornType, PotentialType, TypeClass, UnresolvedType};
 use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
@@ -68,7 +68,7 @@ pub struct BindingMap {
     module: ModuleId,
 
     // Maps the name of a type to the type object.
-    type_names: BTreeMap<String, AcornType>,
+    type_names: BTreeMap<String, PotentialType>,
 
     // Maps the type object to the name of a type.
     reverse_type_names: HashMap<AcornType, String>,
@@ -297,16 +297,31 @@ impl BindingMap {
     }
 
     fn insert_type_name(&mut self, name: String, acorn_type: AcornType) {
-        if self.name_in_use(&name) {
-            panic!("type name {} already bound", name);
+        assert!(!self.name_in_use(&name), "type name {} already bound", name);
+        self.reverse_type_names
+            .entry(acorn_type.clone())
+            .or_insert_with(|| name.clone());
+        self.type_names
+            .insert(name, PotentialType::Resolved(acorn_type));
+    }
+
+    // A generic declaration is not a usable type until all ordered actuals are supplied.
+    pub fn add_potential_type(&mut self, name: &str, num_params: usize) -> PotentialType {
+        if num_params == 0 {
+            return PotentialType::Resolved(self.add_data_type(name));
         }
-        // There can be multiple names for a type.
-        // If we already have a name for the reverse lookup, we don't overwrite it.
-        if !self.reverse_type_names.contains_key(&acorn_type) {
-            self.reverse_type_names
-                .insert(acorn_type.clone(), name.clone());
-        }
-        self.type_names.insert(name, acorn_type);
+        assert!(!self.name_in_use(name), "type name {} already bound", name);
+        let potential = PotentialType::Unresolved(UnresolvedType {
+            module_id: self.module,
+            name: name.into(),
+            num_params,
+        });
+        self.type_names.insert(name.into(), potential.clone());
+        potential
+    }
+
+    pub fn get_potential_type_for_name(&self, name: &str) -> Option<&PotentialType> {
+        self.type_names.get(name)
     }
 
     // Adds a new data type to the binding map.
@@ -403,7 +418,10 @@ impl BindingMap {
 
     // Gets the type for a type name, not for an identifier.
     pub fn get_type_for_name(&self, type_name: &str) -> Option<&AcornType> {
-        self.type_names.get(type_name)
+        match self.type_names.get(type_name) {
+            Some(PotentialType::Resolved(t)) => Some(t),
+            _ => None,
+        }
     }
 
     pub fn has_type_name(&self, type_name: &str) -> bool {
@@ -497,9 +515,10 @@ impl BindingMap {
     // Data types that come from type parameters get removed when they go out of scope.
     pub fn remove_data_type(&mut self, name: &str) {
         match self.type_names.remove(name) {
-            Some(t) => {
+            Some(PotentialType::Resolved(t)) => {
                 self.reverse_type_names.remove(&t);
             }
+            Some(PotentialType::Unresolved(_)) => {}
             None => panic!("removing data type {} which is already not present", name),
         }
     }
@@ -681,7 +700,7 @@ impl BindingMap {
                 continue;
             }
             if importing
-                && !matches!(self.type_names.get(name), Some(AcornType::Data(module, canonical, _)) if *module == self.module && canonical == name)
+                && !matches!(self.type_names.get(name), Some(PotentialType::Resolved(AcornType::Data(module, canonical, _))) if *module == self.module && canonical == name)
             {
                 continue;
             }
@@ -716,6 +735,20 @@ impl BindingMap {
         project: &Project,
         expression: &Expression,
     ) -> compilation::Result<AcornType> {
+        match self.evaluate_potential_type(project, expression)? {
+            PotentialType::Resolved(t) => Ok(t),
+            PotentialType::Unresolved(t) => Err(expression.error(&format!(
+                "type {} requires {} type parameters",
+                t.name, t.num_params
+            ))),
+        }
+    }
+
+    pub fn evaluate_potential_type(
+        &self,
+        project: &Project,
+        expression: &Expression,
+    ) -> compilation::Result<PotentialType> {
         match expression {
             Expression::Singleton(token) => {
                 if token.token_type == TokenType::Axiom {
@@ -738,18 +771,35 @@ impl BindingMap {
                         arg_types.push(self.evaluate_type(project, arg_expr)?);
                     }
                     let return_type = self.evaluate_type(project, right)?;
-                    Ok(AcornType::new_functional(arg_types, return_type))
+                    Ok(PotentialType::Resolved(AcornType::new_functional(
+                        arg_types,
+                        return_type,
+                    )))
                 }
                 TokenType::Dot => {
                     let entity = self.evaluate_entity(&mut Stack::new(), project, expression)?;
-                    entity.expect_type(token)
+                    Ok(PotentialType::Resolved(entity.expect_type(token)?))
                 }
                 _ => Err(token.error("unexpected binary operator in type expression")),
             },
-            Expression::Apply(left, _) => {
-                Err(left.error("unexpected function application in type expression"))
+            Expression::Apply(left, params) => {
+                let Expression::Grouping(opening, inner, _) = params.as_ref() else {
+                    return Err(params.error("expected type parameters in type application"));
+                };
+                if opening.token_type != TokenType::LessThan {
+                    return Err(opening.error("expected '<' for type parameters"));
+                }
+                let actuals = inner
+                    .flatten_comma_separated_list()
+                    .into_iter()
+                    .map(|arg| self.evaluate_type(project, arg))
+                    .collect::<compilation::Result<Vec<_>>>()?;
+                let potential = self.evaluate_potential_type(project, left)?;
+                Ok(PotentialType::Resolved(
+                    potential.resolve(actuals, expression)?,
+                ))
             }
-            Expression::Grouping(_, e, _) => self.evaluate_type(project, e),
+            Expression::Grouping(_, e, _) => self.evaluate_potential_type(project, e),
             Expression::Binder(token, _, _, _) | Expression::IfThenElse(token, _, _, _, _) => {
                 Err(token.error("unexpected token in type expression"))
             }
