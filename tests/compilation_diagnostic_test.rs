@@ -325,3 +325,12 @@ fn terminal_multiline_diagnostics_highlight_only_the_first_line_suffix() {
         "bad operation:\n\tleft +\n\t^^^^^^\n"
     );
 }
+
+#[test]
+fn empty_expression_errors_point_to_the_consumed_terminator() {
+    assert_diagnostic(
+        "let empty: Bool = ()\nlet next: Bool = true",
+        ")",
+        "expected an expression here",
+    );
+}

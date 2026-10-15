@@ -79,3 +79,33 @@ fn malformed_type_lists_fail_without_panicking() {
     }
     assert!(!env.bindings.has_identifier("bad"));
 }
+
+#[test]
+fn comparisons_of_qualified_calls_do_not_look_like_type_arguments() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        type Nat: axiom
+        class Nat {
+            let 0: Nat = axiom
+            let 1: Nat = axiom
+            let from_bool: Bool -> Nat = axiom
+            define lt(self, other: Nat) -> Bool { axiom }
+        }
+        theorem comparison {
+            Nat.from_bool(false) < Nat.from_bool(true)
+        }
+        "#,
+    );
+    for source in [
+        "Nat.from_bool(false) < Nat.from_bool(true)",
+        "Nat.from_bool(false)<Nat.from_bool(true)",
+    ] {
+        let Expression::Binary(left, token, right) = parse(source) else {
+            panic!("expected a comparison: {source}");
+        };
+        assert_eq!(token.token_type, TokenType::LessThan);
+        assert!(matches!(*left, Expression::Apply(..)));
+        assert!(matches!(*right, Expression::Apply(..)));
+    }
+}
