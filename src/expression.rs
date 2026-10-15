@@ -341,18 +341,29 @@ impl Expression {
         answer
     }
 
-    // Generates a comma-separated grouping
-    pub fn generate_grouping(mut exprs: Vec<Expression>) -> Expression {
-        assert_ne!(exprs.len(), 0);
-        let mut answer = exprs.remove(0);
-        for e in exprs {
-            answer = Expression::Binary(Box::new(answer), TokenType::Comma.generate(), Box::new(e));
+    fn generate_delimited(exprs: Vec<Expression>, left: TokenType, right: TokenType) -> Expression {
+        let mut expressions = exprs.into_iter();
+        let mut answer = expressions
+            .next()
+            .expect("a grouping requires an expression");
+        for expression in expressions {
+            answer = Expression::Binary(
+                Box::new(answer),
+                TokenType::Comma.generate(),
+                Box::new(expression),
+            );
         }
-        Expression::Grouping(
-            TokenType::LeftParen.generate(),
-            Box::new(answer),
-            TokenType::RightParen.generate(),
-        )
+        Expression::Grouping(left.generate(), Box::new(answer), right.generate())
+    }
+
+    // Generates a comma-separated grouping in parentheses.
+    pub fn generate_grouping(exprs: Vec<Expression>) -> Expression {
+        Self::generate_delimited(exprs, TokenType::LeftParen, TokenType::RightParen)
+    }
+
+    // Generates a complete ordered type-argument list.
+    pub fn generate_type_arguments(exprs: Vec<Expression>) -> Expression {
+        Self::generate_delimited(exprs, TokenType::LessThan, TokenType::GreaterThan)
     }
 
     // Generates prefix notation without changing the operand's grouping.
