@@ -173,3 +173,69 @@ fn generic_theorem_signatures_reject_outer_captures_before_binding() {
     let mut env = Environment::new_test();
     env.add("theorem outer<A> { true } by {\n theorem inner(x: A) { x = x }\n define identity(x: A) -> A { x }\n}");
 }
+
+#[test]
+fn typed_application_checks_both_resolved_and_pending_heads() {
+    use venticorn::acorn_value::AcornValue;
+    use venticorn::binding_map::{BindingMap, PotentialValue};
+    use venticorn::module::FIRST_NORMAL;
+    use venticorn::token::TokenType;
+    let mut bindings = BindingMap::new(FIRST_NORMAL);
+    let token = TokenType::Identifier.new_token("call");
+    let ordinary = AcornValue::new_constant(
+        FIRST_NORMAL,
+        "plain".into(),
+        vec![],
+        AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
+    );
+    assert!(bindings
+        .apply_potential(
+            &token,
+            PotentialValue::Resolved(ordinary.clone()),
+            vec![AcornValue::Bool(true)],
+            Some(&AcornType::Bool)
+        )
+        .is_ok());
+    assert!(bindings
+        .apply_potential(
+            &token,
+            PotentialValue::Resolved(ordinary.clone()),
+            vec![AcornValue::Bool(true), AcornValue::Bool(true)],
+            None
+        )
+        .is_err());
+    assert!(bindings
+        .apply_potential(
+            &token,
+            PotentialValue::Resolved(ordinary),
+            vec![AcornValue::Variable(0, data("Nat", vec![]))],
+            None
+        )
+        .is_err());
+    let t = AcornType::Variable("T".into(), None);
+    bindings.add_constant(
+        "id",
+        vec!["T".into()],
+        AcornType::new_functional(vec![t.clone()], t),
+        None,
+        None,
+    );
+    for args in [vec![], vec![AcornValue::Bool(true), AcornValue::Bool(true)]] {
+        assert!(bindings
+            .apply_potential(
+                &token,
+                bindings.get_constant_value("id").unwrap(),
+                args,
+                None
+            )
+            .is_err());
+    }
+    assert!(bindings
+        .apply_potential(
+            &token,
+            bindings.get_constant_value("id").unwrap(),
+            vec![AcornValue::Bool(true)],
+            Some(&data("Nat", vec![]))
+        )
+        .is_err());
+}
