@@ -212,6 +212,7 @@ enum NamedEntity {
     Type(AcornType),
     Module(ModuleId),
     Unresolved(UnresolvedConstant),
+    UnresolvedType(UnresolvedType),
 }
 
 impl NamedEntity {
@@ -241,7 +242,7 @@ impl NamedEntity {
                 check_type(source, expected_type, &value.get_type())?;
                 Ok(value)
             }
-            NamedEntity::Type(_) => {
+            NamedEntity::Type(_) | NamedEntity::UnresolvedType(_) => {
                 Err(source.error("name refers to a type but we expected a value"))
             }
             NamedEntity::Module(_) => {
@@ -259,6 +260,10 @@ impl NamedEntity {
                 Err(source.error("name refers to a value but we expected a type"))
             }
             NamedEntity::Type(t) => Ok(t),
+            NamedEntity::UnresolvedType(t) => Err(source.error(&format!(
+                "type {} requires {} type parameters",
+                t.name, t.num_params
+            ))),
             NamedEntity::Module(_) => {
                 Err(source.error("name refers to a module but we expected a type"))
             }
@@ -653,6 +658,13 @@ impl BindingMap {
             }
             return match entity? {
                 NamedEntity::Unresolved(_) => Some(vec![]),
+                NamedEntity::UnresolvedType(t) => self.get_member_completions(
+                    project,
+                    &AcornType::Data(t.module_id, t.name, vec![]),
+                    partial,
+                    None,
+                    visible,
+                ),
                 NamedEntity::Module(module) => project
                     .get_bindings(module)?
                     .get_completions(project, partial, true),
@@ -778,7 +790,10 @@ impl BindingMap {
                 }
                 TokenType::Dot => {
                     let entity = self.evaluate_entity(&mut Stack::new(), project, expression)?;
-                    Ok(PotentialType::Resolved(entity.expect_type(token)?))
+                    match entity {
+                        NamedEntity::UnresolvedType(t) => Ok(PotentialType::Unresolved(t)),
+                        other => Ok(PotentialType::Resolved(other.expect_type(token)?)),
+                    }
                 }
                 _ => Err(token.error("unexpected binary operator in type expression")),
             },
@@ -1140,7 +1155,10 @@ impl BindingMap {
                 Ok(NamedEntity::Value(value))
             }
             Some(NamedEntity::Type(t)) => {
-                if let AcornType::Data(module, type_name, _) = t {
+                if let AcornType::Data(module, type_name, actuals) = t {
+                    if !actuals.is_empty() {
+                        return Err(name_token.error("member lookup on specialized type aliases is not supported; use the generic type name with explicit arguments"));
+                    }
                     if name_token.token_type == TokenType::Numeral {
                         let value = self.evaluate_number_with_type(
                             name_token,
@@ -1163,6 +1181,12 @@ impl BindingMap {
                     Err(name_token.error("expected a data type"))
                 }
             }
+            Some(NamedEntity::UnresolvedType(t)) => self
+                .evaluate_class_variable(project, t.module_id, &t.name, name)
+                .map(PotentialValue::to_named_entity)
+                .ok_or_else(|| {
+                    name_token.error(&format!("{} has no member named '{}'", t.name, name))
+                }),
             Some(NamedEntity::Module(module)) => {
                 if let Some(bindings) = project.get_bindings(module) {
                     bindings.evaluate_name(name_token, project, &Stack::new(), None)
@@ -1179,8 +1203,13 @@ impl BindingMap {
                                 None => Err(name_token.error("unknown module")),
                             }
                         } else if self.has_type_name(name) {
-                            match self.get_type_for_name(name) {
-                                Some(t) => Ok(NamedEntity::Type(t.clone())),
+                            match self.get_potential_type_for_name(name) {
+                                Some(PotentialType::Resolved(t)) => {
+                                    Ok(NamedEntity::Type(t.clone()))
+                                }
+                                Some(PotentialType::Unresolved(t)) => {
+                                    Ok(NamedEntity::UnresolvedType(t.clone()))
+                                }
                                 None => Err(name_token.error("unknown type")),
                             }
                         } else if let Some((i, t)) = stack.get(name) {
@@ -1351,6 +1380,7 @@ impl BindingMap {
                 Ok(())
             }
             NamedEntity::Unresolved(_) => Err(name_token.error("direct imports of generic constants are not supported; import the module and use a qualified name")),
+            NamedEntity::UnresolvedType(_) => Err(name_token.error("direct imports of generic types are not supported; import the module and use a qualified name")),
             NamedEntity::Module(_) => Err(name_token.error("cannot import modules indirectly")),
         }
     }
