@@ -1091,11 +1091,21 @@ impl Project {
         let value = env
             .bindings
             .evaluate_value(self, &expression, None)
-            .expect("could not evaluate");
+            .unwrap_or_else(|error| panic!("could not evaluate {input}: {error}"));
         let output = env
             .bindings
             .value_to_code(&value)
-            .expect("could not convert to code");
+            .unwrap_or_else(|error| panic!("could not generate code for {input}: {error}"));
+        let replay = env
+            .bindings
+            .evaluate_value(self, &Expression::expect_value(&output), None)
+            .unwrap_or_else(|error| {
+                panic!("generated {output} from {input}, but could not evaluate it: {error}")
+            });
+        assert_eq!(
+            value, replay,
+            "generated code changed the value: {input} -> {output}"
+        );
 
         if output != expected {
             panic!(
