@@ -320,6 +320,13 @@ impl BindingMap {
         data_type
     }
 
+    // Introduce a fixed but otherwise unknown type within a proof scope.
+    pub fn add_arbitrary_type(&mut self, name: &str) -> AcornType {
+        let arbitrary = AcornType::Arbitrary(name.to_string(), None);
+        self.insert_type_name(name.to_string(), arbitrary.clone());
+        arbitrary
+    }
+
     // Adds a new type name that's an alias for an existing type
     pub fn add_type_alias(&mut self, name: &str, acorn_type: AcornType) {
         if self.name_in_use(name) {
