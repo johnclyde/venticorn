@@ -515,7 +515,7 @@ impl Expression {
     ) -> Result<(Expression, Token)> {
         let (partials, terminator) = parse_partial_expressions(tokens, expected_type, termination)?;
         check_partial_expressions(&partials)?;
-        let expression = combine_partial_expressions(partials, expected_type, tokens)?;
+        let expression = combine_partial_expressions(partials, expected_type, &terminator)?;
         Ok((expression, terminator))
     }
 
@@ -897,10 +897,10 @@ fn check_partial_expressions(partials: &VecDeque<PartialExpression>) -> Result<(
 fn combine_partial_expressions(
     mut partials: VecDeque<PartialExpression>,
     expected_type: ExpressionType,
-    iter: &mut TokenIter,
+    source: &dyn ErrorSource,
 ) -> Result<Expression> {
     if partials.len() == 0 {
-        return Err(iter.error("expected an expression here"));
+        return Err(source.error("expected an expression here"));
     }
     if partials.len() == 1 {
         let partial = partials.pop_back().unwrap();
@@ -918,7 +918,11 @@ fn combine_partial_expressions(
             if let PartialExpression::Unary(token) = partial {
                 return Ok(Expression::Unary(
                     token,
-                    Box::new(combine_partial_expressions(partials, expected_type, iter)?),
+                    Box::new(combine_partial_expressions(
+                        partials,
+                        expected_type,
+                        source,
+                    )?),
                 ));
             }
             return Err(partial.error("expected unary operator"));
@@ -929,13 +933,13 @@ fn combine_partial_expressions(
 
         return match partial {
             PartialExpression::Binary(token) => {
-                let left = combine_partial_expressions(partials, expected_type, iter)?;
-                let right = combine_partial_expressions(right_partials, expected_type, iter)?;
+                let left = combine_partial_expressions(partials, expected_type, source)?;
+                let right = combine_partial_expressions(right_partials, expected_type, source)?;
                 Ok(Expression::Binary(Box::new(left), token, Box::new(right)))
             }
             PartialExpression::ImplicitApply(_) => {
-                let left = combine_partial_expressions(partials, expected_type, iter)?;
-                let right = combine_partial_expressions(right_partials, expected_type, iter)?;
+                let left = combine_partial_expressions(partials, expected_type, source)?;
+                let right = combine_partial_expressions(right_partials, expected_type, source)?;
                 Ok(Expression::Apply(Box::new(left), Box::new(right)))
             }
             _ => Err(partial.error("expected binary operator")),
