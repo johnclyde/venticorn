@@ -100,10 +100,10 @@ impl Block {
     ) -> compilation::Result<Block> {
         let mut subenv = env.child(first_line, body.is_none());
 
-        // Inside the block, the type parameters are opaque data types.
+        // Inside the block, each declared type parameter is fixed but arbitrary.
         let param_pairs: Vec<(String, AcornType)> = type_params
             .iter()
-            .map(|s| (s.clone(), subenv.bindings.add_data_type(&s)))
+            .map(|s| (s.clone(), subenv.bindings.add_arbitrary_type(&s)))
             .collect();
 
         // Inside the block, the arguments are constants.
@@ -315,11 +315,10 @@ impl Block {
                 None
             }
         });
-        let replaced = replaced.parametrize(self.env.module_id, &self.type_params);
-        Ok(AcornValue::new_forall(
-            forall_types,
-            AcornValue::new_exists(exists_types, replaced),
-        ))
+        Ok(
+            AcornValue::new_forall(forall_types, AcornValue::new_exists(exists_types, replaced))
+                .parametrize(self.env.module_id, &self.type_params),
+        )
     }
 
     // Returns a claim usable in the outer environment, and a range where it comes from.

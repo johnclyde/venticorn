@@ -17,3 +17,26 @@ fn generic_structure_syntax_round_trips() {
         assert!(Statement::parse_str(source).is_err(), "{source}");
     }
 }
+
+#[test]
+fn proof_scope_generalizes_only_its_declared_parameters() {
+    use venticorn::acorn_type::AcornType;
+    use venticorn::acorn_value::AcornValue;
+    let outer = AcornType::Arbitrary("Outer".into(), None);
+    let inner = AcornType::Arbitrary("Inner".into(), None);
+    let value = AcornValue::ForAll(
+        vec![outer.clone(), inner.clone()],
+        Box::new(AcornValue::Bool(true)),
+    );
+    let exported = value.parametrize(10, &["Inner".into()]);
+    assert_eq!(
+        exported,
+        AcornValue::ForAll(
+            vec![outer, AcornType::Variable("Inner".into(), None)],
+            Box::new(AcornValue::Bool(true))
+        )
+    );
+    let mut env = venticorn::environment::Environment::new_test();
+    env.add("theorem reflexive<T>(value: T) { value = value } by { value = value }");
+    assert!(!env.bindings.has_type_name("T"));
+}

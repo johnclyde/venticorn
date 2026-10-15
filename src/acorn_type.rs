@@ -239,9 +239,13 @@ impl AcornType {
     }
 
     // parametrize should only be called on concrete types.
-    // It replaces every data type with the given module and name with a type parameter.
+    // It replaces only the named local data types or arbitrary parameters.
+    // Enclosing arbitrary types stay fixed when exporting an inner proof scope.
     pub fn parametrize(&self, module_id: ModuleId, type_names: &[String]) -> AcornType {
         match self {
+            AcornType::Arbitrary(name, class) if type_names.contains(name) => {
+                AcornType::Variable(name.clone(), class.clone())
+            }
             AcornType::Function(function_type) => AcornType::new_functional(
                 function_type
                     .arg_types
