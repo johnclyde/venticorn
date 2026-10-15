@@ -221,11 +221,11 @@ impl Monomorphizer {
     // Make sure that we are generating any monomorphizations that are used in this value.
     pub fn add_monomorphs(&mut self, value: &AcornValue) {
         let mut monomorphs = vec![];
-        value.find_constants(&|c| !c.is_generic(), &mut monomorphs);
+        value.find_constants(
+            &|c| !c.params.is_empty() && !c.is_generic(),
+            &mut monomorphs,
+        );
         for c in monomorphs {
-            if c.params.is_empty() {
-                continue;
-            }
             self.monomorphize_matching_facts(
                 &c.key(),
                 &ConstantParams::new(c.type_arguments().cloned().collect()),

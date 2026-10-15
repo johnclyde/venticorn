@@ -183,11 +183,11 @@ impl Prover {
     pub fn set_goal(&mut self, goal_context: &GoalContext) {
         assert!(self.goal.is_none());
 
-        // Add any monomorphic facts needed to match the goal.
-        // We don't need to add the goal as as polymorphic fact since goals themselves
-        // cannot be polymorphic.
-        self.monomorphizer
-            .add_monomorphs(&goal_context.goal.value());
+        // Block goals already use concrete types from their local environment.
+        // Use that same value for fact demand and for the counterfactual assumption.
+        let goal_value = goal_context.goal.value();
+        assert!(!goal_value.is_generic());
+        self.monomorphizer.add_monomorphs(&goal_value);
         for fact in self.monomorphizer.take_facts() {
             self.add_monomorphic_fact(fact);
         }
@@ -195,7 +195,7 @@ impl Prover {
         match &goal_context.goal {
             Goal::Prove(prop) => {
                 // Negate the goal and add it as a counterfactual assumption.
-                let (hypo, counter) = prop.value.to_arbitrary().negate_goal();
+                let (hypo, counter) = goal_value.clone().negate_goal();
                 if let Some(hypo) = hypo {
                     self.add_monomorphic_fact(Fact::new(
                         prop.with_value(hypo),
