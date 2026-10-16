@@ -75,7 +75,7 @@ impl GoalContext {
         last_line: u32,
     ) -> GoalContext {
         let name = match &goal {
-            Goal::Prove(proposition) => match proposition.name() {
+            Goal::Prove(proposition) => match proposition.theorem_name() {
                 Some(name) => name.to_string(),
                 None => env
                     .bindings
