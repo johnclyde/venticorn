@@ -90,6 +90,12 @@ impl Source {
         }
     }
 
+    // Identity within this loaded project. Convert the module ID to its canonical
+    // ModuleRef before retaining this identity across project reloads.
+    pub fn qualified_name(&self) -> Option<(ModuleId, String)> {
+        self.name().map(|name| (self.module, name))
+    }
+
     pub fn is_axiom(&self) -> bool {
         match self.source_type {
             SourceType::Axiom(_) => true,
