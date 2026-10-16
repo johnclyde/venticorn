@@ -136,8 +136,7 @@ fn pending_generic_names_cannot_create_alias_facts() {
 }
 
 #[test]
-fn generic_imports_have_a_clear_limit_and_qualified_calls_remain_supported() {
-    use venticorn::module::Module;
+fn direct_and_qualified_generic_imports_preserve_resolved_types() {
     use venticorn::project::Project;
     let mut project = Project::new_mock();
     project.mock(
@@ -148,28 +147,20 @@ fn generic_imports_have_a_clear_limit_and_qualified_calls_remain_supported() {
         "/mock/direct.ac",
         "from generic import identity\ntheorem goal { identity(true) = true }",
     );
-    let id = project.load_module_by_name("direct").unwrap();
-    match project.get_module_by_id(id) {
-        Module::Error(error) => assert!(
-            error
-                .message()
-                .contains("direct imports of generic constants are not supported"),
-            "{error}"
-        ),
-        _ => panic!("generic import must be rejected before losing its parameter metadata"),
-    }
     project.mock(
         "/mock/qualified.ac",
         "import generic\ntheorem goal { generic.identity(true) = true }",
     );
-    let id = project.expect_ok("qualified");
-    for node in project.get_env_by_id(id).unwrap().iter_goals() {
-        node.goal_context()
-            .unwrap()
-            .goal
-            .value()
-            .validate()
-            .unwrap();
+    for module in ["direct", "qualified"] {
+        let id = project.expect_ok(module);
+        for node in project.get_env_by_id(id).unwrap().iter_goals() {
+            node.goal_context()
+                .unwrap()
+                .goal
+                .value()
+                .validate()
+                .unwrap();
+        }
     }
 }
 

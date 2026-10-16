@@ -77,7 +77,8 @@ pub struct BindingMap {
     generic_type_aliases: HashMap<UnresolvedType, String>,
 
     // Maps an identifier name to its type.
-    // Has entries for both defined constants and aliases.
+    // Has entries for both defined constants and aliases. Pending generic aliases
+    // retain the signature in declaration parameters, before actuals are supplied.
     identifier_types: BTreeMap<String, AcornType>,
 
     // Maps the name of a constant defined in this scope to information about it.
@@ -90,8 +91,8 @@ pub struct BindingMap {
     // The canonical identifier of a constant is the first place it is defined.
     // There may be other names in this environment that refer to the same thing.
     // When we create an AcornValue, we want to use the canonical name.
-    // The alias -> canonical name mapping is stored here.
-    alias_to_canonical: HashMap<String, (ModuleId, String)>,
+    // Preserve unresolved declarations as well as fully specialized values.
+    aliases: HashMap<String, PotentialValue>,
 
     // Whenever a name from some other scope has a local alias in this one,
     // if we're generating code, we prefer to use the local name.
@@ -316,7 +317,7 @@ impl BindingMap {
             generic_type_aliases: HashMap::new(),
             identifier_types: BTreeMap::new(),
             constants: BTreeMap::new(),
-            alias_to_canonical: HashMap::new(),
+            aliases: HashMap::new(),
             canonical_to_alias: HashMap::new(),
             modules: BTreeMap::new(),
             reverse_modules: HashMap::new(),
@@ -431,19 +432,12 @@ impl BindingMap {
 
     // Look up a constant without treating a pending generic declaration as a proof value.
     pub fn get_constant_value(&self, name: &str) -> Option<PotentialValue> {
-        let constant_type = self.identifier_types.get(name)?.clone();
-
-        // Aliases
-        if let Some((canonical_module, canonical_name)) = self.alias_to_canonical.get(name) {
-            return Some(PotentialValue::Resolved(AcornValue::new_constant(
-                *canonical_module,
-                canonical_name.clone(),
-                vec![],
-                constant_type,
-            )));
+        if let Some(value) = self.aliases.get(name) {
+            return Some(value.clone());
         }
 
         // Constants defined here
+        let constant_type = self.identifier_types.get(name)?.clone();
         let params = self.constants.get(name)?.params.clone();
         if params.is_empty() {
             Some(PotentialValue::Resolved(AcornValue::new_constant(
@@ -567,12 +561,13 @@ impl BindingMap {
         name: &str,
         canonical_module: ModuleId,
         canonical_name: String,
-        acorn_type: AcornType,
+        value: PotentialValue,
     ) {
         if self.name_in_use(name) {
             panic!("cannot alias name {} because it is already bound", name);
         }
-        self.identifier_types.insert(name.to_string(), acorn_type);
+        self.identifier_types
+            .insert(name.to_string(), value.get_type());
         let canonical = (canonical_module, canonical_name);
         if canonical_module != self.module {
             // Prefer this alias locally to using the qualified, canonical name
@@ -580,7 +575,7 @@ impl BindingMap {
                 .entry(canonical.clone())
                 .or_insert(name.to_string());
         }
-        self.alias_to_canonical.insert(name.to_string(), canonical);
+        self.aliases.insert(name.to_string(), value);
     }
 
     pub fn is_constant(&self, name: &str) -> bool {
@@ -772,9 +767,7 @@ impl BindingMap {
             if !visible(name) {
                 continue;
             }
-            if importing
-                && (self.alias_to_canonical.contains_key(name) || self.theorems.contains(name))
-            {
+            if importing && (self.aliases.contains_key(name) || self.theorems.contains(name)) {
                 continue;
             }
             if !name.contains('.') {
@@ -1479,7 +1472,7 @@ impl BindingMap {
                         name_token.text(),
                         ext_module,
                         ext_name.to_string(),
-                        value.get_type(),
+                        PotentialValue::Resolved(value),
                     );
                 } else {
                     return Err(name_token.error("cannot import non-constant values"));
@@ -1490,7 +1483,15 @@ impl BindingMap {
                 self.add_type_alias(&name_token.text(), acorn_type);
                 Ok(())
             }
-            NamedEntity::Unresolved(_) => Err(name_token.error("direct imports of generic constants are not supported; import the module and use a qualified name")),
+            NamedEntity::Unresolved(unresolved) => {
+                self.add_alias(
+                    name_token.text(),
+                    unresolved.module_id,
+                    unresolved.name.clone(),
+                    PotentialValue::Unresolved(unresolved),
+                );
+                Ok(())
+            }
             NamedEntity::UnresolvedType(t) => {
                 self.add_potential_type_alias(name_token.text(), PotentialType::Unresolved(t));
                 Ok(())
@@ -2402,20 +2403,34 @@ impl BindingMap {
     }
 
     // Omit explicit arguments only when this application supplies enough typed
-    // arguments to infer every formal parameter in the local declaration.
+    // arguments to infer every formal parameter in a known declaration.
     fn can_infer_type_arguments(&self, constant: &ConstantInstance, supplied: usize) -> bool {
-        if constant.module_id != self.module {
-            return false;
-        }
-        let Some(info) = self.constants.get(&constant.name) else {
+        let (params, signature) = if constant.module_id == self.module {
+            let Some(info) = self.constants.get(&constant.name) else {
+                return false;
+            };
+            let Some(signature) = self.identifier_types.get(&constant.name) else {
+                return false;
+            };
+            (&info.params, signature)
+        } else {
+            let Some(alias) = self
+                .canonical_to_alias
+                .get(&(constant.module_id, constant.name.clone()))
+            else {
+                return false;
+            };
+            let Some(PotentialValue::Unresolved(declaration)) = self.aliases.get(alias) else {
+                return false;
+            };
+            (&declaration.params, &declaration.generic_type)
+        };
+        let AcornType::Function(function) = signature else {
             return false;
         };
-        let Some(AcornType::Function(function)) = self.identifier_types.get(&constant.name) else {
-            return false;
-        };
-        info.params.len() == constant.params.len()
+        params.len() == constant.params.len()
             && supplied <= function.arg_types.len()
-            && info.params.iter().all(|name| {
+            && params.iter().all(|name| {
                 function
                     .arg_types
                     .iter()
