@@ -31,7 +31,18 @@ fn verify(source: &str, succeeds: bool) {
     if !succeeds {
         assert_eq!(output.status.code(), Some(1), "{stdout}\n{stderr}");
         assert!(
-            stdout.contains("could not be verified"),
+            stdout.contains("Build completed with warnings."),
+            "{stdout}\n{stderr}"
+        );
+        assert!(!stdout.contains("internal error"), "{stdout}\n{stderr}");
+        assert!(
+            [
+                "could not be verified",
+                "stopped after hitting constraints",
+                "timed out after"
+            ]
+            .iter()
+            .any(|reason| stdout.contains(reason)),
             "{stdout}\n{stderr}"
         );
     }

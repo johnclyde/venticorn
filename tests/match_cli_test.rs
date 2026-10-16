@@ -33,7 +33,18 @@ impl TestLibrary {
         if !succeeds {
             assert_eq!(output.status.code(), Some(1), "{stdout}\n{stderr}");
             assert!(
-                stdout.contains("claim could not be verified"),
+                stdout.contains("Build completed with warnings."),
+                "{stdout}\n{stderr}"
+            );
+            assert!(!stdout.contains("internal error"), "{stdout}\n{stderr}");
+            assert!(
+                [
+                    "could not be verified",
+                    "stopped after hitting constraints",
+                    "timed out after"
+                ]
+                .iter()
+                .any(|reason| stdout.contains(&format!("claim {reason}"))),
                 "{stdout}\n{stderr}"
             );
         }

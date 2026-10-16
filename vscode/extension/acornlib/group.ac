@@ -1,0 +1,14 @@
+// This isn't the ideal way to define groups - we need something like typeclasses.
+// But for now it should work.
+type Group: axiom
+
+class Group {
+    let id: Group = axiom
+    define mul(self, other: Group) -> Group {
+        axiom
+    }
+}
+
+axiom associativity(a: Group, b: Group, c: Group) {
+    (a * b) * c = a * (b * c)
+}

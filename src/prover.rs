@@ -62,7 +62,7 @@ pub struct Prover {
     pub error: Option<String>,
 
     // Number of proof steps activated, not counting Factual ones.
-    non_factual_activated: usize,
+    nonfactual_activations: i32,
 
     // The goal of the prover.
     // If this is None, the goal hasn't been set yet.
@@ -126,7 +126,7 @@ impl Prover {
             stop_flags: vec![project.build_stopped.clone()],
             error: None,
             useful_passive: vec![],
-            non_factual_activated: 0,
+            nonfactual_activations: 0,
             goal: None,
         }
     }
@@ -415,7 +415,7 @@ impl Prover {
             "in total, we activated {} proof steps.",
             self.active_set.len()
         );
-        println!("non-factual activations: {}", self.non_factual_activated);
+        println!("non-factual activations: {}", self.nonfactual_activations);
 
         println!("the proof uses {} steps:", proof.all_steps.len());
         for (id, step) in &proof.all_steps {
@@ -452,10 +452,11 @@ impl Prover {
             _ => return None,
         };
 
-        let difficulty = if !self.passive_set.verification_phase {
+        let difficulty = if self.nonfactual_activations > Self::VERIFICATION_LIMIT {
             // Verification mode won't find this proof, so we definitely need a shorter one
             Difficulty::Complicated
-        } else if self.non_factual_activated > 500 {
+        } else if self.nonfactual_activations > 500 {
+            // Arbitrary heuristic
             Difficulty::Intermediate
         } else {
             Difficulty::Simple
@@ -557,7 +558,7 @@ impl Prover {
         };
 
         if step.truthiness != Truthiness::Factual {
-            self.non_factual_activated += 1;
+            self.nonfactual_activations += 1;
         }
 
         if step.clause.is_impossible() {
@@ -603,13 +604,12 @@ impl Prover {
         let (alt_activated_id, generated_steps) = self.active_set.activate(activated_step);
         assert_eq!(activated_id, alt_activated_id);
 
-        let print_limit = 30;
         let len = generated_steps.len();
-        if self.verbose && len > 0 {
+        if self.verbose {
             println!(
-                "generated {} new clauses{}:",
+                "  generated {} new clause{}",
                 len,
-                if len > print_limit { ", eg" } else { "" }
+                if len == 1 { "" } else { "s" }
             );
         }
         let mut new_steps = vec![];
@@ -646,6 +646,9 @@ impl Prover {
         false
     }
 
+    // The activation_limit to use for verification mode.
+    const VERIFICATION_LIMIT: i32 = 2000;
+
     // Searches with a short duration.
     // Designed to be called multiple times in succession.
     // The time-based limit is set low, so that it feels interactive.
@@ -657,33 +660,38 @@ impl Prover {
     // The time-based limit is set high enough so that hopefully it will not apply,
     // because we don't want the result of verification to be machine-dependent.
     pub fn verification_search(&mut self) -> Outcome {
-        self.search_for_contradiction(2000, 5.0, true)
+        self.search_for_contradiction(Self::VERIFICATION_LIMIT, 5.0, false)
     }
 
-    // A single fast search, intended for unit testing.
+    // A fast search, for testing.
     pub fn quick_search(&mut self) -> Outcome {
         self.search_for_contradiction(500, 0.1, false)
     }
 
-    // A restricted verification search, intended for unit testing.
+    // Compatibility helper: this intentionally remains shallow-only, unlike production verification.
     pub fn quick_verification_search(&mut self) -> Outcome {
+        self.quick_shallow_search()
+    }
+
+    // A fast search that only uses shallow steps, for testing.
+    pub fn quick_shallow_search(&mut self) -> Outcome {
         self.search_for_contradiction(500, 0.1, true)
     }
 
-    // When 'verification' flag is set, the prover doesn't have to do arbitrarily deeply.
-    // It is allowed to finish as soon as it finishes checking all the verification steps.
+    // Stop at the nonfactual activation budget (Constrained), time limit (Timeout),
+    // or the shallow-step boundary (Exhausted when shallow_only is set).
     pub fn search_for_contradiction(
         &mut self,
-        size: i32,
+        activation_limit: i32,
         seconds: f32,
-        verification: bool,
+        shallow_only: bool,
     ) -> Outcome {
         if self.error.is_some() {
             return Outcome::Error;
         }
         let start_time = std::time::Instant::now();
         loop {
-            if verification && !self.passive_set.verification_phase {
+            if shallow_only && !self.passive_set.all_shallow {
                 return Outcome::Exhausted;
             }
             if self.activate_next() {
@@ -707,9 +715,9 @@ impl Prover {
                     return Outcome::Interrupted;
                 }
             }
-            if self.active_set.len() >= size as usize {
+            if self.nonfactual_activations >= activation_limit {
                 if self.verbose {
-                    println!("active set size hit the limit: {}", self.active_set.len());
+                    println!("activations hit the limit: {}", activation_limit);
                 }
                 return Outcome::Constrained;
             }
@@ -717,6 +725,7 @@ impl Prover {
             if elapsed >= seconds {
                 if self.verbose {
                     println!("active set size: {}", self.active_set.len());
+                    println!("nonfactual activations: {}", self.nonfactual_activations);
                     println!("prover hit time limit after {} seconds", elapsed);
                 }
                 return Outcome::Timeout;
