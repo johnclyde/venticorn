@@ -8,7 +8,7 @@ use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
 use crate::compilation::{self, Error, ErrorSource};
-use crate::expression::{Declaration, Expression, Terminator};
+use crate::expression::{Declaration, Expression, Terminator, TypeParam};
 use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::project::Project;
 use crate::termination_checker::TerminationChecker;
@@ -2056,6 +2056,14 @@ impl BindingMap {
         Ok(PotentialValue::Resolved(value))
     }
 
+    fn evaluate_typeclass(
+        &self,
+        _project: &Project,
+        expression: &Expression,
+    ) -> compilation::Result<Typeclass> {
+        Err(expression.error("typeclass bounds are not supported yet"))
+    }
+
     // Evaluate an expression that creates a new scope for the value inside it.
     // It has declarations, introducing new variables and types that exist just for this value,
     // and it has the value itself, which can use those declarations.
@@ -2083,7 +2091,7 @@ impl BindingMap {
     pub fn evaluate_scoped_value(
         &mut self,
         project: &Project,
-        type_param_tokens: &[Token],
+        type_params: &[TypeParam],
         args: &[Declaration],
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
@@ -2099,7 +2107,7 @@ impl BindingMap {
         let mut scope = self.clone();
         scope.evaluate_scoped_value_in_scope(
             project,
-            type_param_tokens,
+            type_params,
             args,
             value_type_expr,
             value_expr,
@@ -2111,7 +2119,7 @@ impl BindingMap {
     fn evaluate_scoped_value_in_scope(
         &mut self,
         project: &Project,
-        type_param_tokens: &[Token],
+        type_params: &[TypeParam],
         args: &[Declaration],
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
@@ -2126,12 +2134,19 @@ impl BindingMap {
     )> {
         // Bind all the type parameters and arguments
         let mut type_param_names: Vec<String> = vec![];
-        for token in type_param_tokens {
-            if self.name_in_use(token.text()) {
-                return Err(token.error("cannot redeclare a type in a generic type list"));
+        for param in type_params {
+            if self.name_in_use(param.name.text()) {
+                return Err(param
+                    .name
+                    .error("cannot redeclare a type in a generic type list"));
             }
-            self.add_type_variable(token.text(), None);
-            type_param_names.push(token.text().to_string());
+            let class = param
+                .typeclass
+                .as_ref()
+                .map(|expression| self.evaluate_typeclass(project, expression))
+                .transpose()?;
+            self.add_type_variable(param.name.text(), class);
+            type_param_names.push(param.name.text().to_string());
         }
         let mut stack = Stack::new();
         let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_type)?;
