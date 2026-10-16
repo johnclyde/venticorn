@@ -56,7 +56,7 @@ pub struct CachedModule {
 }
 
 impl CachedModule {
-    // Learned only in this process. Persistent result records do not contain hints.
+    // Advisory source selections retained from completed proofs.
     pub fn theorem_premises(&self) -> &BTreeMap<String, PremiseSet> {
         &self.theorem_premises
     }
@@ -81,6 +81,8 @@ impl CachedModule {
 #[derive(Debug, Default, Clone)]
 pub struct BuildCache {
     modules: HashMap<ModuleRef, CachedModule>,
+    // Disk advice is not a completed module and cannot satisfy any reuse check.
+    advisory_premises: HashMap<ModuleRef, BTreeMap<String, PremiseSet>>,
 }
 
 impl BuildCache {
@@ -90,6 +92,25 @@ impl BuildCache {
 
     pub fn get(&self, module: &ModuleRef) -> Option<&CachedModule> {
         self.modules.get(module)
+    }
+
+    pub(crate) fn seed_advisory_premises(
+        &mut self,
+        module: ModuleRef,
+        premises: BTreeMap<String, PremiseSet>,
+    ) {
+        self.advisory_premises.insert(module, premises);
+    }
+
+    pub(crate) fn theorem_premises(
+        &self,
+        module: &ModuleRef,
+        theorem: &str,
+    ) -> Option<&PremiseSet> {
+        self.modules
+            .get(module)
+            .and_then(|cached| cached.theorem_premises.get(theorem))
+            .or_else(|| self.advisory_premises.get(module)?.get(theorem))
     }
 
     // Only finalized build snapshots are published. Entries for other targets remain valid.

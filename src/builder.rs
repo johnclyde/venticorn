@@ -297,6 +297,14 @@ impl<'a> Builder<'a> {
         &self.old_cache
     }
 
+    pub(crate) fn seed_advisory_premises(
+        &mut self,
+        module: ModuleRef,
+        premises: BTreeMap<String, PremiseSet>,
+    ) {
+        self.old_cache.seed_advisory_premises(module, premises);
+    }
+
     // Union all accepted/reused goals of a theorem. Missing metadata cannot be
     // repaired by a later goal: publishing that partial union would lose premises.
     pub(crate) fn record_theorem_premises(&mut self, theorem: &str, premises: Option<PremiseSet>) {

@@ -1,4 +1,5 @@
 // Modified for Venticorn: bounded, finalized verification metadata on disk.
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -9,10 +10,12 @@ use sha2::{Digest, Sha256};
 
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp};
+use crate::build_cache::PremiseSet;
 use crate::goal::{Goal, GoalContext};
 use crate::module::{ModuleHash, ModuleId, ModuleRef, FIRST_NORMAL};
 
 const MAX_RECORD_BYTES: u64 = 16 * 1024;
+const SCHEMA: u32 = 2;
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 // Existing constructors retain in-process reuse. Disk access is explicitly enabled.
@@ -45,6 +48,31 @@ pub(crate) struct PersistentCache {
     writable: bool,
 }
 
+// Only canonical identities of currently loaded modules are created or resolved.
+// Deserializing a File identity never accesses that path.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub(crate) enum HintModule {
+    Name(String),
+    File(PathBuf),
+}
+
+impl HintModule {
+    pub(crate) fn from_loaded(module: &ModuleRef) -> Option<Self> {
+        match module {
+            ModuleRef::Name(name) => Some(Self::Name(name.clone())),
+            ModuleRef::File(path) => Some(Self::File(path.canonicalize().ok()?)),
+            ModuleRef::Anonymous => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HintGroup {
+    module: HintModule,
+    names: BTreeSet<String>,
+}
+
 // No old values or ranges are trusted as parsed proof obligations. A matching
 // record is promoted using this process's fresh goals and complete line hashes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +85,75 @@ pub(crate) struct DiskRecord {
     source: [u8; 32],
     dependencies: [u8; 32],
     goal_policy: [u8; 32],
+    hints: BTreeMap<String, Vec<HintGroup>>,
+}
+
+impl DiskRecord {
+    // Guidance must never affect whether old successful results match current goals.
+    fn same_result_identity(&self, other: &Self) -> bool {
+        self.schema == other.schema
+            && self.checker == other.checker
+            && self.root == other.root
+            && self.module == other.module
+            && self.source == other.source
+            && self.dependencies == other.dependencies
+            && self.goal_policy == other.goal_policy
+    }
+
+    pub(crate) fn with_premises(mut self, premises: &BTreeMap<String, PremiseSet>) -> Self {
+        let mut size = 0usize;
+        for (theorem, modules) in premises {
+            size = size.saturating_add(theorem.len().saturating_add(8));
+            if size > MAX_RECORD_BYTES as usize {
+                self.hints.clear();
+                return self;
+            }
+            let mut groups = vec![];
+            for (module, names) in modules {
+                let Some(module) = HintModule::from_loaded(module) else {
+                    self.hints.clear();
+                    return self;
+                };
+                size = size.saturating_add(match &module {
+                    HintModule::Name(name) => name.len().saturating_add(24),
+                    HintModule::File(path) => path.as_os_str().len().saturating_add(24),
+                });
+                for name in names {
+                    size = size.saturating_add(name.len().saturating_add(4));
+                }
+                if size > MAX_RECORD_BYTES as usize {
+                    self.hints.clear();
+                    return self;
+                }
+                groups.push(HintGroup {
+                    module,
+                    names: names.clone(),
+                });
+            }
+            self.hints.insert(theorem.clone(), groups);
+        }
+        self
+    }
+}
+
+struct BoundedBytes(Vec<u8>);
+impl Write for BoundedBytes {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > MAX_RECORD_BYTES as usize - self.0.len() {
+            return Err(std::io::Error::other("cache record is too large"));
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn record_bytes(record: &DiskRecord) -> Option<Vec<u8>> {
+    let mut output = BoundedBytes(Vec::new());
+    serde_json::to_writer(&mut output, record).ok()?;
+    Some(output.0)
 }
 
 fn frame(hash: &mut Sha256, bytes: &[u8]) {
@@ -103,20 +200,21 @@ impl PersistentCache {
         resolve: impl Fn(ModuleId) -> Option<ModuleRef>,
     ) -> Option<DiskRecord> {
         Some(DiskRecord {
-            schema: 1,
+            schema: SCHEMA,
             checker: checker_identity(),
             root: self.root,
             module: module_identity(module)?,
             source: hash.fingerprint().0,
             dependencies: hash.dependency_fingerprint().0,
             goal_policy: goal_policy(goals, &resolve)?,
+            hints: BTreeMap::new(),
         })
     }
 
-    fn filename(&self, record: &DiskRecord) -> PathBuf {
+    fn filename(&self, module: &[u8; 32]) -> PathBuf {
         let mut hash = Sha256::new();
         hash.update(self.root);
-        hash.update(record.module);
+        hash.update(module);
         self.directory.join(format!("{:x}.json", hash.finalize()))
     }
 
@@ -125,11 +223,11 @@ impl PersistentCache {
             .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
     }
 
-    fn read(&self, record: &DiskRecord) -> Option<DiskRecord> {
+    fn read(&self, module: &[u8; 32]) -> Option<DiskRecord> {
         if !self.directory_is_safe() {
             return None;
         }
-        let path = self.filename(record);
+        let path = self.filename(module);
         let metadata = fs::symlink_metadata(&path).ok()?;
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
@@ -150,7 +248,40 @@ impl PersistentCache {
     }
 
     pub(crate) fn matches(&self, record: &DiskRecord) -> bool {
-        self.read(record).as_ref() == Some(record)
+        self.read(&record.module)
+            .is_some_and(|stored| stored.same_result_identity(record))
+    }
+
+    pub(crate) fn advisory_premises(
+        &self,
+        module: &ModuleRef,
+        resolve: impl Fn(&HintModule) -> Option<ModuleRef>,
+    ) -> Option<BTreeMap<String, PremiseSet>> {
+        let module = module_identity(module)?;
+        let stored = self.read(&module)?;
+        if stored.schema != SCHEMA
+            || stored.checker != checker_identity()
+            || stored.root != self.root
+            || stored.module != module
+        {
+            return None;
+        }
+        let mut answer = BTreeMap::new();
+        for (theorem, groups) in stored.hints {
+            let mut premises = PremiseSet::new();
+            let mut resolved = true;
+            for group in groups {
+                let Some(module) = resolve(&group.module) else {
+                    resolved = false;
+                    break;
+                };
+                premises.entry(module).or_default().extend(group.names);
+            }
+            if resolved {
+                answer.insert(theorem, premises);
+            }
+        }
+        Some(answer)
     }
 
     // An interrupted write can only leave an ignored temporary file. All I/O is
@@ -162,13 +293,22 @@ impl PersistentCache {
         if !self.directory.exists() && fs::create_dir(&self.directory).is_err() {
             return;
         }
-        if !self.directory_is_safe() || self.matches(record) {
+        if !self.directory_is_safe() {
             return;
         }
-        let Ok(bytes) = serde_json::to_vec(record) else {
-            return;
+        let mut normalized = record.clone();
+        let bytes = match record_bytes(&normalized) {
+            Some(bytes) => bytes,
+            None => {
+                // Optional oversized advice must not discard valid result caching.
+                normalized.hints.clear();
+                let Some(bytes) = record_bytes(&normalized) else {
+                    return;
+                };
+                bytes
+            }
         };
-        if bytes.len() as u64 > MAX_RECORD_BYTES {
+        if self.read(&normalized.module).as_ref() == Some(&normalized) {
             return;
         }
         let temp = self.directory.join(format!(
@@ -182,7 +322,7 @@ impl PersistentCache {
         let result = (|| -> std::io::Result<()> {
             file.write_all(&bytes)?;
             file.sync_all()?;
-            fs::rename(&temp, self.filename(record))?;
+            fs::rename(&temp, self.filename(&normalized.module))?;
             Ok(())
         })();
         if result.is_err() {
@@ -484,5 +624,72 @@ mod tests {
                 "heuristic-only"
             }
         );
+    }
+    #[test]
+    fn advisory_payload_changes_do_not_change_success_identity_or_skip_writes() {
+        let root = std::env::temp_dir().join(format!(
+            "venticorn_hint_record_{}_{}",
+            std::process::id(),
+            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        let storage = PersistentCache::new(&root, true).unwrap();
+        let module = ModuleRef::Name("main".into());
+        let identity = DiskRecord {
+            schema: SCHEMA,
+            checker: checker_identity(),
+            root: storage.root,
+            module: module_identity(&module).unwrap(),
+            source: [1; 32],
+            dependencies: [2; 32],
+            goal_policy: [3; 32],
+            hints: BTreeMap::new(),
+        };
+        let make = |name: &str| {
+            identity.clone().with_premises(&BTreeMap::from([(
+                "goal".into(),
+                PremiseSet::from([(module.clone(), BTreeSet::from([name.into()]))]),
+            )]))
+        };
+        let old = make("old");
+        storage.save(&old);
+        assert!(storage.matches(&identity));
+        let new = make("new");
+        storage.save(&new);
+        assert_eq!(storage.read(&identity.module), Some(new.clone()));
+        let path = storage.filename(&identity.module);
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        storage.save(&new);
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+        let mut stale = new.clone();
+        stale.source = [9; 32];
+        stale.dependencies = [8; 32];
+        storage.save(&stale);
+        assert!(!storage.matches(&identity));
+        assert_eq!(
+            storage
+                .advisory_premises(&module, |id| (id == &HintModule::Name("main".into()))
+                    .then(|| module.clone()))
+                .unwrap()["goal"][&module],
+            BTreeSet::from(["new".into()])
+        );
+        // Empty-module theorem entries still obey the early allocation estimate.
+        let huge = identity.clone().with_premises(&BTreeMap::from([(
+            "x".repeat(MAX_RECORD_BYTES as usize),
+            PremiseSet::new(),
+        )]));
+        assert!(huge.hints.is_empty());
+        // Escaping can exceed the byte bound even when the raw estimate fits.
+        let oversized = make(&"\n".repeat(8_000));
+        assert!(!oversized.hints.is_empty());
+        storage.save(&oversized);
+        assert!(storage.matches(&identity));
+        assert!(storage.read(&identity.module).unwrap().hints.is_empty());
+        assert!(fs::metadata(&path).unwrap().len() <= MAX_RECORD_BYTES);
+        assert_eq!(
+            fs::read_dir(root.join(".venticorn-cache")).unwrap().count(),
+            1
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }
