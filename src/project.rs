@@ -880,7 +880,7 @@ impl Project {
                 if let Some(guided) = &mut guided {
                     guided.set_goal(&goal);
                 }
-                if !self.prove(prover, guided, goal, theorem, builder) {
+                if !self.prove(prover, guided, goal, context.target, theorem, builder) {
                     return false;
                 }
             }
@@ -1155,6 +1155,7 @@ impl Project {
         prover: Prover,
         guided: Option<Prover>,
         goal_context: GoalContext,
+        target: &ModuleRef,
         theorem: Option<&str>,
         builder: &mut Builder,
     ) -> bool {
@@ -1171,11 +1172,21 @@ impl Project {
             builder.hinted_successes += 1;
         }
         if let Some(theorem) = theorem {
-            let premises = if accepted {
+            let mut premises = if accepted {
                 self.collect_theorem_premises(&search.prover)
             } else {
                 None
             };
+            if let Some(premises) = &mut premises {
+                if let Some(names) = premises.get_mut(target) {
+                    // The current block admits its own definition while proving it.
+                    // That name cannot select an earlier fact for a future search.
+                    names.remove(theorem);
+                    if names.is_empty() {
+                        premises.remove(target);
+                    }
+                }
+            }
             builder.record_theorem_premises(theorem, premises);
         }
         !builder.status.is_error()
