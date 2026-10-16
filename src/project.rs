@@ -748,7 +748,7 @@ impl Project {
             // Retain one complete hint per theorem, not one clone per nested goal.
             for node in &env.nodes {
                 if node.num_goals() > 0 {
-                    self.retain_theorem_premises(target, node.theorem_name(), builder);
+                    self.retain_theorem_premises(target, node.block_name().as_deref(), builder);
                 }
             }
             for goal in &goals {
@@ -777,9 +777,11 @@ impl Project {
                     Some(keep_going) => keep_going,
                     None => {
                         let guided = if context.hints_enabled {
-                            node.top_theorem_name()
+                            node.top_block_name()
                                 .and_then(|name| {
-                                    builder.previous_cache().theorem_premises(target, name)
+                                    builder
+                                        .previous_cache()
+                                        .theorem_premises(target, name.as_ref())
                                 })
                                 .and_then(|premises| self.make_guided_prover(env, &node, premises))
                         } else {
@@ -836,7 +838,7 @@ impl Project {
             return None;
         }
         if !goals.is_empty() {
-            self.retain_theorem_premises(context.target, node.top_theorem_name(), builder);
+            self.retain_theorem_premises(context.target, node.top_block_name().as_deref(), builder);
         }
         for goal in goals {
             if builder.stop_if_requested(&self.build_stopped) {
@@ -900,19 +902,26 @@ impl Project {
                 });
             context.goal_index += 1;
             let theorem = if context.hints_enabled {
-                node.top_theorem_name()
+                node.top_block_name()
             } else {
                 None
             };
             if reused {
-                self.retain_theorem_premises(context.target, theorem, builder);
+                self.retain_theorem_premises(context.target, theorem.as_deref(), builder);
                 builder.cached_goal_finished(&goal);
             } else {
                 prover.set_goal(&goal);
                 if let Some(guided) = &mut guided {
                     guided.set_goal(&goal);
                 }
-                if !self.prove(prover, guided, goal, context.target, theorem, builder) {
+                if !self.prove(
+                    prover,
+                    guided,
+                    goal,
+                    context.target,
+                    theorem.as_deref(),
+                    builder,
+                ) {
                     return false;
                 }
             }
@@ -938,7 +947,7 @@ impl Project {
             .flat_map(|dependency| dependency.nodes.iter())
             .chain(env.nodes[..node.top_index()].iter());
         for selected_node in selected {
-            let Some((id, name)) = selected_node.claim.source.qualified_name() else {
+            let Some((id, name)) = selected_node.claim.source.qualified_fact_name() else {
                 continue;
             };
             let module = &self.modules.get(id as usize)?.descriptor;
@@ -959,7 +968,7 @@ impl Project {
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
             if let Some(block) = &node.block {
                 for child in &block.env.nodes {
-                    if let Some((id, name)) = child.claim.source.qualified_name() {
+                    if let Some((id, name)) = child.claim.source.qualified_fact_name() {
                         if let Some(module) = project.modules.get(id as usize) {
                             if let Some(names) = remaining.get_mut(&module.descriptor) {
                                 names.remove(&name);
