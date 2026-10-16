@@ -1330,12 +1330,29 @@ impl Environment {
         Ok(())
     }
 
+    fn typeclass_scope(&self, ts: &TypeclassStatement) -> compilation::Result<BindingMap> {
+        for name in [&ts.instance_name, &ts.typeclass_name] {
+            if self.bindings.name_in_use(name.text()) {
+                return Err(name.error(&format!("{} already defined in this scope", name)));
+            }
+        }
+        if ts.instance_name.text() == ts.typeclass_name.text() {
+            return Err(ts
+                .typeclass_name
+                .error("instance and typeclass names must be distinct"));
+        }
+        let mut scope = self.bindings.clone();
+        scope.add_arbitrary_type(ts.instance_name.text());
+        Ok(scope)
+    }
+
     fn add_typeclass_statement(
         &mut self,
         _project: &mut Project,
         statement: &Statement,
-        _ts: &TypeclassStatement,
+        ts: &TypeclassStatement,
     ) -> compilation::Result<()> {
+        let _scope = self.typeclass_scope(ts)?;
         // Reject before changing scope or source visibility until member admission exists.
         Err(statement
             .first_token
