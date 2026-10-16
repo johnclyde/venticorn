@@ -61,8 +61,8 @@ fn constant_members_round_trip_with_source_ranges_and_following_statements() {
     let StatementInfo::Typeclass(ref tc) = statement.statement else {
         panic!("expected typeclass")
     };
-    assert_eq!(tc.instance_type.text(), "F");
-    assert_eq!(tc.name.text(), "Foo");
+    assert_eq!(tc.instance_name.text(), "F");
+    assert_eq!(tc.typeclass_name.text(), "Foo");
     assert_eq!(tc.constants.len(), 3);
     assert!(tc.theorems.is_empty());
     assert_eq!(

@@ -214,8 +214,8 @@ pub struct TypeclassTheorem {
 
 // A typeclass names an instance type and the constants and claims it requires.
 pub struct TypeclassStatement {
-    pub instance_type: Token,
-    pub name: Token,
+    pub instance_name: Token,
+    pub typeclass_name: Token,
     pub constants: Vec<(Token, Expression)>,
     pub theorems: Vec<TypeclassTheorem>,
 }
@@ -876,9 +876,9 @@ fn parse_match_statement(keyword: Token, tokens: &mut TokenIter) -> Result<State
 }
 
 fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
-    let instance_type = tokens.expect_type_name()?;
+    let instance_name = tokens.expect_type_name()?;
     tokens.expect_type(TokenType::Colon)?;
-    let name = tokens.expect_type_name()?;
+    let typeclass_name = tokens.expect_type_name()?;
     tokens.expect_type(TokenType::LeftBrace)?;
     let mut constants = vec![];
     let mut theorems = vec![];
@@ -893,8 +893,8 @@ fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
                     first_token: keyword,
                     last_token: token,
                     statement: StatementInfo::Typeclass(TypeclassStatement {
-                        instance_type,
-                        name,
+                        instance_name,
+                        typeclass_name,
                         constants,
                         theorems,
                     }),
@@ -1151,7 +1151,11 @@ impl Statement {
 
             StatementInfo::Typeclass(ts) => {
                 let member_indent = add_indent(indentation);
-                write!(f, "typeclass {}: {} {{\n", ts.instance_type, ts.name)?;
+                write!(
+                    f,
+                    "typeclass {}: {} {{\n",
+                    ts.instance_name, ts.typeclass_name
+                )?;
                 for (name, type_expr) in &ts.constants {
                     writeln!(f, "{}{}: {}", member_indent, name, type_expr)?;
                 }
