@@ -35,6 +35,10 @@ pub struct BuildReport {
     pub cache: Option<BuildCache>,
 }
 
+// Stable source names selected independently for each defining module. Missing
+// modules contribute no imported facts; local facts are never filtered.
+pub type ImportFilter = HashMap<ModuleRef, HashSet<String>>;
+
 // The Project is responsible for importing different files and assigning them module ids.
 pub struct Project {
     // The root directory of the library, used to resolve imports.
@@ -586,12 +590,22 @@ impl Project {
         env: &Environment,
         callback: &mut impl FnMut(Prover, GoalContext) -> bool,
     ) {
+        self.for_each_prover_fast_filtered(env, None, callback);
+    }
+
+    // Apply an optional module-qualified filter only to imported facts.
+    pub fn for_each_prover_fast_filtered(
+        &self,
+        env: &Environment,
+        filter: Option<&ImportFilter>,
+        callback: &mut impl FnMut(Prover, GoalContext) -> bool,
+    ) {
         if env.nodes.is_empty() {
             // Nothing to prove
             return;
         }
         let mut prover = Prover::new(&self, false);
-        for fact in self.imported_facts(env.module_id) {
+        for fact in self.imported_facts_filtered(env.module_id, filter) {
             prover.add_fact(fact);
         }
         let mut node = NodeCursor::new(&env, 0);
@@ -979,10 +993,25 @@ impl Project {
 
     // All facts that the given module imports.
     pub fn imported_facts(&self, module_id: ModuleId) -> Vec<Fact> {
+        self.imported_facts_filtered(module_id, None)
+    }
+
+    pub fn imported_facts_filtered(
+        &self,
+        module_id: ModuleId,
+        filter: Option<&ImportFilter>,
+    ) -> Vec<Fact> {
         let mut facts = vec![];
         for dependency in self.all_dependencies(module_id) {
+            let selected = match filter {
+                None => None,
+                Some(filter) => match filter.get(&self.modules[dependency as usize].descriptor) {
+                    Some(names) => Some(names),
+                    None => continue,
+                },
+            };
             let env = self.get_env_by_id(dependency).unwrap();
-            facts.extend(env.exported_facts());
+            facts.extend(env.exported_facts_filtered(selected));
         }
         facts
     }

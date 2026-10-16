@@ -12,7 +12,7 @@ use crate::compilation::{self, ErrorSource};
 use crate::environment::{Environment, LineType};
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
-use crate::project::Project;
+use crate::project::{ImportFilter, Project};
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 use crate::statement::Body;
@@ -549,7 +549,15 @@ impl<'a> NodeCursor<'a> {
     // All facts that can be used to prove the current node.
     // This includes imported facts.
     pub fn usable_facts(&self, project: &Project) -> Vec<Fact> {
-        let mut facts = project.imported_facts(self.env().module_id);
+        self.usable_facts_filtered(project, None)
+    }
+
+    pub fn usable_facts_filtered(
+        &self,
+        project: &Project,
+        filter: Option<&ImportFilter>,
+    ) -> Vec<Fact> {
+        let mut facts = project.imported_facts_filtered(self.env().module_id, filter);
         for (env, i) in &self.annotated_path {
             for prop in &env.nodes[0..*i] {
                 let truthiness = if env.top_level {
