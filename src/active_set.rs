@@ -845,8 +845,18 @@ impl ActiveSet {
 
     // Find the index of all clauses used to prove the provided step.
     pub fn find_upstream(&self, step: &ProofStep, output: &mut HashSet<usize>) {
+        self.find_upstream_with_inspiration(step, false, output);
+    }
+
+    /// Traverse mathematical dependencies and, when requested, search inspiration.
+    pub fn find_upstream_with_inspiration(
+        &self,
+        step: &ProofStep,
+        include_inspiration: bool,
+        output: &mut HashSet<usize>,
+    ) {
         let mut pending = vec![];
-        for i in step.active_dependencies() {
+        for i in step.active_dependencies_with_inspiration(include_inspiration) {
             pending.push(i);
         }
         while !pending.is_empty() {
@@ -855,7 +865,10 @@ impl ActiveSet {
                 continue;
             }
             output.insert(i);
-            for j in self.get_step(i).active_dependencies() {
+            for j in self
+                .get_step(i)
+                .active_dependencies_with_inspiration(include_inspiration)
+            {
                 pending.push(j);
             }
         }
