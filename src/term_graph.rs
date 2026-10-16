@@ -21,6 +21,11 @@ pub struct RewriteStep {
     // We know this rewrite is true based on the pattern step alone.
     pub pattern_id: StepId,
 
+    // The external id of the rule containing the subterm that inspired this rewrite.
+    // If it was just the rewrite pattern that inspired this step, this is None.
+    // This isn't mathematically necessary to prove the rule, but it is necessary to recreate this rule.
+    pub inspiration_id: Option<StepId>,
+
     // The depth of the subterm that inspired this rewrite.
     // If this rewrite is an exact math to the pattern, there is no particular subterm, so the
     // subterm depth is None.
@@ -486,6 +491,7 @@ impl TermGraph {
         };
     }
 
+    // Compatibility entry point without an inspiration source.
     pub fn set_terms_equal(
         &mut self,
         term1: TermId,
@@ -493,8 +499,20 @@ impl TermGraph {
         pattern_id: StepId,
         subterm_depth: Option<u32>,
     ) {
+        self.set_terms_equal_with_inspiration(term1, term2, pattern_id, None, subterm_depth);
+    }
+
+    pub fn set_terms_equal_with_inspiration(
+        &mut self,
+        term1: TermId,
+        term2: TermId,
+        pattern_id: StepId,
+        inspiration_id: Option<StepId>,
+        subterm_depth: Option<u32>,
+    ) {
         let step = RewriteStep {
             pattern_id,
+            inspiration_id,
             subterm_depth,
         };
         self.pending.push((term1, term2, Some(step)));
@@ -718,8 +736,8 @@ impl TermGraph {
     }
 
     #[cfg(test)]
-    fn set_eq(&mut self, t1: TermId, t2: TermId, id: usize) {
-        self.set_terms_equal(t1, t2, id, None);
+    fn set_eq(&mut self, t1: TermId, t2: TermId, pattern_id: StepId) {
+        self.set_terms_equal(t1, t2, pattern_id, None);
         self.validate();
         self.assert_eq(t1, t2);
     }
