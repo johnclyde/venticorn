@@ -498,6 +498,12 @@ impl ProofStep {
     }
 
     pub fn active_dependencies(&self) -> Vec<usize> {
+        self.active_dependencies_with_inspiration(false)
+    }
+
+    /// Select the dependency policy for proof extraction or search advice.
+    /// Existing rules currently have only mathematical dependencies.
+    pub fn active_dependencies_with_inspiration(&self, _include_inspiration: bool) -> Vec<usize> {
         self.dependencies()
             .iter()
             .filter_map(|id| match id {

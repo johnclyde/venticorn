@@ -436,16 +436,25 @@ impl Prover {
         Some(proof)
     }
 
-    fn get_uncondensed_proof(&self) -> Option<Proof> {
+    // Proof output needs only mathematical dependencies. Search advice may also
+    // retain the clauses that inspired useful specializations.
+    fn get_uncondensed_proof(&self, include_inspiration: bool) -> Option<Proof> {
         let final_step = match &self.final_step {
             Some(step) => step,
             None => return None,
         };
         let mut useful_active = HashSet::new();
-        self.active_set
-            .find_upstream(&final_step, &mut useful_active);
+        self.active_set.find_upstream_with_inspiration(
+            &final_step,
+            include_inspiration,
+            &mut useful_active,
+        );
         for step in &self.useful_passive {
-            self.active_set.find_upstream(step, &mut useful_active);
+            self.active_set.find_upstream_with_inspiration(
+                step,
+                include_inspiration,
+                &mut useful_active,
+            );
         }
         let negated_goal = match &self.goal {
             Some(NormalizedGoal::ProveNegated(negated_goal, _)) => negated_goal,
@@ -478,7 +487,7 @@ impl Prover {
 
     // Returns a condensed proof, if we have a proof.
     pub fn get_condensed_proof(&self) -> Option<Proof> {
-        let mut proof = self.get_uncondensed_proof()?;
+        let mut proof = self.get_uncondensed_proof(false)?;
         proof.condense();
         Some(proof)
     }
@@ -492,7 +501,7 @@ impl Prover {
     // None means no proof is available; Some(empty) means it uses no named facts.
     // Callers still decide whether the proof meets their acceptance policy.
     pub fn get_useful_fact_names(&self) -> Option<BTreeSet<(ModuleId, String)>> {
-        let proof = self.get_uncondensed_proof()?;
+        let proof = self.get_uncondensed_proof(true)?;
         Some(
             proof
                 .all_steps
