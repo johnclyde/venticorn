@@ -78,10 +78,6 @@ struct SubtermInfo {
 
     // The inspiration id for a subterm is the first activated concrete proof step that contains it.
     inspiration_id: usize,
-
-    // The depth of the subterm is the maximum depth of a clause that needs to be activated
-    // to use this subterm.
-    depth: u32,
 }
 
 // A SubtermLocation describes somewhere that the subterm exists among the activated clauses.
@@ -313,14 +309,7 @@ impl ActiveSet {
                     let id1 = self.graph.insert_term(&u_subterm);
                     for rewrite in &rewrites {
                         let id2 = self.graph.insert_term(&rewrite.term);
-                        self.add_to_term_graph(
-                            rewrite.pattern_id,
-                            Some(target_id),
-                            Some(target_step.depth),
-                            id1,
-                            id2,
-                            true,
-                        );
+                        self.add_to_term_graph(rewrite.pattern_id, Some(target_id), id1, id2, true);
                     }
 
                     // Populate the subterm info.
@@ -330,7 +319,6 @@ impl ActiveSet {
                         locations: vec![],
                         rewrites,
                         inspiration_id: target_id,
-                        depth: target_step.depth,
                     });
                     self.subterm_map.insert(u_subterm.clone(), id);
                     self.subterm_unifier.insert(u_subterm, id);
@@ -443,7 +431,6 @@ impl ActiveSet {
                 self.add_to_term_graph(
                     pattern_id,
                     Some(subterm_info.inspiration_id),
-                    Some(subterm_info.depth),
                     id1,
                     id2,
                     true,
@@ -745,7 +732,6 @@ impl ActiveSet {
         &mut self,
         pattern_id: usize,
         inspiration_id: Option<usize>,
-        inspiration_depth: Option<u32>,
         term1: TermId,
         term2: TermId,
         equal: bool,
@@ -756,10 +742,10 @@ impl ActiveSet {
                 term2,
                 pattern_id,
                 inspiration_id,
-                inspiration_depth,
+                None,
             );
         } else {
-            assert!(inspiration_depth.is_none());
+            assert!(inspiration_id.is_none());
             self.graph.set_terms_not_equal(term1, term2, pattern_id);
         }
     }
@@ -776,7 +762,7 @@ impl ActiveSet {
             let left = self.graph.insert_term(&literal.left);
             let right = self.graph.insert_term(&literal.right);
 
-            self.add_to_term_graph(activated_id, None, None, left, right, literal.positive);
+            self.add_to_term_graph(activated_id, None, left, right, literal.positive);
 
             // The activated step could be rewritten immediately.
             self.activate_rewrite_target(activated_id, &activated_step, output);
@@ -899,6 +885,52 @@ mod tests {
                 step.pattern_id == pattern_id && step.inspiration_id == Some(target_id)
             }));
         }
+    }
+
+    #[test]
+    fn specialization_advice_reaches_inspiration_without_changing_proof_dependencies() {
+        let mut set = ActiveSet::new();
+        let pattern = ProofStep::mock("c1(x0) = x0");
+        let pattern_id = set.insert(pattern.clone());
+        let support = ProofStep::mock("c2 = c3");
+        let support_id = set.insert(support.clone());
+        let inspiration = ProofStep::new_direct(
+            &support,
+            Rule::FunctionElimination(support_id),
+            Clause::parse("c1(c2) = c4"),
+        );
+        let inspiration_id = set.insert(inspiration);
+        let specialized = ProofStep::new_specialization_with_inspiration(
+            pattern_id,
+            Some(inspiration_id),
+            &pattern,
+            Clause::parse("c1(c2) = c2"),
+        );
+        assert_eq!(specialized.active_dependencies(), vec![pattern_id]);
+        assert!(!specialized.depends_on_active(inspiration_id));
+        assert_eq!(
+            (
+                specialized.truthiness,
+                specialized.proof_size,
+                specialized.depth
+            ),
+            (pattern.truthiness, pattern.proof_size + 1, pattern.depth)
+        );
+        let mut mathematical = HashSet::new();
+        set.find_upstream(&specialized, &mut mathematical);
+        assert_eq!(mathematical, HashSet::from([pattern_id]));
+        let mut advice = HashSet::new();
+        set.find_upstream_with_inspiration(&specialized, true, &mut advice);
+        assert_eq!(
+            advice,
+            HashSet::from([pattern_id, inspiration_id, support_id])
+        );
+        let legacy =
+            ProofStep::new_specialization(pattern_id, &pattern, specialized.clause.clone());
+        assert_eq!(
+            legacy.active_dependencies_with_inspiration(true),
+            vec![pattern_id]
+        );
     }
 
     #[test]

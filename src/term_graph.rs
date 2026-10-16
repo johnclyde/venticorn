@@ -26,9 +26,8 @@ pub struct RewriteStep {
     // This isn't mathematically necessary to prove the rule, but it is necessary to recreate this rule.
     pub inspiration_id: Option<StepId>,
 
-    // The depth of the subterm that inspired this rewrite.
-    // If this rewrite is an exact math to the pattern, there is no particular subterm, so the
-    // subterm depth is None.
+    // Legacy metadata retained for depth-only callers. Current prover rewrites use
+    // inspiration_id to decide whether a concrete specialization is needed.
     pub subterm_depth: Option<u32>,
 }
 

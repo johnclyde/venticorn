@@ -340,9 +340,11 @@ impl Prover {
             }
             Rule::EqualityFactoring(source)
             | Rule::EqualityResolution(source)
-            | Rule::FunctionElimination(source)
-            | Rule::Specialization(source) => {
+            | Rule::FunctionElimination(source) => {
                 answer.push(("source".to_string(), ProofStepId::Active(*source)));
+            }
+            Rule::Specialization(info) => {
+                answer.push(("pattern".to_string(), ProofStepId::Active(info.pattern_id)));
             }
             Rule::MultipleRewrite(info) => {
                 answer.push((
@@ -530,15 +532,15 @@ impl Prover {
             truthiness = truthiness.combine(rewrite_step.truthiness);
 
             // Check whether we need to explicitly add a specialized clause to the proof.
-            match rewrite_info.subterm_depth {
-                None | Some(0) => {
-                    // No extra specialized clause needed
-                    active_ids.push(rewrite_info.pattern_id);
-                    max_depth = max_depth.max(rewrite_step.depth);
-                    continue;
-                }
-                Some(_) => {}
-            };
+            // Concrete inspirations need explicit specialization even at depth zero.
+            // Retain the old depth-only behavior for legacy term-graph callers.
+            if rewrite_info.inspiration_id.is_none()
+                && !rewrite_info.subterm_depth.is_some_and(|depth| depth > 0)
+            {
+                active_ids.push(rewrite_info.pattern_id);
+                max_depth = max_depth.max(rewrite_step.depth);
+                continue;
+            }
 
             // Create a new proof step, without activating it, to express the
             // specific equality used by this rewrite.
@@ -550,7 +552,12 @@ impl Prover {
                 continue;
             }
             new_clauses.insert(clause.clone());
-            let step = ProofStep::new_specialization(rewrite_info.pattern_id, rewrite_step, clause);
+            let step = ProofStep::new_specialization_with_inspiration(
+                rewrite_info.pattern_id,
+                rewrite_info.inspiration_id,
+                rewrite_step,
+                clause,
+            );
             max_depth = max_depth.max(step.depth);
             let passive_id = self.useful_passive.len() as u32;
             self.useful_passive.push(step);
@@ -921,5 +928,77 @@ impl Prover {
             consequences,
             num_consequences,
         })
+    }
+}
+
+#[cfg(test)]
+mod inspiration_tests {
+    use super::*;
+    use crate::builder::BuildStatus;
+
+    #[test]
+    fn graph_contradiction_specializes_depth_zero_inspirations() {
+        let project = Project::new_mock();
+        let mut prover = Prover::new(&project, false);
+        let mut target = ProofStep::mock("c1(c2) != c2");
+        target.truthiness = Truthiness::Counterfactual;
+        let target_id = prover.active_set.activate(target).0;
+        let pattern_id = prover.active_set.activate(ProofStep::mock("c1(x0) = x0")).0;
+        let contradiction = prover.active_set.graph.get_contradiction().unwrap();
+        assert_eq!(prover.active_set.get_step(target_id).depth, 0);
+        prover.report_term_graph_contradiction(contradiction);
+        assert!(prover.final_step.as_ref().unwrap().finishes_proof());
+        assert_eq!(prover.useful_passive.len(), 1);
+        let step = &prover.useful_passive[0];
+        let Rule::Specialization(info) = &step.rule else {
+            panic!("missing concrete specialization")
+        };
+        assert_eq!(
+            (info.pattern_id, info.inspiration_id),
+            (pattern_id, Some(target_id))
+        );
+        assert_eq!(step.active_dependencies(), vec![pattern_id]);
+        assert_eq!(
+            step.active_dependencies_with_inspiration(true),
+            vec![pattern_id, target_id]
+        );
+        assert_eq!(step.depth, 0);
+        assert_eq!(step.truthiness, Truthiness::Factual);
+    }
+
+    #[test]
+    fn concrete_rewrite_proofs_replay_generated_output() {
+        let source = "type Foo: axiom\n\
+            let f: Foo -> Foo = axiom\n\
+            let p: Foo -> Bool = axiom\n\
+            let c: Foo = axiom\n\
+            axiom identity(x: Foo) { f(x) = x }\n\
+            axiom witness { p(f(c)) }\n\
+            theorem goal { p(c) }";
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", source);
+        let id = project.expect_ok("main");
+        let env = project.get_env_by_id(id).unwrap();
+        let node = env.get_node_by_name("goal");
+        let mut prover = Prover::new(&project, false);
+        for fact in node.usable_facts(&project) {
+            prover.add_fact(fact);
+        }
+        prover.set_goal(&node.goal_context().unwrap());
+        assert_eq!(prover.verification_search(), Outcome::Success);
+        let code = prover
+            .get_condensed_proof()
+            .unwrap()
+            .to_code(&env.bindings)
+            .unwrap();
+        println!("concrete rewrite emitted {} proof lines", code.len());
+        for (body, expected) in [
+            (code.join("\n"), BuildStatus::Good),
+            ("exists(x: Foo) { x != x }".into(), BuildStatus::Warning),
+        ] {
+            let mut replay = Project::new_mock();
+            replay.mock("/mock/main.ac", &format!("{source} by {{\n{body}\n}}"));
+            assert_eq!(replay.sync_build_report().status, expected);
+        }
     }
 }
