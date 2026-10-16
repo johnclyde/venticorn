@@ -35,7 +35,7 @@ impl Goal {
 pub struct GoalContext {
     pub module_id: ModuleId,
 
-    // A printable name for this goal.
+    // Legacy storage for the human-readable description. Use description() when displaying it.
     pub name: String,
 
     // The goal itself.
@@ -62,6 +62,11 @@ pub struct GoalContext {
 }
 
 impl GoalContext {
+    // Human-readable text is separate from the stable source identifier used by fact selection.
+    pub fn description(&self) -> &str {
+        &self.name
+    }
+
     pub fn new(
         env: &Environment,
         goal: Goal,

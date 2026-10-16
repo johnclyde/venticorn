@@ -604,7 +604,7 @@ impl Backend {
             module_ref,
             selected_line: params.selected_line,
             path,
-            goal_name: goal_context.name.clone(),
+            goal_name: goal_context.description().to_owned(),
             goal_range: goal_context.goal.range(),
             status: Arc::new(RwLock::new(status)),
             superseded,

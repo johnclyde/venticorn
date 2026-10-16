@@ -219,7 +219,13 @@ impl Environment {
         self.add_node(
             project,
             true,
-            Proposition::constant_definition(claim, self.module_id, range, constant),
+            Proposition::named_constant_definition(
+                claim,
+                self.module_id,
+                range,
+                constant,
+                name.to_string(),
+            ),
             None,
         );
     }
@@ -766,11 +772,12 @@ impl Environment {
         let return_bound = unbound_condition.bind_values(num_args, num_args, &[function_term]);
         let external_condition = AcornValue::ForAll(arg_types, Box::new(return_bound));
 
-        let prop = Proposition::constant_definition(
+        let prop = Proposition::named_constant_definition(
             external_condition,
             self.module_id,
             definition_range,
             function_constant,
+            fss.name.clone(),
         );
 
         let index = self.add_node(project, false, prop, Some(block));
@@ -944,11 +951,12 @@ impl Environment {
             self.add_node(
                 project,
                 true,
-                Proposition::type_definition(
+                Proposition::type_member_definition(
                     constraint_claim.parametrize(self.module_id, &param_names),
                     self.module_id,
                     range,
                     ss.name.clone(),
+                    "constraint".into(),
                 ),
                 None,
             );
@@ -971,7 +979,13 @@ impl Environment {
         self.add_node(
             project,
             true,
-            Proposition::type_definition(new_claim, self.module_id, range, ss.name.clone()),
+            Proposition::type_member_definition(
+                new_claim,
+                self.module_id,
+                range,
+                ss.name.clone(),
+                "new".into(),
+            ),
             None,
         );
 
@@ -1017,11 +1031,12 @@ impl Environment {
             self.add_node(
                 project,
                 true,
-                Proposition::type_definition(
+                Proposition::type_member_definition(
                     member_claim.parametrize(self.module_id, &param_names),
                     self.module_id,
                     range,
                     ss.name.clone(),
+                    field_name_token.text().to_string(),
                 ),
                 None,
             );
@@ -1107,7 +1122,7 @@ impl Environment {
 
         // The "no confusion" property. Different constructors give different results.
         for i in 0..constructors.len() {
-            let (_, i_arg_types) = &constructors[i];
+            let (member_name, i_arg_types) = &constructors[i];
             let i_fn = constructor_fns[i].clone();
             let i_vars: Vec<_> = i_arg_types
                 .iter()
@@ -1133,7 +1148,13 @@ impl Environment {
                 self.add_node(
                     project,
                     true,
-                    Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
+                    Proposition::type_member_definition(
+                        claim,
+                        self.module_id,
+                        range,
+                        is.name.clone(),
+                        member_name.rsplit('.').next().unwrap().to_string(),
+                    ),
                     None,
                 );
             }
@@ -1162,14 +1183,20 @@ impl Environment {
         self.add_node(
             project,
             true,
-            Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
+            Proposition::type_member_definition(
+                claim,
+                self.module_id,
+                range,
+                is.name.clone(),
+                "new".into(),
+            ),
             None,
         );
 
         // The next principle is that each constructor is injective.
         // Ie if Type.construct(x0, x1) = Type.construct(x2, x3) then x0 = x2 and x1 = x3.
         for (i, constructor_fn) in constructor_fns.iter().enumerate() {
-            let (_, arg_types) = &constructors[i];
+            let (member_name, arg_types) = &constructors[i];
             if arg_types.is_empty() {
                 continue;
             }
@@ -1208,7 +1235,13 @@ impl Environment {
             self.add_node(
                 project,
                 true,
-                Proposition::type_definition(claim, self.module_id, range, is.name.clone()),
+                Proposition::type_member_definition(
+                    claim,
+                    self.module_id,
+                    range,
+                    is.name.clone(),
+                    member_name.rsplit('.').next().unwrap().to_string(),
+                ),
                 None,
             );
         }
@@ -1832,18 +1865,27 @@ impl Environment {
         answer.into_iter()
     }
 
-    // Used for integration testing.
+    // Compatibility alias: this lookup has always used the displayed description.
     pub fn get_node_by_name(&self, name: &str) -> NodeCursor {
-        let mut names = Vec::new();
+        self.get_node_by_description(name)
+    }
+
+    // Testing helper, not a stable source-identity lookup.
+    pub fn get_node_by_description(&self, description: &str) -> NodeCursor {
+        let mut descriptions = Vec::new();
         for node in self.iter_goals() {
             let context = node.goal_context().unwrap();
-            if context.name == name {
+            if context.description() == description {
                 return node;
             }
-            names.push(context.name);
+            descriptions.push(context.name);
         }
 
-        panic!("no context found for {} in:\n{}\n", name, names.join("\n"));
+        panic!(
+            "no context found for {} in:\n{}\n",
+            description,
+            descriptions.join("\n")
+        );
     }
 
     // Returns the path to a given zero-based line.

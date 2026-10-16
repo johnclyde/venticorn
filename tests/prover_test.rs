@@ -782,37 +782,8 @@ mod prover_test {
         );
     }
 
-    // These tests involve proving functional equality. They don't work right.
-    //
-    // #[test]
-    // fn test_verify_functional_definition() {
-    //     verify_succeeds(
-    //         r#"
-    //         type Nat: axiom
-    //         define is_min(f: Nat -> Bool) -> (Nat -> Bool) { axiom }
-    //         define gcd_term(p: Nat) -> (Nat -> Bool) { axiom }
-    //         let p: Nat = axiom
-    //         let f: Nat -> Bool = is_min(gcd_term(p))
-
-    //         theorem goal { is_min(gcd_term(p)) = f }
-    //     "#,
-    //     );
-    // }
-    // #[test]
-    // fn test_functional_substitution() {
-    //     prove_all_succeeds(
-    //         r#"
-    //         type Nat: axiom
-    //         define find(f: Nat -> Bool) -> Nat { axiom }
-    //         define is_min(f: Nat -> Bool) -> (Nat -> Bool) { axiom }
-    //         define gcd_term(p: Nat) -> (Nat -> Bool) { axiom }
-    //         let p: Nat = axiom
-    //         let f: Nat -> Bool = is_min(gcd_term(p))
-    //         theorem goal { find(is_min(gcd_term(p))) = find(f) }
-    //     "#,
-    //     );
-    // }
-    //
+    // Functional definition and substitution regressions are active in source_provenance_test.
+    // Keep this separate extensionality example for its own follow-up coverage.
     // #[test]
     // fn test_functional_equality_implication() {
     //     prove_all_succeeds(
