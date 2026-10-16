@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
-use crate::acorn_type::{AcornType, PotentialType, TypeClass, UnresolvedType};
+use crate::acorn_type::{AcornType, PotentialType, Typeclass, UnresolvedType};
 use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
@@ -75,6 +75,10 @@ pub struct BindingMap {
 
     // Family aliases are distinct from aliases for one complete specialized type.
     generic_type_aliases: HashMap<UnresolvedType, String>,
+
+    // Class names have their own kind, while sharing the declaration namespace.
+    typeclass_names: BTreeMap<String, Typeclass>,
+    reverse_typeclass_names: HashMap<Typeclass, String>,
 
     // Maps an identifier name to its type.
     // Has entries for both defined constants and aliases. Pending generic aliases
@@ -315,6 +319,8 @@ impl BindingMap {
             type_names: BTreeMap::new(),
             reverse_type_names: HashMap::new(),
             generic_type_aliases: HashMap::new(),
+            typeclass_names: BTreeMap::new(),
+            reverse_typeclass_names: HashMap::new(),
             identifier_types: BTreeMap::new(),
             constants: BTreeMap::new(),
             aliases: HashMap::new(),
@@ -334,6 +340,7 @@ impl BindingMap {
 
     pub fn name_in_use(&self, name: &str) -> bool {
         self.type_names.contains_key(name)
+            || self.typeclass_names.contains_key(name)
             || self.identifier_types.contains_key(name)
             || self.modules.contains_key(name)
     }
@@ -418,7 +425,7 @@ impl BindingMap {
         }
     }
 
-    fn add_type_variable(&mut self, name: &str, typeclass: Option<TypeClass>) {
+    fn add_type_variable(&mut self, name: &str, typeclass: Option<Typeclass>) {
         assert!(
             !self.name_in_use(name),
             "type variable {} already bound",
@@ -428,6 +435,24 @@ impl BindingMap {
             name.to_string(),
             AcornType::Variable(name.to_string(), typeclass),
         );
+    }
+
+    pub fn add_typeclass(&mut self, name: &str, typeclass: Typeclass) {
+        assert!(!self.name_in_use(name), "name {} already bound", name);
+        self.reverse_typeclass_names
+            .entry(typeclass.clone())
+            .or_insert_with(|| name.to_string());
+        self.typeclass_names.insert(name.to_string(), typeclass);
+    }
+
+    pub fn get_typeclass_for_name(&self, name: &str) -> Option<&Typeclass> {
+        self.typeclass_names.get(name)
+    }
+
+    pub fn get_name_for_typeclass(&self, typeclass: &Typeclass) -> Option<&str> {
+        self.reverse_typeclass_names
+            .get(typeclass)
+            .map(String::as_str)
     }
 
     // Look up a constant without treating a pending generic declaration as a proof value.
