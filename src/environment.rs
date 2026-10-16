@@ -10,6 +10,7 @@ use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, PotentialValue, Stack};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
+use crate::expression::TypeParam;
 use crate::fact::Fact;
 use crate::module::ModuleId;
 use crate::project::{LoadError, Project};
@@ -485,7 +486,7 @@ impl Environment {
         let (param_names, _, arg_types, unbound_value, value_type) =
             self.bindings.evaluate_scoped_value(
                 project,
-                &ds.type_params,
+                &TypeParam::unconstrained_tokens(&ds.type_params)?,
                 &ds.args,
                 Some(&ds.return_type),
                 &ds.return_value,

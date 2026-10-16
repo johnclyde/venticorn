@@ -203,3 +203,19 @@ fn nested_class_declarations_are_located_and_cannot_escape_or_conflate() {
     }
     parent.add("typeclass T: Local {\n value: T\n}");
 }
+
+#[test]
+#[ignore = "bounded instance method specialization is not implemented yet"]
+fn bounded_instance_method_template_is_admitted() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            define squared<T: Magma>(a: T) -> T {
+                a.mul(a)
+            }
+            "#,
+    );
+}

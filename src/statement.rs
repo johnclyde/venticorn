@@ -3,7 +3,7 @@
 use tower_lsp::lsp_types::Range;
 
 use crate::compilation::{Error, ErrorSource, Result};
-use crate::expression::{Declaration, Expression, Terminator};
+use crate::expression::{Declaration, Expression, Terminator, TypeParam};
 use crate::token::{Token, TokenIter, TokenType};
 
 use std::fmt;
@@ -40,7 +40,7 @@ pub struct DefineStatement {
     pub name_token: Token,
 
     // For templated definitions
-    pub type_params: Vec<Token>,
+    pub type_params: Vec<TypeParam>,
 
     // A list of the named arg types, like "a: int" and "b: int".
     pub args: Vec<Declaration>,
@@ -497,7 +497,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stateme
 // Parses a define statement where the "define" keyword has already been found.
 fn parse_define_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let name_token = tokens.expect_variable_name(false)?;
-    let type_params = parse_params(tokens)?;
+    let type_params = TypeParam::parse_list(tokens)?;
     let (args, _) = parse_args(tokens, TokenType::RightArrow)?;
     let (return_type, _) = Expression::parse_type(tokens, Terminator::Is(TokenType::LeftBrace))?;
     let (return_value, last_token) =
@@ -941,7 +941,7 @@ fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
     Err(keyword.error("unterminated typeclass statement"))
 }
 
-fn write_type_params(f: &mut fmt::Formatter, type_params: &[Token]) -> fmt::Result {
+fn write_type_params<T: fmt::Display>(f: &mut fmt::Formatter, type_params: &[T]) -> fmt::Result {
     if type_params.len() == 0 {
         return Ok(());
     }
