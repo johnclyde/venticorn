@@ -1,6 +1,6 @@
 // Modified for Venticorn.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -17,6 +17,7 @@ use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
+use crate::module::ModuleId;
 use crate::monomorphizer::Monomorphizer;
 use crate::normalizer::{Normalization, NormalizationError, Normalizer};
 use crate::passive_set::PassiveSet;
@@ -435,8 +436,7 @@ impl Prover {
         Some(proof)
     }
 
-    // Returns a condensed proof, if we have a proof.
-    pub fn get_proof(&self) -> Option<Proof> {
+    fn get_uncondensed_proof(&self) -> Option<Proof> {
         let final_step = match &self.final_step {
             Some(step) => step,
             None => return None,
@@ -473,8 +473,36 @@ impl Prover {
             proof.add_step(ProofStepId::Passive(i as u32), step);
         }
         proof.add_step(ProofStepId::Final, final_step);
+        Some(proof)
+    }
+
+    // Returns a condensed proof, if we have a proof.
+    pub fn get_condensed_proof(&self) -> Option<Proof> {
+        let mut proof = self.get_uncondensed_proof()?;
         proof.condense();
         Some(proof)
+    }
+
+    // Compatibility entry point for callers that generate or inspect proof code.
+    pub fn get_proof(&self) -> Option<Proof> {
+        self.get_condensed_proof()
+    }
+
+    // Named assumptions reachable from the completed proof, before condensation.
+    // None means no proof is available; Some(empty) means it uses no named facts.
+    // Callers still decide whether the proof meets their acceptance policy.
+    pub fn get_useful_fact_names(&self) -> Option<BTreeSet<(ModuleId, String)>> {
+        let proof = self.get_uncondensed_proof()?;
+        Some(
+            proof
+                .all_steps
+                .iter()
+                .filter_map(|(_, step)| match &step.rule {
+                    Rule::Assumption(info) => info.source.qualified_name(),
+                    _ => None,
+                })
+                .collect(),
+        )
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {

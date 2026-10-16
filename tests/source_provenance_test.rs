@@ -24,6 +24,10 @@ fn definition_source_names_survive_generic_instantiation() {
         specialized.value.validate().unwrap();
         assert_eq!(specialized.source.name().as_deref(), Some("identity"));
         assert_eq!(specialized.source.module, fact.source.module);
+        assert_eq!(
+            specialized.source.qualified_name(),
+            Some((fact.source.module, "identity".into()))
+        );
         assert_eq!(specialized.source.range, fact.source.range);
         let SourceType::ConstantDefinition(AcornValue::Constant(constant), name) =
             &specialized.source.source_type
@@ -77,6 +81,7 @@ fn stable_source_identifiers_are_separate_from_human_descriptions() {
     let anonymous = Proposition::anonymous(AcornValue::Bool(true), 1, range);
     assert_eq!(anonymous.source.name().as_deref(), Some("3"));
     assert_eq!(anonymous.source.description(), "line 3");
+    assert_eq!(anonymous.source.qualified_name(), Some((1, "3".into())));
     assert_eq!(
         anonymous
             .with_negated_goal(AcornValue::Bool(false))
