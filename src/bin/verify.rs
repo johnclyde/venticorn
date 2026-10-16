@@ -26,6 +26,10 @@ struct Args {
     #[clap(long, conflicts_with = "no_cache")]
     cache: bool,
 
+    /// Reprove every goal using saved premise hints, without reusing verified results.
+    #[clap(long, conflicts_with_all = ["cache", "no_cache"])]
+    filtered: bool,
+
     /// Verify without cached results (the default; retained for compatibility).
     #[clap(long)]
     no_cache: bool,
@@ -45,11 +49,12 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    project.set_cache_policy(if args.cache {
+    project.set_cache_policy(if args.cache || args.filtered {
         CachePolicy::ReadWrite
     } else {
         CachePolicy::Disabled
     });
+    project.check_hashes = !args.filtered;
     if let Some(target) = args.target {
         if target.ends_with(".ac") {
             if let Err(error) = project.add_target_by_path(Path::new(&target)) {

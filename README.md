@@ -141,6 +141,8 @@ cargo run --locked --release --bin verify -- --dataset
 
 Use dotted module names for subdirectories, such as `algebra.groups`, or a relative or absolute `.ac` file path. The `--module hello` form remains supported. A file outside the library can import from the selected library. `verify` exits unsuccessfully when loading or verification fails. `search` prints its outcome and is intended for interactive investigation. Release builds are recommended for larger libraries. The `fastdev` profile uses release optimization while keeping debug symbols for local debugging and profiling; ordinary release builds omit those symbols. For example, run `cargo build --locked --profile fastdev --bin profile_prover`.
 
+The verifier rechecks every goal without a cache by default; `--no-cache` makes that choice explicit. Use `--cache` to reuse matching verified results and save completed builds. Use `--filtered` to recheck every goal with saved premise hints, falling back to full search when those hints are insufficient. These cache modes are mutually exclusive. Dataset builds always perform fresh full searches.
+
 ## Run the VS Code extension from source
 
 Install the two npm dependency sets above, then launch VS Code from a terminal with the library selected:

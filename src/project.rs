@@ -95,6 +95,10 @@ pub struct Project {
 
     // Used as a flag to stop a build in progress.
     pub build_stopped: Arc<AtomicBool>,
+
+    /// Reuse verified goals whose complete cache identity matches. When false,
+    /// every goal is searched again; cached premise advice remains available.
+    pub check_hashes: bool,
 }
 
 // An error found while importing a module.
@@ -192,6 +196,7 @@ impl Project {
             cache_policy: CachePolicy::MemoryOnly,
             persistent_cache: None,
             build_stopped: Arc::new(AtomicBool::new(false)),
+            check_hashes: true,
         }
     }
 
@@ -731,7 +736,8 @@ impl Project {
         });
         // Reuse policy belongs with the parsed module graph. The builder only records
         // outcomes and retains compatible snapshots of completed evidence.
-        let reuse_enabled = self.cache_policy != CachePolicy::Disabled
+        let reuse_enabled = self.check_hashes
+            && self.cache_policy != CachePolicy::Disabled
             && builder.dataset.is_none()
             && dependencies_verified;
         if builder.stop_if_requested(&self.build_stopped) {
