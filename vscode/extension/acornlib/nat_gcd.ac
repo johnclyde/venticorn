@@ -1,3 +1,4 @@
+// Modified for Venticorn: make the scaled-divisibility proof step explicit.
 from nat import Nat, divides, mod
 from pair import Pair
 numerals Nat
@@ -447,6 +448,7 @@ theorem cofactor(a: Nat, b: Nat, af: Nat, bf: Nat) {
     divides(gcd(af, bf), af)
     divides(gcd(a, b) * gcd(af, bf), a)
     divides(gcd(af, bf), bf)
+    divides(gcd(af, bf) * gcd(a, b), b)
     divides(gcd(a, b) * gcd(af, bf), b)
     divides(gcd(a, b) * gcd(af, bf), gcd(a, b))
     divides(gcd(a, b) * gcd(af, bf), gcd(a, b) * 1)

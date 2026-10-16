@@ -1074,6 +1074,7 @@ theorem floor_exists(a: Rat) {
     Rat.from_int(a.num) = Rat.from_int(q * a.denom + r)
     Rat.from_int(a.num) = Rat.from_int(q * a.denom) + Rat.from_int(r)
     Rat.from_int(r) >= Rat.from_int(Int.0)
+    forall(x0: Int) { x0 + Int.0 <= x0 + r }
     Rat.from_int(q * a.denom) + Rat.from_int(r) >= Rat.from_int(q * a.denom) + Rat.from_int(Int.0)
     Rat.from_int(a.num) >= Rat.from_int(q * a.denom)
     Rat.from_int(a.num) >= Rat.from_int(q) * Rat.from_int(a.denom)
@@ -1525,21 +1526,223 @@ theorem smaller_positive(a: Rat) {
     }
 }
 
-// theorem lt_both_pos(a: Rat, b: Rat) {
-//     a.is_positive and b.is_positive implies
-//     exists(r: Rat) {
-//         r.is_positive and r < a and r < b
-//     }
-// } by {
-//     if a < b {
-//         let r: Rat satisfy {
-//             r.is_positive and r < a
-//         }
-//         r.is_positive and r < a and r < b
-//     } else {
-//         let r: Rat satisfy {
-//             r.is_positive and r < b
-//         }
-//         r.is_positive and r < a and r < b
-//     }
-// }
+theorem lt_both_pos(a: Rat, b: Rat) {
+    a.is_positive and b.is_positive implies
+    exists(r: Rat) {
+        r.is_positive and r < a and r < b
+    }
+} by {
+    if a < b {
+        let r: Rat satisfy {
+            r.is_positive and r < a
+        }
+        r.is_positive and r < a and r < b
+    } else {
+        let r: Rat satisfy {
+            r.is_positive and r < b
+        }
+        r.is_positive and r < a and r < b
+    }
+}
+
+theorem lt_rhs_div_pos(a: Rat, b: Rat, c: Rat) {
+    c.is_positive and a < b / c implies a * c < b
+} by {
+    a * c < b / c * c
+    b / c * c = b
+}
+
+class Rat {
+    define is_close(self, other: Rat, eps: Rat) -> Bool {
+        (self - other).abs < eps
+    }
+}
+
+theorem lte_abs(q: Rat) {
+    q <= q.abs
+}
+
+theorem close_comm(a: Rat, b: Rat, eps: Rat) {
+    a.is_close(b, eps) implies b.is_close(a, eps)
+} by {
+    a - b = -(b - a)
+    (a - b).abs = (b - a).abs
+    (a - b).abs < eps
+    (b - a).abs < eps
+}
+
+theorem close_imp_bounds(a: Rat, b: Rat, eps: Rat) {
+    a.is_close(b, eps) implies a < b + eps and a > b - eps
+} by {
+    // Left ineq
+    (a - b).abs < eps
+    a - b <= (a - b).abs
+    a - b < eps
+    a - b + b < eps + b
+    a < eps + b
+    a < b + eps
+
+    // Right ineq
+    (b - a).abs < eps
+    b - a <= (b - a).abs
+    b - a < eps
+    b - a + a < eps + a
+    b - a + a = b
+    b < eps + a
+    eps + a > b
+    a + eps > b
+    a + eps + -eps > b + -eps
+    a > b + -eps
+}
+
+theorem bounds_imp_close(a: Rat, b: Rat, eps: Rat) {
+    a < b + eps and a > b - eps implies a.is_close(b, eps)
+} by {
+    if (a - b).is_negative {
+        (a - b).abs = b - a
+        a > b + -eps
+        a + eps + -eps > b + -eps
+        a + eps > b
+        eps + a > b
+        b < eps + a
+        b - a + a = b
+        b - a + a < eps + a
+        b - a < eps
+        (a - b).abs < eps
+        a.is_close(b, eps)
+    } else {
+        (a - b).abs = a - b
+        a < eps + b
+        a - b + b < eps + b
+        a - b < eps
+        a - b < eps
+        (a - b).abs < eps
+        a.is_close(b, eps)
+    }
+}
+
+class Rat {
+    let from_nat: Nat -> Rat = function(n: Nat) {
+        Rat.from_int(Int.from_nat(n))
+    }
+}
+
+theorem nat_lt_imp_rat_lt(a: Nat, b: Nat) {
+    a < b implies Rat.from_nat(a) < Rat.from_nat(b)
+} by {
+    Rat.from_nat(a) < Rat.from_nat(b)
+}
+
+theorem from_nat_nonneg(n: Nat) {
+    Rat.0 <= Rat.from_nat(n)
+} by {
+    if n = Nat.0 {
+        Rat.from_nat(n) = Rat.0
+        Rat.0 <= Rat.from_nat(n)
+    } else {
+        Nat.0 < n
+        Rat.from_nat(Nat.0) < Rat.from_nat(n)
+        Rat.0 < Rat.from_nat(n)
+        Rat.0 <= Rat.from_nat(n)
+    }
+}
+
+theorem recip_eq_one_div(a: Rat) {
+    a != Rat.0 implies a.reciprocal = Rat.1 / a
+}
+
+// It will be convenient to have a particular function that
+// approaches zero.
+define iop(n: Nat) -> Rat {
+    Rat.1 / (Rat.1 + Rat.from_nat(n))
+}
+
+theorem iop_pos(n: Nat) {
+    iop(n).is_positive
+} by {
+    Rat.0 <= Rat.from_nat(n)
+    Rat.1 + Rat.0 <= Rat.1 + Rat.from_nat(n)
+    Rat.0 < Rat.1 + Rat.from_nat(n)
+    (Rat.1 + Rat.from_nat(n)).is_positive
+    Rat.1.is_positive
+}
+
+theorem pos_ne_zero(a: Rat) {
+    a.is_positive implies a != Rat.0
+}
+
+theorem iop_ne_zero(n: Nat) {
+    iop(n) != Rat.0
+}
+
+theorem iop_recip(n: Nat) {
+    iop(n).reciprocal = Rat.1 + Rat.from_nat(n)
+} by {
+    Rat.1.is_positive
+    Rat.from_nat(n) >= Rat.0
+    (Rat.1 + Rat.from_nat(n)).is_positive
+    (Rat.1 + Rat.from_nat(n)) != Rat.0
+    (Rat.1 + Rat.from_nat(n)).reciprocal = iop(n)    
+}
+
+theorem iop_mul_lt_one(n: Nat) {
+    iop(n) * Rat.from_nat(n) < Rat.1
+} by {
+    iop(n) * iop(n).reciprocal = Rat.1
+    iop(n) * (Rat.1 + Rat.from_nat(n)) = Rat.1
+    iop(n) * Rat.1 + iop(n) * Rat.from_nat(n) = Rat.1
+    iop(n) + iop(n) * Rat.from_nat(n) = Rat.1
+    iop(n) * Rat.from_nat(n) < iop(n) * Rat.from_nat(n) + iop(n)
+}
+
+theorem pos_lte_num(a: Rat) {
+    a.is_positive implies a <= Rat.from_int(a.num)
+} by {
+    a.num.is_positive
+    a.num <= a.denom * a.num
+    a.num <= a.num * a.denom
+}
+
+theorem lt_some_int(a: Rat) {
+    exists(n: Int) {
+        a < Rat.from_int(n)
+    }
+}
+
+theorem lt_some_nat(a: Rat) {
+    exists(n: Nat) {
+        a < Rat.from_nat(n)
+    }
+} by {
+    let i: Int satisfy {
+        a < Rat.from_int(i)
+    }
+    let n: Nat = int.abs(i)
+    i <= Int.from_nat(n)
+    Rat.from_int(i) <= Rat.from_nat(n)
+}
+
+theorem iop_gets_lt(eps: Rat) {
+    eps.is_positive implies exists(n: Nat) {
+        forall(i: Nat) {
+            n <= i implies iop(i) < eps
+        }
+    }
+} by {
+    eps.reciprocal.is_positive
+    let n: Nat satisfy {
+        eps.reciprocal < Rat.from_nat(n)
+    }
+    forall(i: Nat) {
+        if n <= i {
+            Rat.from_nat(n) <= Rat.from_nat(i)
+            eps.reciprocal < Rat.from_nat(i)
+            eps.reciprocal * eps < Rat.from_nat(i) * eps
+            Rat.1 < Rat.from_nat(i) * eps
+            Rat.from_nat(i) * iop(i) < Rat.1
+            Rat.from_nat(i) * iop(i) < Rat.from_nat(i) * eps
+            iop(i) < eps
+        }
+    }
+
+}
