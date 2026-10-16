@@ -165,6 +165,12 @@ fn an_unchanged_second_verification_performs_no_searches() {
     let cold = project.sync_build_report();
     assert_eq!(cold.status, BuildStatus::Good);
     assert_eq!((cold.num_success, cold.num_cached), (5, 0));
+    let cold_cache = cold.cache.unwrap();
+    let cold_hints = cold_cache
+        .get(&ModuleRef::Name("main".into()))
+        .unwrap()
+        .theorem_premises();
+    assert_eq!(cold_hints.len(), 2);
     let mut warm = project.builder(|_| {});
     project.build(&mut warm);
     assert_eq!(warm.status, BuildStatus::Good);
@@ -176,5 +182,13 @@ fn an_unchanged_second_verification_performs_no_searches() {
             warm.goals_done
         ),
         (0, 0, 5, 5)
+    );
+    assert_eq!(
+        warm.cache()
+            .unwrap()
+            .get(&ModuleRef::Name("main".into()))
+            .unwrap()
+            .theorem_premises(),
+        cold_hints
     );
 }
