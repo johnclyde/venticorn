@@ -64,7 +64,7 @@ fn constant_members_round_trip_with_source_ranges_and_following_statements() {
     assert_eq!(tc.instance_name.text(), "F");
     assert_eq!(tc.typeclass_name.text(), "Foo");
     assert_eq!(tc.constants.len(), 3);
-    assert!(tc.theorems.is_empty());
+    assert!(tc.conditions.is_empty());
     assert_eq!(
         tc.constants[0].0.range(),
         Range::new(Position::new(1, 4), Position::new(1, 7))
@@ -105,7 +105,7 @@ fn malformed_typeclass_headers_and_members_return_diagnostics() {
     }
     parse_error(
         "typeclass F: Foo {}",
-        "must have some constants or theorems",
+        "must have some constants or conditions",
     );
     parse_error("typeclass F: Foo { value: F }", "must end with a newline");
     parse_error(
@@ -131,19 +131,19 @@ fn theorem_members_round_trip_with_nested_claims_and_no_arguments() {
         let formatted = parsed.to_string();
         assert_eq!(Statement::parse_str(&formatted).unwrap().to_string(), formatted);
         let StatementInfo::Typeclass(tc) = parsed.statement else { panic!("expected typeclass") };
-        assert!(!tc.theorems.is_empty());
-        assert_eq!(tc.theorems[0].name.start_pos().line, if tc.constants.is_empty() { 1 } else { 2 });
+        assert!(!tc.conditions.is_empty());
+        assert_eq!(tc.conditions[0].name.start_pos().line, if tc.constants.is_empty() { 1 } else { 2 });
     }
     let source = "typeclass F: Foo {\n first { true }\n second(value: F) { value = value }\n}";
     let parsed = Statement::parse_str(source).unwrap();
     let StatementInfo::Typeclass(tc) = parsed.statement else {
         panic!("expected typeclass")
     };
-    assert_eq!(tc.theorems.len(), 2);
-    assert!(tc.theorems[0].args.is_empty());
-    assert_eq!(tc.theorems[1].args.len(), 1);
-    assert_eq!(tc.theorems[0].claim.to_string(), "true");
-    assert_eq!(tc.theorems[1].claim.to_string(), "value = value");
+    assert_eq!(tc.conditions.len(), 2);
+    assert!(tc.conditions[0].args.is_empty());
+    assert_eq!(tc.conditions[1].args.len(), 1);
+    assert_eq!(tc.conditions[0].claim.to_string(), "true");
+    assert_eq!(tc.conditions[1].claim.to_string(), "value = value");
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn rejected_typeclasses_leave_the_environment_unchanged() {
         .unwrap_err();
     assert!(error
         .message()
-        .contains("typeclass declarations are not supported yet"));
+        .contains("typeclass conditions are not supported yet"));
     assert_eq!(env.nodes.len(), nodes);
     assert_eq!(env.last_line(), last_line);
     assert_eq!(
@@ -217,7 +217,7 @@ fn theorem_braces_preserve_following_typeclass_members_and_statements() {
     let StatementInfo::Typeclass(tc) = first.statement else {
         panic!("expected typeclass")
     };
-    assert_eq!(tc.theorems.len(), 1);
+    assert_eq!(tc.conditions.len(), 1);
     assert_eq!(tc.constants.len(), 1);
     let (second, _) = Statement::parse(&mut tokens, false).unwrap();
     assert!(matches!(
