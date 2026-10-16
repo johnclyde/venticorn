@@ -74,7 +74,7 @@ pub struct BindingMap {
     reverse_type_names: HashMap<AcornType, String>,
 
     // Family aliases are distinct from aliases for one complete specialized type.
-    generic_type_aliases: HashMap<UnresolvedType, String>,
+    generic_type_aliases: HashMap<(ModuleId, String, usize), String>,
 
     // Class names have their own kind, while sharing the declaration namespace.
     typeclass_names: BTreeMap<String, Typeclass>,
@@ -314,7 +314,8 @@ impl NamedEntity {
             NamedEntity::Type(t) => Ok(t),
             NamedEntity::UnresolvedType(t) => Err(source.error(&format!(
                 "type {} requires {} type parameters",
-                t.name, t.num_params
+                t.name,
+                t.params.len()
             ))),
             NamedEntity::Module(_) => {
                 Err(source.error("name refers to a module but we expected a type"))
@@ -371,14 +372,24 @@ impl BindingMap {
 
     // A generic declaration is not a usable type until all ordered actuals are supplied.
     pub fn add_potential_type(&mut self, name: &str, num_params: usize) -> PotentialType {
-        if num_params == 0 {
+        self.add_type_family(
+            name,
+            (0..num_params)
+                .map(|i| TypeParam::unconstrained(&format!("T{}", i)))
+                .collect(),
+        )
+    }
+
+    // Retain complete ordered bounds separately from preferred family spelling.
+    pub fn add_type_family(&mut self, name: &str, params: Vec<TypeParam>) -> PotentialType {
+        if params.is_empty() {
             return PotentialType::Resolved(self.add_data_type(name));
         }
         assert!(!self.name_in_use(name), "type name {} already bound", name);
         let potential = PotentialType::Unresolved(UnresolvedType {
             module_id: self.module,
             name: name.into(),
-            num_params,
+            params,
         });
         self.type_names.insert(name.into(), potential.clone());
         potential
@@ -442,7 +453,7 @@ impl BindingMap {
             PotentialType::Unresolved(t) => {
                 assert!(!self.name_in_use(name), "type alias {} already bound", name);
                 self.generic_type_aliases
-                    .entry(t.clone())
+                    .entry((t.module_id, t.name.clone(), t.params.len()))
                     .or_insert_with(|| name.to_string());
                 self.canonical_to_alias
                     .entry((t.module_id, t.name.clone()))
@@ -920,7 +931,8 @@ impl BindingMap {
             PotentialType::Resolved(t) => Ok(t),
             PotentialType::Unresolved(t) => Err(expression.error(&format!(
                 "type {} requires {} type parameters",
-                t.name, t.num_params
+                t.name,
+                t.params.len()
             ))),
         }
     }
@@ -2106,7 +2118,7 @@ impl BindingMap {
         Ok(PotentialValue::Resolved(value))
     }
 
-    fn evaluate_typeclass(
+    pub(crate) fn evaluate_typeclass(
         &self,
         project: &Project,
         expression: &Expression,
@@ -2341,11 +2353,7 @@ impl BindingMap {
             return Ok(Expression::generate_identifier(name));
         }
         if let AcornType::Data(module, type_name, actuals) = acorn_type {
-            let family = UnresolvedType {
-                module_id: *module,
-                name: type_name.clone(),
-                num_params: actuals.len(),
-            };
+            let family = (*module, type_name.clone(), actuals.len());
             if let Some(alias) = self.generic_type_aliases.get(&family) {
                 return self.parametrize_type_expr(Expression::generate_identifier(alias), actuals);
             }

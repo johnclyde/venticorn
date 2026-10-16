@@ -7,7 +7,7 @@ use crate::module::ModuleId;
 pub struct UnresolvedType {
     pub module_id: ModuleId,
     pub name: String,
-    pub num_params: usize,
+    pub params: Vec<TypeParam>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -25,13 +25,21 @@ impl PotentialType {
         match self {
             Self::Resolved(t) if params.is_empty() => Ok(t),
             Self::Resolved(_) => Err(source.error("resolved type cannot take parameters")),
-            Self::Unresolved(t) if params.len() == t.num_params => {
+            Self::Unresolved(t) if params.len() == t.params.len() => {
+                for (formal, actual) in t.params.iter().zip(&params) {
+                    if !formal.accepts(actual) {
+                        return Err(source.error(&format!(
+                            "type argument {} does not satisfy the class bound on {}",
+                            actual, formal.name
+                        )));
+                    }
+                }
                 Ok(AcornType::Data(t.module_id, t.name, params))
             }
             Self::Unresolved(t) => Err(source.error(&format!(
                 "type {} expects {} parameters, but got {}",
                 t.name,
-                t.num_params,
+                t.params.len(),
                 params.len()
             ))),
         }
