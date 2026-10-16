@@ -28,8 +28,8 @@ impl Fact {
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> Fact {
         let value = self.value.instantiate(params);
         let source = match &self.source.source_type {
-            SourceType::ConstantDefinition(v) => {
-                let new_type = SourceType::ConstantDefinition(v.instantiate(params));
+            SourceType::ConstantDefinition(v, name) => {
+                let new_type = SourceType::ConstantDefinition(v.instantiate(params), name.clone());
                 Source {
                     module: self.source.module,
                     range: self.source.range.clone(),

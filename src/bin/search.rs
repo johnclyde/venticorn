@@ -43,7 +43,7 @@ async fn main() -> ExitCode {
 
     let node = NodeCursor::from_path(env, &path);
     let goal_context = node.goal_context().unwrap();
-    println!("proving {} ...", goal_context.name);
+    println!("proving {} ...", goal_context.description());
     let verbose = true;
     let mut prover = Prover::new(&project, verbose);
     for fact in node.usable_facts(&project) {

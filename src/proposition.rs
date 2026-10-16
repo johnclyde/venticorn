@@ -16,11 +16,11 @@ pub enum SourceType {
     // An anonymous proposition that has previously been proved
     Anonymous,
 
-    // A proposition that is implicit in the definition of a type
-    TypeDefinition(String),
+    // A type definition and the member or principle that contributes this fact.
+    TypeDefinition(String, String),
 
-    // A proposition that is implicit in the definition of a constant
-    ConstantDefinition(AcornValue),
+    // The value specializes during monomorphization; its declared source name does not.
+    ConstantDefinition(AcornValue, String),
 
     // A premise for a block that contains the current environment
     Premise,
@@ -67,10 +67,26 @@ impl Source {
                 None => "an anonymous theorem".to_string(),
             },
             SourceType::Anonymous => format!("line {}", self.user_visible_line()),
-            SourceType::TypeDefinition(name) => format!("the '{}' definition", name),
-            SourceType::ConstantDefinition(value) => format!("the '{}' definition", value),
+            SourceType::TypeDefinition(name, _) => format!("the '{}' definition", name),
+            SourceType::ConstantDefinition(value, _) => format!("the '{}' definition", value),
             SourceType::Premise => "an assumed premise".to_string(),
             SourceType::NegatedGoal => "negating the goal".to_string(),
+        }
+    }
+
+    // A module-local identifier for selecting a source across common edits.
+    // Multiple facts can share a source; this is not a unique proof-step identifier.
+    // Anonymous claims fall back to their one-based source line.
+    pub fn name(&self) -> Option<String> {
+        match &self.source_type {
+            SourceType::Axiom(name) | SourceType::Theorem(name) => Some(
+                name.clone()
+                    .unwrap_or_else(|| self.user_visible_line().to_string()),
+            ),
+            SourceType::Anonymous => Some(self.user_visible_line().to_string()),
+            SourceType::TypeDefinition(type_name, member) => Some(format!("{type_name}.{member}")),
+            SourceType::ConstantDefinition(_, name) => Some(name.clone()),
+            SourceType::Premise | SourceType::NegatedGoal => None,
         }
     }
 
@@ -126,18 +142,29 @@ impl Proposition {
         }
     }
 
+    // Compatibility constructor for callers without a more specific member name.
     pub fn type_definition(
         value: AcornValue,
         module: ModuleId,
         range: Range,
         name: String,
     ) -> Proposition {
+        Self::type_member_definition(value, module, range, name, "definition".into())
+    }
+
+    pub fn type_member_definition(
+        value: AcornValue,
+        module: ModuleId,
+        range: Range,
+        name: String,
+        member: String,
+    ) -> Proposition {
         Proposition {
             value,
             source: Source {
                 module,
                 range,
-                source_type: SourceType::TypeDefinition(name),
+                source_type: SourceType::TypeDefinition(name, member),
             },
         }
     }
@@ -148,12 +175,26 @@ impl Proposition {
         range: Range,
         constant: AcornValue,
     ) -> Proposition {
+        let name = constant
+            .as_name()
+            .map(|(_, name)| name.to_string())
+            .unwrap_or_else(|| constant.to_string());
+        Self::named_constant_definition(value, module, range, constant, name)
+    }
+
+    pub fn named_constant_definition(
+        value: AcornValue,
+        module: ModuleId,
+        range: Range,
+        constant: AcornValue,
+        name: String,
+    ) -> Proposition {
         Proposition {
             value,
             source: Source {
                 module,
                 range,
-                source_type: SourceType::ConstantDefinition(constant),
+                source_type: SourceType::ConstantDefinition(constant, name),
             },
         }
     }
