@@ -247,11 +247,17 @@ impl TypeParam {
         let mut params = vec![];
         loop {
             let name = tokens.expect_type(TokenType::Identifier)?;
-            params.push(Self {
-                name,
-                typeclass: None,
-            });
             let terminator = tokens.expect_token()?;
+            let (typeclass, terminator) = if terminator.token_type == TokenType::Colon {
+                let (class, terminator) = Expression::parse_type(
+                    tokens,
+                    Terminator::Or(TokenType::Comma, TokenType::GreaterThan),
+                )?;
+                (Some(class), terminator)
+            } else {
+                (None, terminator)
+            };
+            params.push(Self { name, typeclass });
             match terminator.token_type {
                 TokenType::GreaterThan => return Ok(params),
                 TokenType::Comma => {}
