@@ -3,7 +3,10 @@ use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
 
 fn variable(name: &str) -> AcornType {
-    AcornType::Variable(name.into(), None)
+    AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: name.into(),
+        typeclass: None,
+    })
 }
 
 fn first(params: Vec<(String, AcornType)>) -> AcornValue {
@@ -67,7 +70,13 @@ fn scoped_plain_constants_follow_the_surrounding_type_substitution() {
     assert_eq!(concrete.get_type(), AcornType::Bool);
     assert!(!concrete.is_generic());
     let arbitrary = local.to_arbitrary();
-    assert_eq!(arbitrary.get_type(), AcornType::Arbitrary("T".into(), None));
+    assert_eq!(
+        arbitrary.get_type(),
+        AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None
+        })
+    );
     assert!(!arbitrary.is_generic());
 }
 
@@ -89,8 +98,17 @@ fn opaque_scope_types_transform_in_effective_types_and_arguments_together() {
     assert_eq!(
         generic.to_arbitrary().get_type(),
         AcornType::new_functional(
-            vec![AcornType::Arbitrary("T".into(), None), AcornType::Bool],
-            AcornType::Arbitrary("T".into(), None)
+            vec![
+                AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+                    name: "T".into(),
+                    typeclass: None
+                }),
+                AcornType::Bool
+            ],
+            AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+                name: "T".into(),
+                typeclass: None
+            })
         )
     );
     let plain = AcornValue::new_constant(20, "local".into(), vec![], scoped);

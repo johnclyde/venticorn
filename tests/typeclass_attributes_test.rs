@@ -13,8 +13,14 @@ fn instance_lookup_uses_the_parameter_name_and_canonical_class() {
         name: "Magma".into(),
     };
     for parameter in [
-        AcornType::Variable("T".into(), None),
-        AcornType::Arbitrary("T".into(), None),
+        AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None,
+        }),
+        AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None,
+        }),
     ] {
         let mut stack = Stack::new();
         stack.insert("value".into(), parameter);
@@ -30,40 +36,48 @@ fn instance_lookup_uses_the_parameter_name_and_canonical_class() {
         assert_eq!(error.message(), "unqualified type T has no attributes");
     }
     for parameter in [
-        AcornType::Variable("T".into(), Some(class.clone())),
-        AcornType::Arbitrary("T".into(), Some(class.clone())),
+        AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: Some(class.clone()),
+        }),
+        AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: Some(class.clone()),
+        }),
     ] {
         let mut stack = Stack::new();
         stack.insert("value".into(), parameter);
-        for (input, expected) in [
-            ("value.absent", "unknown attribute 'Magma.absent'"),
-            (
-                "value.mul",
-                "typeclass member specialization is not supported yet",
-            ),
-        ] {
-            let error = env
-                .bindings
-                .evaluate_value_with_stack(
-                    &mut stack,
-                    &Project::new_mock(),
-                    &Expression::expect_value(input),
-                    None,
-                )
-                .unwrap_err();
-            assert_eq!(error.message(), expected);
-        }
+        let error = env
+            .bindings
+            .evaluate_value_with_stack(
+                &mut stack,
+                &Project::new_mock(),
+                &Expression::expect_value("value.absent"),
+                None,
+            )
+            .unwrap_err();
+        assert_eq!(error.message(), "unknown attribute 'Magma.absent'");
+        let member = env
+            .bindings
+            .evaluate_value_with_stack(
+                &mut stack,
+                &Project::new_mock(),
+                &Expression::expect_value("value.mul"),
+                None,
+            )
+            .unwrap();
+        assert!(member.get_type().is_functional());
     }
     let mut stack = Stack::new();
     stack.insert(
         "value".into(),
-        AcornType::Arbitrary(
-            "T".into(),
-            Some(Typeclass {
+        AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: Some(Typeclass {
                 module_id: env.module_id + 1,
                 name: "Magma".into(),
             }),
-        ),
+        }),
     );
     let error = env
         .bindings
@@ -133,9 +147,7 @@ fn class_names_are_distinct_entities_with_qualified_member_completion() {
             .evaluate_value(&project, &Expression::expect_value(input), None)
             .unwrap_err();
         assert!(
-            error
-                .message()
-                .contains("specialization is not supported yet"),
+            error.message().contains("class bound") || error.message().contains("expected type"),
             "{error}"
         );
     }

@@ -140,13 +140,22 @@ fn admitted_members_keep_instance_parameters_and_scope_cleanup() {
     assert!(!env.bindings.has_type_name("Magma"));
     assert!(env.nodes.is_empty());
     for name in ["Magma.mul", "Magma.flag"] {
-        assert_eq!(env.bindings.get_params(name), ["M"]);
+        assert_eq!(
+            env.bindings.get_params(name),
+            [venticorn::acorn_type::TypeParam {
+                name: "M".into(),
+                typeclass: Some(class.clone())
+            }]
+        );
         assert!(matches!(
             env.bindings.get_constant_value(name),
             Some(PotentialValue::Unresolved(_))
         ));
     }
-    let instance = AcornType::Variable("M".into(), Some(class));
+    let instance = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "M".into(),
+        typeclass: Some(class),
+    });
     assert_eq!(
         env.bindings
             .get_constant_value("Magma.mul")
@@ -208,7 +217,6 @@ fn nested_class_declarations_are_located_and_cannot_escape_or_conflate() {
 }
 
 #[test]
-#[ignore = "bounded instance method specialization is not implemented yet"]
 fn bounded_instance_method_template_is_admitted() {
     let mut env = Environment::new_test();
     env.add(
@@ -224,7 +232,6 @@ fn bounded_instance_method_template_is_admitted() {
 }
 
 #[test]
-#[ignore = "bounded class member specialization is not implemented yet"]
 fn bounded_qualified_member_template_is_admitted() {
     let mut env = Environment::new_test();
     env.add(

@@ -9,7 +9,10 @@ fn constant(typ: AcornType, params: Vec<AcornType>) -> AcornValue {
 
 #[test]
 fn unresolved_type_metadata_is_rejected_for_variables_and_all_constants() {
-    let variable = AcornType::Variable("T".into(), None);
+    let variable = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     for value in [
         AcornValue::Variable(0, variable.clone()),
         constant(variable.clone(), vec![]),
@@ -48,7 +51,10 @@ fn unsupported_function_shapes_return_errors_instead_of_type_map_panics() {
         let value = constant(nested, vec![]);
         assert!(Normalizer::new().term_from_value(&value, false).is_err());
     }
-    let bad_result = AcornType::Variable("T".into(), None);
+    let bad_result = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     let function = constant(
         AcornType::new_functional(vec![AcornType::Bool], bad_result),
         vec![],

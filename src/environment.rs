@@ -4,13 +4,13 @@ use std::collections::{HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, Range};
 
-use crate::acorn_type::{AcornType, PotentialType, Typeclass};
+use crate::acorn_type::{AcornType, PotentialType, TypeParam, Typeclass};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, PotentialValue, Stack};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
-use crate::expression::TypeParam;
+use crate::expression::TypeParamExpr;
 use crate::fact::Fact;
 use crate::module::ModuleId;
 use crate::project::{LoadError, Project};
@@ -188,10 +188,7 @@ impl Environment {
         let constant_type_clone = self.bindings.get_type_for_identifier(name).unwrap().clone();
         let param_names = self.bindings.get_params(name);
 
-        let params = param_names
-            .into_iter()
-            .map(|name| AcornType::Variable(name, None))
-            .collect();
+        let params = param_names.into_iter().map(AcornType::Variable).collect();
         let constant = AcornValue::new_constant(
             self.module_id,
             name.to_string(),
@@ -412,7 +409,7 @@ impl Environment {
             }
             self.bindings.add_constant(
                 &name,
-                class_params.to_vec(),
+                self.scoped_type_params(class_params),
                 constant_type,
                 definition,
                 None,
@@ -534,9 +531,9 @@ impl Environment {
                             Some(AcornValue::new_constant(
                                 constant.module_id,
                                 constant.name.clone(),
-                                class_params
-                                    .iter()
-                                    .map(|name| AcornType::Variable(name.clone(), None))
+                                self.scoped_type_params(class_params)
+                                    .into_iter()
+                                    .map(AcornType::Variable)
                                     .collect(),
                                 constant.instance_type.clone(),
                             ))
@@ -552,7 +549,7 @@ impl Environment {
                     .name_token
                     .error("generic member cannot capture arbitrary types"));
             }
-            class_params.to_vec()
+            self.scoped_type_params(class_params)
         };
         self.bindings
             .add_constant(&name, param_names, constant_type, definition, None);
@@ -568,9 +565,6 @@ impl Environment {
         statement: &Statement,
         ts: &crate::statement::TheoremStatement,
     ) -> compilation::Result<()> {
-        if let Some(param) = ts.type_params.iter().find(|p| p.typeclass.is_some()) {
-            return Err(param.error("bounded theorem and axiom declarations are not supported yet"));
-        }
         if let Some(name) = &ts.name {
             if self.bindings.name_in_use(name) {
                 return Err(statement.first_token.error(&format!(
@@ -635,7 +629,7 @@ impl Environment {
         // A malformed body must not leave an axiom-like theorem name behind.
         let mut staged = self.child(statement.first_line(), true);
         if let Some(name) = &ts.name {
-            if arg_names.contains(name) || type_params.contains(name) {
+            if arg_names.contains(name) || type_params.iter().any(|p| &p.name == name) {
                 return Err(statement.error("theorem name conflicts with a parameter"));
             }
             let lambda_claim = AcornValue::new_lambda(arg_types, unbound_claim);
@@ -666,13 +660,9 @@ impl Environment {
             )?)
         };
 
-        if let Some(name) = &ts.name {
-            self.bindings = staged.bindings;
-            self.definition_ranges.insert(name.clone(), range);
-        }
-
-        let index = self.add_node(
+        let node = Node::new(
             project,
+            &staged,
             already_proven,
             Proposition::theorem(
                 ts.axiomatic,
@@ -683,6 +673,19 @@ impl Environment {
             ),
             block,
         );
+        for param in &ts.type_params {
+            if param.typeclass.is_some() && !node.claim.value.has_type_variable(param.name.text()) {
+                return Err(
+                    param.error("bounded theorem parameter must occur in the exported proposition")
+                );
+            }
+        }
+        if let Some(name) = &ts.name {
+            self.bindings = staged.bindings;
+            self.definition_ranges.insert(name.clone(), range);
+        }
+        let index = self.nodes.len();
+        self.nodes.push(node);
         self.add_node_lines(index, &statement.range());
         if let Some(name) = &ts.name {
             self.bindings.mark_as_theorem(name);
@@ -803,7 +806,7 @@ impl Environment {
 
         let mut param_names = vec![];
         let mut arbitrary_params = vec![];
-        for token in &TypeParam::unconstrained_tokens(&ss.type_params)? {
+        for token in &TypeParamExpr::unconstrained_tokens(&ss.type_params)? {
             if token.text() == ss.name || self.bindings.name_in_use(token.text()) {
                 return Err(token.error("type parameter already defined in this scope"));
             }
@@ -897,7 +900,7 @@ impl Environment {
                 AcornType::new_functional(vec![struct_type.clone()], field_type.clone());
             self.bindings.add_constant(
                 &member_fn_name,
-                param_names.clone(),
+                self.scoped_type_params(&param_names),
                 member_fn_type.parametrize(self.module_id, &param_names),
                 None,
                 None,
@@ -910,7 +913,7 @@ impl Environment {
         let new_fn_type = AcornType::new_functional(field_types.clone(), struct_type.clone());
         self.bindings.add_constant(
             &new_fn_name,
-            param_names.clone(),
+            self.scoped_type_params(&param_names),
             new_fn_type.parametrize(self.module_id, &param_names),
             None,
             // Invalid inputs can map to the same constrained object. They cannot
@@ -1387,6 +1390,16 @@ impl Environment {
         Ok((scope, members))
     }
 
+    fn scoped_type_params(&self, names: &[String]) -> Vec<TypeParam> {
+        names
+            .iter()
+            .map(|name| match self.bindings.get_type_for_name(name) {
+                Some(AcornType::Variable(param) | AcornType::Arbitrary(param)) => param.clone(),
+                _ => panic!("missing scoped type parameter {}", name),
+            })
+            .collect()
+    }
+
     fn add_typeclass_statement(
         &mut self,
         project: &mut Project,
@@ -1399,7 +1412,10 @@ impl Environment {
                 .error("typeclass declarations are only supported at the top level"));
         }
         let (mut scope, members) = self.prepare_typeclass(project, ts)?;
-        let params = vec![ts.instance_name.text().to_string()];
+        let params = vec![match scope.get_type_for_name(ts.instance_name.text()) {
+            Some(AcornType::Arbitrary(param)) => param.clone(),
+            _ => unreachable!("the staged instance type must exist"),
+        }];
         for (name, member_type) in members {
             scope.add_constant(&name, params.clone(), member_type, None, None);
         }
@@ -1703,7 +1719,7 @@ impl Environment {
                 }
                 let mut param_names = Vec::with_capacity(cs.type_params.len());
                 let mut actuals = Vec::with_capacity(cs.type_params.len());
-                for token in &TypeParam::unconstrained_tokens(&cs.type_params)? {
+                for token in &TypeParamExpr::unconstrained_tokens(&cs.type_params)? {
                     if self.bindings.name_in_use(token.text()) {
                         return Err(token.error("type parameter already defined in this scope"));
                     }

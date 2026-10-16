@@ -1,4 +1,5 @@
 // Modified for Venticorn: preserve Boolean-literal polarity during normalization.
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::acorn_type::AcornType;
@@ -1525,6 +1526,45 @@ impl AcornValue {
             }
             AcornValue::Variable(..) | AcornValue::Constant(..) | AcornValue::Bool(_) => false,
         }
+    }
+
+    // Visit every type-bearing location, including phantom actuals and match binders.
+    pub fn all_types(&self, predicate: &impl Fn(&AcornType) -> bool) -> bool {
+        match self {
+            Self::Variable(_, ty) => predicate(ty),
+            Self::Constant(c) => predicate(&c.instance_type) && c.params.iter().all(predicate),
+            Self::Application(app) => {
+                app.function.all_types(predicate)
+                    && app.args.iter().all(|arg| arg.all_types(predicate))
+            }
+            Self::Lambda(types, body) | Self::ForAll(types, body) | Self::Exists(types, body) => {
+                types.iter().all(predicate) && body.all_types(predicate)
+            }
+            Self::Binary(_, left, right) => left.all_types(predicate) && right.all_types(predicate),
+            Self::Not(body) => body.all_types(predicate),
+            Self::IfThenElse(condition, yes, no) => {
+                condition.all_types(predicate)
+                    && yes.all_types(predicate)
+                    && no.all_types(predicate)
+            }
+            Self::Match(scrutinee, cases) => {
+                scrutinee.all_types(predicate)
+                    && cases.iter().all(|(types, pattern, result)| {
+                        types.iter().all(predicate)
+                            && pattern.all_types(predicate)
+                            && result.all_types(predicate)
+                    })
+            }
+            Self::Bool(_) => true,
+        }
+    }
+
+    pub fn has_type_variable(&self, name: &str) -> bool {
+        !self.all_types(&|ty| !ty.has_type_variable(name))
+    }
+
+    pub fn accepts_substitution(&self, substitutions: &HashMap<String, AcornType>) -> bool {
+        self.all_types(&|ty| ty.accepts_substitution(substitutions))
     }
 
     // Replace some parametric types with other types.

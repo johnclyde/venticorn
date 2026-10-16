@@ -3,12 +3,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
-use crate::acorn_type::{AcornType, PotentialType, Typeclass, UnresolvedType};
+use crate::acorn_type::{AcornType, PotentialType, TypeParam, Typeclass, UnresolvedType};
 use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
 use crate::compilation::{self, Error, ErrorSource};
-use crate::expression::{Declaration, Expression, Terminator, TypeParam};
+use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::project::Project;
 use crate::termination_checker::TerminationChecker;
@@ -125,26 +125,16 @@ pub struct UnresolvedConstant {
     module_id: ModuleId,
     name: String,
     // Formal parameters are kept in declaration order.
-    params: Vec<String>,
+    params: Vec<TypeParam>,
     generic_type: AcornType,
 }
 
 impl UnresolvedConstant {
-    // Complete formal-bound validation is required before these applications become usable.
-    fn check_supported_bounds(&self, source: &dyn ErrorSource) -> compilation::Result<()> {
-        if self.generic_type.has_typeclass_bound() {
-            Err(source.error("bounded constant specialization is not supported yet"))
-        } else {
-            Ok(())
-        }
-    }
-
     fn resolve(
         &self,
         source: &dyn ErrorSource,
         actuals: Vec<AcornType>,
     ) -> compilation::Result<AcornValue> {
-        self.check_supported_bounds(source)?;
         if actuals.len() != self.params.len() {
             return Err(source.error(&format!(
                 "expected {} type parameters, but got {}",
@@ -152,11 +142,19 @@ impl UnresolvedConstant {
                 actuals.len()
             )));
         }
+        for (formal, actual) in self.params.iter().zip(&actuals) {
+            if !formal.accepts(actual) {
+                return Err(source.error(&format!(
+                    "type argument {} does not satisfy the class bound on {}",
+                    actual, formal.name
+                )));
+            }
+        }
         let substitutions = self
             .params
             .iter()
-            .cloned()
-            .zip(actuals.iter().cloned())
+            .zip(&actuals)
+            .map(|(formal, actual)| (formal.name.clone(), actual.clone()))
             .collect::<Vec<_>>();
         let instance_type = self.generic_type.instantiate(&substitutions);
         Ok(AcornValue::new_constant(
@@ -214,7 +212,7 @@ impl PotentialValue {
 struct ConstantInfo {
     // The names of the type parameters this constant was defined with, if any.
     // These type parameters can be used in the definition.
-    params: Vec<String>,
+    params: Vec<TypeParam>,
 
     // The definition of this constant, if it has one.
     definition: Option<AcornValue>,
@@ -413,7 +411,10 @@ impl BindingMap {
         typeclass: Option<&Typeclass>,
     ) -> AcornType {
         assert!(!self.name_in_use(name), "type name {} already bound", name);
-        let arbitrary = AcornType::Arbitrary(name.to_string(), typeclass.cloned());
+        let arbitrary = AcornType::Arbitrary(crate::acorn_type::TypeParam {
+            name: name.to_string(),
+            typeclass: typeclass.cloned(),
+        });
         self.insert_type_name(name.to_string(), arbitrary.clone());
         arbitrary
     }
@@ -460,7 +461,10 @@ impl BindingMap {
         );
         self.insert_type_name(
             name.to_string(),
-            AcornType::Variable(name.to_string(), typeclass),
+            AcornType::Variable(crate::acorn_type::TypeParam {
+                name: name.to_string(),
+                typeclass: typeclass,
+            }),
         );
     }
 
@@ -514,7 +518,7 @@ impl BindingMap {
         self.identifier_types.get(identifier)
     }
 
-    pub fn get_params(&self, identifier: &str) -> Vec<String> {
+    pub fn get_params(&self, identifier: &str) -> Vec<TypeParam> {
         match self.constants.get(identifier) {
             Some(info) => info.params.clone(),
             None => vec![],
@@ -544,7 +548,7 @@ impl BindingMap {
     }
 
     // Returns the defined value and its parameters in declaration order.
-    pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[String])> {
+    pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[TypeParam])> {
         let info = self.constants.get(name)?;
         Some((info.definition.as_ref()?, &info.params))
     }
@@ -564,7 +568,7 @@ impl BindingMap {
     pub fn add_constant(
         &mut self,
         name: &str,
-        params: Vec<String>,
+        params: Vec<TypeParam>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
         constructor: Option<(AcornType, usize, usize)>,
@@ -691,7 +695,8 @@ impl BindingMap {
     ) -> Option<Vec<CompletionItem>> {
         let (module, type_name) = match data_type {
             AcornType::Data(module, name, _) => (*module, name),
-            AcornType::Variable(_, Some(class)) | AcornType::Arbitrary(_, Some(class)) => {
+            AcornType::Variable(param) | AcornType::Arbitrary(param) => {
+                let class = param.typeclass.as_ref()?;
                 (class.module_id, &class.name)
             }
             _ => return None,
@@ -1273,13 +1278,16 @@ impl BindingMap {
         name: &str,
     ) -> compilation::Result<AcornValue> {
         let base_type = instance.get_type();
-        let (module, type_name, bounded) = match base_type {
-            AcornType::Data(module, name, _) => (module, name, false),
-            AcornType::Variable(name, class) | AcornType::Arbitrary(name, class) => {
-                let class = class.ok_or_else(|| {
-                    source.error(&format!("unqualified type {} has no attributes", name))
+        let (module, type_name) = match base_type {
+            AcornType::Data(module, name, _) => (module, name),
+            AcornType::Variable(param) | AcornType::Arbitrary(param) => {
+                let class = param.typeclass.ok_or_else(|| {
+                    source.error(&format!(
+                        "unqualified type {} has no attributes",
+                        param.name
+                    ))
                 })?;
-                (class.module_id, class.name, true)
+                (class.module_id, class.name)
             }
             _ => {
                 return Err(source.error(&format!(
@@ -1299,9 +1307,6 @@ impl BindingMap {
         let function = bindings
             .get_constant_value(&constant_name)
             .ok_or_else(|| source.error(&format!("unknown attribute '{}'", constant_name)))?;
-        if bounded {
-            return Err(source.error("typeclass member specialization is not supported yet"));
-        }
         self.apply_potential(source, function, vec![instance], None)
     }
 
@@ -1371,14 +1376,12 @@ impl BindingMap {
                 .ok_or_else(|| {
                     name_token.error(&format!("{} has no member named '{}'", t.name, name))
                 }),
-            Some(NamedEntity::Typeclass(class)) => {
-                self.evaluate_type_attribute(project, class.module_id, &class.name, name)
-                    .ok_or_else(|| {
-                        name_token
-                            .error(&format!("{} has no attribute named '{}'", class.name, name))
-                    })?;
-                Err(name_token.error("typeclass member specialization is not supported yet"))
-            }
+            Some(NamedEntity::Typeclass(class)) => self
+                .evaluate_type_attribute(project, class.module_id, &class.name, name)
+                .map(PotentialValue::to_named_entity)
+                .ok_or_else(|| {
+                    name_token.error(&format!("{} has no attribute named '{}'", class.name, name))
+                }),
             Some(NamedEntity::Module(module)) => {
                 if let Some(bindings) = project.get_bindings(module) {
                     bindings.evaluate_name(name_token, project, &Stack::new(), None)
@@ -1668,7 +1671,6 @@ impl BindingMap {
         arg_sources: &[&Expression],
         expected_type: Option<&AcornType>,
     ) -> compilation::Result<AcornValue> {
-        unresolved.check_supported_bounds(source)?;
         let function_type = match &unresolved.generic_type {
             AcornType::Function(ft) => ft,
             _ => return Err(source.error("expected a function")),
@@ -1694,25 +1696,16 @@ impl BindingMap {
                 )));
             }
         }
-        let substitutions = unresolved
+        let actuals = unresolved
             .params
             .iter()
-            .map(|name| {
-                mapping
-                    .get(name)
-                    .map(|actual| (name.clone(), actual.clone()))
-                    .ok_or_else(|| {
-                        source.error(&format!("parameter {} could not be inferred", name))
-                    })
+            .map(|formal| {
+                mapping.get(&formal.name).cloned().ok_or_else(|| {
+                    source.error(&format!("parameter {} could not be inferred", formal.name))
+                })
             })
             .collect::<compilation::Result<Vec<_>>>()?;
-        let instance_type = unresolved.generic_type.instantiate(&substitutions);
-        let instance = AcornValue::new_constant(
-            unresolved.module_id,
-            unresolved.name,
-            substitutions.into_iter().map(|(_, t)| t).collect(),
-            instance_type,
-        );
+        let instance = unresolved.resolve(source, actuals)?;
         self.apply_resolved(source, instance, args, expected_type)
     }
 
@@ -1932,7 +1925,6 @@ impl BindingMap {
                             let PotentialValue::Unresolved(unresolved) = function else {
                                 return Err(args_expr.error("unexpected type argument list"));
                             };
-                            unresolved.check_supported_bounds(args_expr.as_ref())?;
                             if arguments.len() != unresolved.params.len() {
                                 return Err(args_expr.error(&format!(
                                     "expected {} type arguments, but got {}",
@@ -1940,22 +1932,14 @@ impl BindingMap {
                                     arguments.len()
                                 )));
                             }
-                            let mut named_arguments = vec![];
-                            let mut actual_arguments = vec![];
-                            for (name, argument) in unresolved.params.iter().zip(arguments) {
-                                let actual = self.evaluate_type(project, argument)?;
-                                named_arguments.push((name.clone(), actual.clone()));
-                                actual_arguments.push(actual);
-                            }
-                            let instance_type =
-                                unresolved.generic_type.instantiate(&named_arguments);
-                            check_type(expression, expected_type, &instance_type)?;
-                            return Ok(PotentialValue::Resolved(AcornValue::new_constant(
-                                unresolved.module_id,
-                                unresolved.name,
-                                actual_arguments,
-                                instance_type,
-                            )));
+                            let actual_arguments = arguments
+                                .into_iter()
+                                .map(|argument| self.evaluate_type(project, argument))
+                                .collect::<compilation::Result<Vec<_>>>()?;
+                            let instance =
+                                unresolved.resolve(args_expr.as_ref(), actual_arguments)?;
+                            check_type(expression, expected_type, &instance.get_type())?;
+                            return Ok(PotentialValue::Resolved(instance));
                         }
                         arguments
                     }
@@ -2160,14 +2144,14 @@ impl BindingMap {
     pub fn evaluate_scoped_value(
         &mut self,
         project: &Project,
-        type_params: &[TypeParam],
+        type_params: &[TypeParamExpr],
         args: &[Declaration],
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
         class_type: Option<&AcornType>,
         function_name: Option<&str>,
     ) -> compilation::Result<(
-        Vec<String>,
+        Vec<TypeParam>,
         Vec<String>,
         Vec<AcornType>,
         Option<AcornValue>,
@@ -2188,21 +2172,21 @@ impl BindingMap {
     fn evaluate_scoped_value_in_scope(
         &mut self,
         project: &Project,
-        type_params: &[TypeParam],
+        type_params: &[TypeParamExpr],
         args: &[Declaration],
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
         class_type: Option<&AcornType>,
         function_name: Option<&str>,
     ) -> compilation::Result<(
-        Vec<String>,
+        Vec<TypeParam>,
         Vec<String>,
         Vec<AcornType>,
         Option<AcornValue>,
         AcornType,
     )> {
         // Bind all the type parameters and arguments
-        let mut type_param_names: Vec<String> = vec![];
+        let mut type_param_names: Vec<TypeParam> = vec![];
         for param in type_params {
             if self.name_in_use(param.name.text()) {
                 return Err(param
@@ -2214,8 +2198,11 @@ impl BindingMap {
                 .as_ref()
                 .map(|expression| self.evaluate_typeclass(project, expression))
                 .transpose()?;
-            self.add_type_variable(param.name.text(), class);
-            type_param_names.push(param.name.text().to_string());
+            self.add_type_variable(param.name.text(), class.clone());
+            type_param_names.push(TypeParam {
+                name: param.name.text().to_string(),
+                typeclass: class,
+            });
         }
         let mut stack = Stack::new();
         let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_type)?;
@@ -2231,16 +2218,6 @@ impl BindingMap {
             Some(e) => self.evaluate_type(project, e)?,
             None => AcornType::Bool,
         };
-        for param in type_params {
-            if param.typeclass.is_some()
-                && !value_type.has_type_variable(param.name.text())
-                && !arg_types
-                    .iter()
-                    .any(|t| t.has_type_variable(param.name.text()))
-            {
-                return Err(param.error("phantom typeclass bounds are not supported yet"));
-            }
-        }
         if !type_param_names.is_empty()
             && (arg_types.iter().any(AcornType::has_arbitrary) || value_type.has_arbitrary())
         {
@@ -2580,7 +2557,7 @@ impl BindingMap {
                     .arg_types
                     .iter()
                     .take(supplied)
-                    .any(|t| t.has_type_variable(name))
+                    .any(|t| t.has_type_variable(&name.name))
             })
     }
 

@@ -40,7 +40,7 @@ fn generic_numeral_readers_return_a_located_error() {
     // reject it before constructing an application, even when its result type is fixed.
     env.bindings.add_constant(
         "Number.read",
-        vec!["T".into()],
+        vec![venticorn::acorn_type::TypeParam::unconstrained("T")],
         AcornType::new_functional(vec![number.clone(), number.clone()], number),
         None,
         None,

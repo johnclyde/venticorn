@@ -7,7 +7,10 @@ fn data(name: &str, args: Vec<AcornType>) -> AcornType {
 
 #[test]
 fn datatype_arguments_preserve_identity_and_recursive_type_operations() {
-    let variable = AcornType::Variable("T".into(), None);
+    let variable = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     let nested = data("Outer", vec![data("Inner", vec![variable.clone()])]);
     assert!(nested.is_generic());
     assert!(nested.has_type_variable("T"));
@@ -34,7 +37,14 @@ fn datatype_arguments_preserve_identity_and_recursive_type_operations() {
     );
     assert_eq!(pair.to_string(), "Pair<Bool, Nat>");
     assert_eq!(
-        data("Wrap", vec![AcornType::Arbitrary("T".into(), None)]).parametrize(10, &["T".into()]),
+        data(
+            "Wrap",
+            vec![AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+                name: "T".into(),
+                typeclass: None
+            })]
+        )
+        .parametrize(10, &["T".into()]),
         data("Wrap", vec![variable])
     );
 }
@@ -45,7 +55,13 @@ fn parameterized_numerals_reject_without_erasing_actuals() {
     env.bindings
         .add_type_alias("Specialized", data("Family", vec![AcornType::Bool]));
     env.bad("numerals Specialized");
-    let hidden = data("Hidden", vec![AcornType::Variable("T".into(), None)]);
+    let hidden = data(
+        "Hidden",
+        vec![AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None,
+        })],
+    );
     let value = venticorn::acorn_value::AcornValue::Variable(0, hidden);
     assert!(venticorn::normalizer::Normalizer::new()
         .term_from_value(&value, false)
@@ -77,8 +93,11 @@ fn generic_type_names_can_resolve_canonical_member_heads() {
     env.bindings.add_potential_type("Family", 1);
     env.bindings.add_constant(
         "Family.value",
-        vec!["T".into()],
-        AcornType::Variable("T".into(), None),
+        vec![venticorn::acorn_type::TypeParam::unconstrained("T")],
+        AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None,
+        }),
         None,
         None,
     );
@@ -92,10 +111,13 @@ fn specialized_type_alias_members_never_discard_fixed_arguments() {
     use venticorn::environment::Environment;
     let mut env = Environment::new_test();
     env.bindings.add_potential_type("Box", 1);
-    let generic = AcornType::Variable("T".into(), None);
+    let generic = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     env.bindings.add_constant(
         "Box.new",
-        vec!["T".into()],
+        vec![venticorn::acorn_type::TypeParam::unconstrained("T")],
         AcornType::new_functional(
             vec![generic.clone()],
             AcornType::Data(env.module_id, "Box".into(), vec![generic]),
@@ -118,7 +140,10 @@ fn specialized_type_alias_members_never_discard_fixed_arguments() {
 #[test]
 fn arbitrary_type_detection_visits_effective_and_binder_metadata() {
     use venticorn::acorn_value::{AcornValue, ConstantInstance};
-    let arbitrary = AcornType::Arbitrary("T".into(), None);
+    let arbitrary = AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     let wrapped = data("Wrap", vec![arbitrary.clone()]);
     let constant = AcornValue::Constant(ConstantInstance {
         module_id: 10,
@@ -141,7 +166,13 @@ fn arbitrary_type_detection_visits_effective_and_binder_metadata() {
     .has_arbitrary());
     assert_eq!(
         data("Wrap", vec![arbitrary]).to_generic(),
-        data("Wrap", vec![AcornType::Variable("T".into(), None)])
+        data(
+            "Wrap",
+            vec![AcornType::Variable(venticorn::acorn_type::TypeParam {
+                name: "T".into(),
+                typeclass: None
+            })]
+        )
     );
 }
 
@@ -215,10 +246,13 @@ fn typed_application_checks_both_resolved_and_pending_heads() {
             None
         )
         .is_err());
-    let t = AcornType::Variable("T".into(), None);
+    let t = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     bindings.add_constant(
         "id",
-        vec!["T".into()],
+        vec![venticorn::acorn_type::TypeParam::unconstrained("T")],
         AcornType::new_functional(vec![t.clone()], t),
         None,
         None,
@@ -246,7 +280,13 @@ fn typed_application_checks_both_resolved_and_pending_heads() {
 #[test]
 fn arbitrary_conversion_preserves_effective_types_and_unused_binders() {
     use venticorn::acorn_value::AcornValue;
-    let arbitrary = data("Wrap", vec![AcornType::Arbitrary("T".into(), None)]);
+    let arbitrary = data(
+        "Wrap",
+        vec![AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None,
+        })],
+    );
     for value in [
         AcornValue::new_constant(10, "hidden".into(), vec![], arbitrary.clone()),
         AcornValue::new_constant(

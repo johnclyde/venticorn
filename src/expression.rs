@@ -217,12 +217,12 @@ impl Declaration {
 
 // A declaration parameter retains its name and optional class expression separately.
 #[derive(Debug)]
-pub struct TypeParam {
+pub struct TypeParamExpr {
     pub name: Token,
     pub typeclass: Option<Expression>,
 }
 
-impl fmt::Display for TypeParam {
+impl fmt::Display for TypeParamExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name)?;
         if let Some(class) = &self.typeclass {
@@ -232,13 +232,13 @@ impl fmt::Display for TypeParam {
     }
 }
 
-impl ErrorSource for TypeParam {
+impl ErrorSource for TypeParamExpr {
     fn error(&self, message: &str) -> Error {
         self.name.error(message)
     }
 }
 
-impl TypeParam {
+impl TypeParamExpr {
     pub fn parse_list(tokens: &mut TokenIter) -> Result<Vec<Self>> {
         if tokens.peek_type() != Some(TokenType::LessThan) {
             return Ok(vec![]);

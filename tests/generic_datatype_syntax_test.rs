@@ -22,8 +22,14 @@ fn generic_structure_syntax_round_trips() {
 fn proof_scope_generalizes_only_its_declared_parameters() {
     use venticorn::acorn_type::AcornType;
     use venticorn::acorn_value::AcornValue;
-    let outer = AcornType::Arbitrary("Outer".into(), None);
-    let inner = AcornType::Arbitrary("Inner".into(), None);
+    let outer = AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+        name: "Outer".into(),
+        typeclass: None,
+    });
+    let inner = AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+        name: "Inner".into(),
+        typeclass: None,
+    });
     let value = AcornValue::ForAll(
         vec![outer.clone(), inner.clone()],
         Box::new(AcornValue::Bool(true)),
@@ -32,7 +38,13 @@ fn proof_scope_generalizes_only_its_declared_parameters() {
     assert_eq!(
         exported,
         AcornValue::ForAll(
-            vec![outer, AcornType::Variable("Inner".into(), None)],
+            vec![
+                outer,
+                AcornType::Variable(venticorn::acorn_type::TypeParam {
+                    name: "Inner".into(),
+                    typeclass: None
+                })
+            ],
             Box::new(AcornValue::Bool(true))
         )
     );

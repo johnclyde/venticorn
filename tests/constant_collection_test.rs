@@ -3,7 +3,10 @@ use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
 
 fn generic(name: &str) -> AcornValue {
-    let t = AcornType::Variable("T".into(), None);
+    let t = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     AcornValue::new_constant(10, name.into(), vec![t.clone()], t)
 }
 fn names(value: &AcornValue, generic_only: bool) -> Vec<String> {
@@ -64,7 +67,10 @@ fn plain_scoped_types_are_generic_even_without_type_arguments() {
         10,
         "local".into(),
         vec![],
-        AcornType::Variable("T".into(), None),
+        AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None,
+        }),
     );
     assert_eq!(names(&plain, true), ["local"]);
     assert!(names(&plain.to_arbitrary(), true).is_empty());
