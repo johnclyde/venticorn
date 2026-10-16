@@ -67,7 +67,8 @@ fn finalized_successes_write_atomic_named_records_and_unchanged_builds_do_not_re
     for path in &records {
         assert_eq!(path.extension().unwrap(), "json");
         let record: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-        assert_eq!(record["schema"], 1);
+        assert_eq!(record["schema"], 2);
+        assert!(record["hints"].is_object());
         assert_eq!(record["checker"], checker_identity());
         assert_eq!(record["goal_policy"].as_array().unwrap().len(), 32);
     }

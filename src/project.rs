@@ -1,6 +1,6 @@
 // Modified for Venticorn.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -20,7 +20,7 @@ use crate::goal::GoalContext;
 use crate::module::{
     Module, ModuleHash, ModuleHasher, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL,
 };
-use crate::persistent_cache::{CachePolicy, PersistentCache};
+use crate::persistent_cache::{CachePolicy, HintModule, PersistentCache};
 use crate::prover::{Outcome, Prover};
 use crate::token::{Token, TokenType};
 
@@ -573,7 +573,36 @@ impl Project {
                     .get(id as usize)
                     .map(|module| module.descriptor.clone())
             }) {
-                storage.save(&record);
+                storage.save(&record.with_premises(cached.theorem_premises()));
+            }
+        }
+    }
+
+    // Resolve disk advice only after the build policy is known. This never creates
+    // successful goal metadata or loads a module named by a cache payload.
+    fn seed_persistent_advice(&self, builder: &mut Builder) {
+        if self.cache_policy == CachePolicy::Disabled || builder.dataset.is_some() {
+            return;
+        }
+        let Some(storage) = &self.persistent_cache else {
+            return;
+        };
+        let loaded = (FIRST_NORMAL..self.modules.len() as ModuleId)
+            .filter(|id| self.get_env_by_id(*id).is_some())
+            .filter_map(|id| {
+                let module = &self.modules[id as usize].descriptor;
+                Some((HintModule::from_loaded(module)?, module.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for (id, _) in self.current_disk_hashes() {
+            let module = &self.modules[id as usize].descriptor;
+            if !self.targets.contains(module) {
+                continue;
+            }
+            if let Some(premises) =
+                storage.advisory_premises(module, |identity| loaded.get(identity).cloned())
+            {
+                builder.seed_advisory_premises(module.clone(), premises);
             }
         }
     }
@@ -639,6 +668,7 @@ impl Project {
             return;
         }
 
+        self.seed_persistent_advice(builder);
         builder.loading_phase_complete();
 
         // The second pass is the "proving phase".
@@ -743,11 +773,7 @@ impl Project {
                         let guided = if context.hints_enabled {
                             node.top_theorem_name()
                                 .and_then(|name| {
-                                    builder
-                                        .previous_cache()
-                                        .get(target)?
-                                        .theorem_premises()
-                                        .get(name)
+                                    builder.previous_cache().theorem_premises(target, name)
                                 })
                                 .and_then(|premises| self.make_guided_prover(env, &node, premises))
                         } else {
@@ -954,8 +980,7 @@ impl Project {
         if let Some(theorem) = theorem {
             let premises = builder
                 .previous_cache()
-                .get(target)
-                .and_then(|entry| entry.theorem_premises().get(theorem))
+                .theorem_premises(target, theorem)
                 .cloned();
             builder.record_theorem_premises(theorem, premises);
         }

@@ -137,7 +137,7 @@ fn disabled_and_dataset_builds_do_not_extract_or_publish_hints() {
 }
 
 #[test]
-fn disk_result_promotion_preserves_memory_hints_without_persisting_them() {
+fn disk_result_promotion_preserves_memory_and_persisted_hints() {
     let root = std::env::temp_dir().join(format!("venticorn_premises_{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
     std::fs::write(root.join("main.ac"), source()).unwrap();
@@ -156,12 +156,14 @@ fn disk_result_promotion_preserves_memory_hints_without_persisting_them() {
     assert_eq!(report.status, BuildStatus::Good);
     assert_eq!(report.num_success, 0);
     assert!(report.num_cached > 0);
-    assert!(report
-        .cache
-        .unwrap()
-        .get(&named("main"))
-        .unwrap()
-        .theorem_premises()
-        .is_empty());
+    assert_eq!(
+        report
+            .cache
+            .unwrap()
+            .get(&named("main"))
+            .unwrap()
+            .theorem_premises(),
+        &learned
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
