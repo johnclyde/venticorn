@@ -160,3 +160,37 @@ fn premise_extraction_preserves_nonempty_generated_proof_and_false_control() {
         Outcome::Exhausted
     );
 }
+
+#[test]
+fn simplification_keeps_both_named_premises_for_a_completed_proof() {
+    let source = r#"
+            type Foo: axiom
+            let foo: Foo -> Bool = axiom
+            let bar: Foo = axiom
+            let baz: Foo = axiom
+            axiom foo_bar {
+                foo(bar)
+            }
+            axiom foo_bar_imp_foo_baz {
+                foo(bar) implies foo(baz)
+            }
+            theorem goal {
+               foo(baz)
+            }
+        "#;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", source);
+    let id = project.expect_ok("main");
+    let prover = prove(&project, id, "goal");
+    assert_eq!(
+        prover.get_useful_fact_names(),
+        Some(BTreeSet::from([
+            (id, "foo_bar".into()),
+            (id, "foo_bar_imp_foo_baz".into()),
+        ]))
+    );
+    assert_eq!(
+        verify(&format!("{source} by {{ false }}")),
+        Outcome::Exhausted
+    );
+}
