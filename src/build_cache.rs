@@ -3,7 +3,11 @@ use crate::acorn_value::AcornValue;
 use crate::goal::{Goal, GoalContext};
 use crate::module::{ModuleHash, ModuleRef};
 use crate::project::ModuleFingerprint;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+// Advisory source selections, never evidence that a current goal is verified.
+// Module references survive load-ID changes; sets keep shared source groups intact.
+pub type PremiseSet = BTreeMap<ModuleRef, BTreeSet<String>>;
 use tower_lsp::lsp_types::Range;
 
 // The obligation and policy are checked in addition to source identity. Module
@@ -48,9 +52,15 @@ pub struct CachedModule {
     direct_dependencies: Vec<ModuleRef>,
     verified: Vec<(u32, u32)>,
     goals: Vec<CachedGoal>,
+    theorem_premises: BTreeMap<String, PremiseSet>,
 }
 
 impl CachedModule {
+    // Learned only in this process. Persistent result records do not contain hints.
+    pub fn theorem_premises(&self) -> &BTreeMap<String, PremiseSet> {
+        &self.theorem_premises
+    }
+
     pub fn fingerprint(&self) -> ModuleFingerprint {
         self.hash.fingerprint()
     }
@@ -123,6 +133,7 @@ impl BuildCache {
         direct_dependencies: Vec<ModuleRef>,
         verified: Vec<(u32, u32)>,
         goals: Vec<CachedGoal>,
+        theorem_premises: BTreeMap<String, PremiseSet>,
     ) {
         self.modules.insert(
             module,
@@ -131,6 +142,7 @@ impl BuildCache {
                 direct_dependencies,
                 verified,
                 goals,
+                theorem_premises,
             },
         );
     }
