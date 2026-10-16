@@ -222,3 +222,34 @@ fn bounded_instance_method_template_is_admitted() {
             "#,
     );
 }
+
+#[test]
+#[ignore = "bounded class member specialization is not implemented yet"]
+fn bounded_qualified_member_template_is_admitted() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            define squared<T: Magma>(a: T) -> T {
+                Magma.mul(a, a)
+            }
+            "#,
+    );
+}
+
+#[test]
+fn bounded_function_without_member_access_is_admitted() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            define true_fn<T: Magma>(a: T) -> Bool {
+                true
+            }
+            "#,
+    );
+}
