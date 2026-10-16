@@ -66,6 +66,8 @@ def build_plan(target, host, no_default_features=False):
                 env["CARGO_ENCODED_RUSTFLAGS"] += "\x1f-Lnative=" + str(root / directory)
     if target == "aarch64-apple-darwin" and not host.endswith("-apple-darwin"):
         command[1] = "zigbuild"
+        if env.get("SDKROOT"):
+            env["SDKROOT"] = str(Path(env["SDKROOT"]).expanduser().resolve())
     # A fixed output path is part of the release-staging contract.
     env["CARGO_TARGET_DIR"] = str(ROOT / "target")
     output = ROOT / "target" / target / "release" / TARGETS[target][1]
