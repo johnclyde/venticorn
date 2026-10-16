@@ -106,3 +106,64 @@ fn imported_existential_replays_its_emitted_proof() {
         self::project(&format!("{MAIN} by {{ exists(b: Nat) {{ b != b }} }}")).sync_build_report();
     assert_eq!(rejected.status, BuildStatus::Warning);
 }
+
+#[test]
+fn dependency_edits_reverify_with_current_premises_and_mock_versions() {
+    let mut project = project(MAIN);
+    let cold = project.sync_build_report();
+    assert_eq!(cold.status, BuildStatus::Good);
+    let cold_cache = cold.cache.unwrap();
+    let expected = cold_cache
+        .get(&ModuleRef::Name("main".into()))
+        .unwrap()
+        .theorem_premises()
+        .clone();
+    project.mock("/mock/nat.ac", &format!("// \n{NAT}"));
+    assert_eq!(
+        project.get_version(&std::path::PathBuf::from("/mock/nat.ac")),
+        Some(1)
+    );
+    {
+        let mut builder = project.builder(|_| {});
+        project.build(&mut builder);
+        assert_eq!(builder.status, BuildStatus::Good);
+        assert_eq!(
+            (
+                builder.searches_total,
+                builder.num_success,
+                builder.num_cached,
+                builder.goals_done
+            ),
+            (5, 5, 0, 5)
+        );
+        assert_eq!(
+            builder
+                .cache()
+                .unwrap()
+                .get(&ModuleRef::Name("main".into()))
+                .unwrap()
+                .theorem_premises(),
+            &expected
+        );
+    }
+    project.mock("/mock/nat.ac", &NAT.replace("nz != Nat.0", "true"));
+    assert_eq!(
+        project.get_version(&std::path::PathBuf::from("/mock/nat.ac")),
+        Some(2)
+    );
+    let rejected = project.sync_build_report();
+    assert_eq!(rejected.status, BuildStatus::Warning);
+    assert_eq!(
+        (
+            rejected.num_success,
+            rejected.num_cached,
+            rejected.goals_done
+        ),
+        (4, 0, 5)
+    );
+    assert!(rejected
+        .cache
+        .unwrap()
+        .get(&ModuleRef::Name("main".into()))
+        .is_none());
+}
