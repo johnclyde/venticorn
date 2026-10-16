@@ -98,14 +98,9 @@ impl Monomorphizer {
         fact.value
             .find_constants(&|c| !c.params.is_empty() && c.is_generic(), &mut instances);
         if instances.is_empty() {
-            if let AcornValue::ForAll(args, _) = &fact.value {
-                if args.iter().any(|arg| arg.is_generic()) {
-                    // This is a generic fact with no generic functions.
-                    // It could be something trivial and purely propositional, like
-                    // forall(x: T) { x = x }
-                    // Just skip it.
-                    return;
-                }
+            // A generic fact without a constant demand cannot yet be specialized safely.
+            if fact.value.is_generic() {
+                return;
             }
 
             // There's nothing to monomorphize here. Just output it.
@@ -198,6 +193,13 @@ impl Monomorphizer {
             }
         }
 
+        // The selected constant may not expose every bound elsewhere in the same fact.
+        if !self.generic_facts[fact_id]
+            .value
+            .accepts_substitution(&fact_params)
+        {
+            return;
+        }
         let fact_params = FactParams::new(fact_params);
 
         if self.instantiations_for_fact[fact_id].contains(&fact_params) {

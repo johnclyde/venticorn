@@ -309,8 +309,14 @@ fn explicit_recursive_actuals_preserve_declaration_order() {
         assert_eq!(
             constant.params,
             vec![
-                venticorn::acorn_type::AcornType::Variable("U".into(), None),
-                venticorn::acorn_type::AcornType::Variable("T".into(), None),
+                venticorn::acorn_type::AcornType::Variable(venticorn::acorn_type::TypeParam {
+                    name: "U".into(),
+                    typeclass: None
+                }),
+                venticorn::acorn_type::AcornType::Variable(venticorn::acorn_type::TypeParam {
+                    name: "T".into(),
+                    typeclass: None
+                }),
             ]
         );
     }

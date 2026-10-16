@@ -6,7 +6,7 @@ use std::fmt;
 
 use tower_lsp::lsp_types::Range;
 
-use crate::acorn_type::AcornType;
+use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
@@ -92,7 +92,7 @@ impl Block {
     pub fn new(
         project: &mut Project,
         env: &Environment,
-        type_params: Vec<String>,
+        type_params: Vec<TypeParam>,
         args: Vec<(String, AcornType)>,
         params: BlockParams,
         first_line: u32,
@@ -104,7 +104,14 @@ impl Block {
         // Inside the block, each declared type parameter is fixed but arbitrary.
         let param_pairs: Vec<(String, AcornType)> = type_params
             .iter()
-            .map(|s| (s.clone(), subenv.bindings.add_arbitrary_type(&s)))
+            .map(|param| {
+                (
+                    param.name.clone(),
+                    subenv
+                        .bindings
+                        .add_arbitrary_type_with_class(&param.name, param.typeclass.as_ref()),
+                )
+            })
             .collect();
 
         // Inside the block, the arguments are constants.
@@ -254,7 +261,7 @@ impl Block {
             }
         };
         Ok(Block {
-            type_params,
+            type_params: type_params.into_iter().map(|p| p.name).collect(),
             args,
             env: subenv,
             goal,
@@ -424,7 +431,7 @@ impl Node {
             let (definition, params) = bindings.get_definition_and_params(&c.name)?;
             let pairs: Vec<_> = params
                 .iter()
-                .cloned()
+                .map(|param| param.name.clone())
                 .zip(c.type_arguments().cloned())
                 .collect();
             Some(definition.instantiate(&pairs).insert_stack(0, depth))

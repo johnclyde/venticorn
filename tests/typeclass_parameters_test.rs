@@ -68,7 +68,6 @@ fn declaration_parameter_lists_retain_bounds_at_unsupported_consumers() {
     use venticorn::environment::Environment;
     use venticorn::project::Project;
     for source in [
-        "theorem reflexive<T: Magma>(value: T) { value = value }",
         "structure Box<T: Magma> {\n value: T\n}",
         "class Pair<T: Magma> {\n define same(self) -> Bool { true }\n}",
     ] {
@@ -104,13 +103,13 @@ fn bounded_function_declarations_preserve_qualified_class_identity() {
     let right = project.expect_ok("right");
     let env = project.get_env_by_id(id).unwrap();
     for (name, module) in [("left_id", left), ("right_id", right)] {
-        let parameter = AcornType::Variable(
-            "T".into(),
-            Some(Typeclass {
+        let parameter = AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: Some(Typeclass {
                 module_id: module,
                 name: "Magma".into(),
             }),
-        );
+        });
         assert_eq!(
             env.bindings.get_constant_value(name).unwrap().get_type(),
             AcornType::new_functional(vec![parameter.clone()], parameter)
@@ -121,7 +120,7 @@ fn bounded_function_declarations_preserve_qualified_class_identity() {
 }
 
 #[test]
-fn incomplete_bound_consumers_reject_before_publishing_or_specializing() {
+fn invalid_bounds_and_erased_theorem_formals_reject_without_publication() {
     use venticorn::environment::Environment;
     use venticorn::project::Project;
     let mut env = Environment::new_test();
@@ -132,32 +131,25 @@ fn incomplete_bound_consumers_reject_before_publishing_or_specializing() {
             "expected a typeclass",
         ),
         (
-            "define bad<T: Magma> -> Bool { true }",
-            "phantom typeclass bounds",
+            "axiom bad<T: Magma> { false }",
+            "must occur in the exported proposition",
         ),
         (
-            "axiom bad<T: Magma>(value: T) { false }",
-            "bounded theorem and axiom",
-        ),
-        (
-            "theorem bad<T: Magma>(value: T) { value = value }",
-            "bounded theorem and axiom",
+            "theorem bad<T: Magma> { true }",
+            "must occur in the exported proposition",
         ),
         (
             "let bad: Bool = identity<Bool>(true)",
-            "bounded constant specialization",
+            "does not satisfy the class bound",
+        ),
+        ("let bad: Bool = identity(true)", "expected type"),
+        (
+            "define bad<U>(value: U) -> U { identity(value) }",
+            "expected type",
         ),
         (
-            "let bad: Bool = identity(true)",
-            "bounded constant specialization",
-        ),
-        (
-            "define bad<T: Magma>(value: T) -> T { identity(value) }",
-            "bounded constant specialization",
-        ),
-        (
-            "define bad<T: Magma>(value: T) -> T { identity<T>(value) }",
-            "bounded constant specialization",
+            "define bad<U>(value: U) -> U { identity<U>(value) }",
+            "does not satisfy the class bound",
         ),
     ] {
         let nodes = env.nodes.len();

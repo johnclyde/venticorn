@@ -7,7 +7,10 @@ use venticorn::proof_step::Truthiness;
 use venticorn::proposition::Source;
 
 fn variable(name: &str) -> AcornType {
-    AcornType::Variable(name.into(), None)
+    AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: name.into(),
+        typeclass: None,
+    })
 }
 fn predicate(name: &str, actuals: Vec<AcornType>) -> AcornValue {
     let instance_type = AcornType::new_functional(actuals.clone(), AcornType::Bool);
@@ -143,5 +146,129 @@ fn constant_matching_uses_declared_positions_and_rejects_wrong_arity() {
     assert_eq!(
         emitted[0].value,
         claim("ordered", vec![nat, AcornType::Bool])
+    );
+}
+
+#[test]
+fn whole_fact_bounds_guard_phantom_actuals_before_substitution() {
+    use venticorn::acorn_type::{TypeParam, Typeclass};
+    let class = Typeclass {
+        module_id: 10,
+        name: "Magma".into(),
+    };
+    let bound = AcornType::Variable(TypeParam {
+        name: "T".into(),
+        typeclass: Some(class.clone()),
+    });
+    let loose = variable("T");
+    let constant = |name: &str, actual: AcornType| {
+        AcornValue::new_constant(10, name.into(), vec![actual], AcornType::Bool)
+    };
+    let mut mono = Monomorphizer::new();
+    mono.add_fact(fact(
+        AcornValue::new_and(constant("loose", loose), constant("bound", bound)),
+        Truthiness::Factual,
+    ));
+    for actual in [
+        AcornType::Bool,
+        AcornType::Arbitrary(TypeParam::unconstrained("U")),
+        AcornType::Arbitrary(TypeParam {
+            name: "U".into(),
+            typeclass: Some(Typeclass {
+                module_id: 11,
+                name: "Magma".into(),
+            }),
+        }),
+    ] {
+        mono.add_monomorphs(&constant("loose", actual.clone()));
+        mono.add_monomorphs(&constant("bound", actual));
+        assert!(mono.take_facts().is_empty());
+    }
+    let valid = AcornType::Arbitrary(TypeParam {
+        name: "U".into(),
+        typeclass: Some(class),
+    });
+    mono.add_monomorphs(&constant("loose", valid.clone()));
+    let output = mono.take_facts();
+    assert_eq!(
+        output.len(),
+        1,
+        "failed requests must not poison a later valid request"
+    );
+    assert_eq!(
+        output[0].value,
+        AcornValue::new_and(constant("loose", valid.clone()), constant("bound", valid))
+    );
+}
+
+#[test]
+fn bounds_in_binders_and_effective_types_are_checked_for_whole_fact_demand() {
+    use venticorn::acorn_type::{TypeParam, Typeclass};
+    let class = Typeclass {
+        module_id: 10,
+        name: "Magma".into(),
+    };
+    let bound = AcornType::Variable(TypeParam {
+        name: "T".into(),
+        typeclass: Some(class.clone()),
+    });
+    let nested = AcornType::Data(
+        10,
+        "Wrap".into(),
+        vec![AcornType::new_functional(vec![bound.clone()], bound)],
+    );
+    let seed = |actual| AcornValue::new_constant(10, "seed".into(), vec![actual], AcornType::Bool);
+    let mut mono = Monomorphizer::new();
+    let value = AcornValue::Variable(0, nested.clone());
+    let generic = AcornValue::new_and(
+        seed(variable("T")),
+        AcornValue::new_forall(vec![nested], AcornValue::new_equals(value.clone(), value)),
+    );
+    mono.add_fact(fact(generic.clone(), Truthiness::Factual));
+    mono.add_monomorphs(&seed(AcornType::Bool));
+    assert!(mono.take_facts().is_empty());
+    let valid = AcornType::Arbitrary(TypeParam {
+        name: "U".into(),
+        typeclass: Some(class),
+    });
+    mono.add_monomorphs(&seed(valid.clone()));
+    let output = mono.take_facts();
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].value, generic.instantiate(&[("T".into(), valid)]));
+}
+
+#[test]
+fn generic_no_demand_facts_are_not_emitted_from_nested_binders() {
+    use venticorn::acorn_type::{TypeParam, Typeclass};
+    let param = TypeParam {
+        name: "T".into(),
+        typeclass: Some(Typeclass {
+            module_id: 10,
+            name: "Magma".into(),
+        }),
+    };
+    for value in [
+        AcornValue::new_exists(
+            vec![AcornType::Variable(param.clone())],
+            AcornValue::Bool(false),
+        ),
+        AcornValue::Not(Box::new(AcornValue::new_exists(
+            vec![AcornType::Variable(param.clone())],
+            AcornValue::Bool(true),
+        ))),
+    ] {
+        let mut mono = Monomorphizer::new();
+        mono.add_fact(fact(value, Truthiness::Factual));
+        assert!(mono.take_facts().is_empty());
+    }
+    let mut mono = Monomorphizer::new();
+    mono.add_fact(fact(
+        AcornValue::new_exists(vec![AcornType::Arbitrary(param)], AcornValue::Bool(true)),
+        Truthiness::Factual,
+    ));
+    assert_eq!(
+        mono.take_facts().len(),
+        1,
+        "fixed scoped types remain usable"
     );
 }

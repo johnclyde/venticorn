@@ -3,7 +3,7 @@
 use tower_lsp::lsp_types::Range;
 
 use crate::compilation::{Error, ErrorSource, Result};
-use crate::expression::{Declaration, Expression, Terminator, TypeParam};
+use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::token::{Token, TokenIter, TokenType};
 
 use std::fmt;
@@ -40,7 +40,7 @@ pub struct DefineStatement {
     pub name_token: Token,
 
     // For templated definitions
-    pub type_params: Vec<TypeParam>,
+    pub type_params: Vec<TypeParamExpr>,
 
     // A list of the named arg types, like "a: int" and "b: int".
     pub args: Vec<Declaration>,
@@ -61,7 +61,7 @@ pub struct DefineStatement {
 pub struct TheoremStatement {
     pub axiomatic: bool,
     pub name: Option<String>,
-    pub type_params: Vec<TypeParam>,
+    pub type_params: Vec<TypeParamExpr>,
     pub args: Vec<Declaration>,
     pub claim: Expression,
     pub claim_right_brace: Token,
@@ -137,7 +137,7 @@ pub struct FunctionSatisfyStatement {
 pub struct StructureStatement {
     pub name: String,
     pub name_token: Token,
-    pub type_params: Vec<TypeParam>,
+    pub type_params: Vec<TypeParamExpr>,
 
     // Each field contains a field name-token and a type expression
     pub fields: Vec<(Token, Expression)>,
@@ -178,7 +178,7 @@ pub struct ImportStatement {
 pub struct ClassStatement {
     pub name: String,
     pub name_token: Token,
-    pub type_params: Vec<TypeParam>,
+    pub type_params: Vec<TypeParamExpr>,
 
     // The body of a class statement
     pub body: Body,
@@ -361,7 +361,7 @@ fn parse_theorem_statement(
         Some(TokenType::LeftParen) | Some(TokenType::LeftBrace) | Some(TokenType::LessThan) => None,
         _ => Some(tokens.expect_variable_name(false)?.text().to_string()),
     };
-    let type_params = TypeParam::parse_list(tokens)?;
+    let type_params = TypeParamExpr::parse_list(tokens)?;
     let (args, _) = parse_args(tokens, TokenType::LeftBrace)?;
     let (claim, claim_right_brace) =
         Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
@@ -479,7 +479,7 @@ fn parse_let_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Stateme
 // Parses a define statement where the "define" keyword has already been found.
 fn parse_define_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let name_token = tokens.expect_variable_name(false)?;
-    let type_params = TypeParam::parse_list(tokens)?;
+    let type_params = TypeParamExpr::parse_list(tokens)?;
     let (args, _) = parse_args(tokens, TokenType::RightArrow)?;
     let (return_type, _) = Expression::parse_type(tokens, Terminator::Is(TokenType::LeftBrace))?;
     let (return_value, last_token) =
@@ -594,7 +594,7 @@ fn parse_if_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statemen
 // Parses a structure statement where the "structure" keyword has already been found.
 fn parse_structure_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let name_token = tokens.expect_type_name()?;
-    let type_params = TypeParam::parse_list(tokens)?;
+    let type_params = TypeParamExpr::parse_list(tokens)?;
     tokens.expect_type(TokenType::LeftBrace)?;
     let mut fields = Vec::new();
     while let Some(token) = tokens.peek() {
@@ -780,7 +780,7 @@ fn parse_from_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statem
 // Parses a class statement where the "class" keyword has already been found.
 fn parse_class_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let name_token = tokens.expect_type_name()?;
-    let type_params = TypeParam::parse_list(tokens)?;
+    let type_params = TypeParamExpr::parse_list(tokens)?;
     let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
     let (statements, right_brace) = parse_block(tokens)?;
     let body = Body {
@@ -957,7 +957,7 @@ fn write_args(f: &mut fmt::Formatter, args: &[Declaration]) -> fmt::Result {
 fn write_theorem(
     f: &mut fmt::Formatter,
     indentation: &str,
-    type_params: &[TypeParam],
+    type_params: &[TypeParamExpr],
     args: &[Declaration],
     claim: &Expression,
 ) -> fmt::Result {

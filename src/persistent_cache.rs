@@ -380,14 +380,14 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
                 self.types(&function.arg_types)?;
                 self.ty(&function.return_type)?;
             }
-            AcornType::Variable(name, class) | AcornType::Arbitrary(name, class) => {
+            AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                 self.tag(if matches!(ty, AcornType::Variable(..)) {
                     4
                 } else {
                     5
                 });
-                self.text(name);
-                match class {
+                self.text(&param.name);
+                match &param.typeclass {
                     None => self.tag(0),
                     Some(class) => {
                         self.tag(1);
@@ -524,21 +524,21 @@ mod tests {
         let ty = AcornType::Data(
             id,
             "Box".into(),
-            vec![AcornType::Variable(
-                "T".into(),
-                Some(TypeClass {
+            vec![AcornType::Variable(crate::acorn_type::TypeParam {
+                name: "T".into(),
+                typeclass: Some(TypeClass {
                     module_id: id,
                     name: "Order".into(),
                 }),
-            )],
+            })],
         );
-        let arbitrary = AcornType::Arbitrary(
-            "U".into(),
-            Some(TypeClass {
+        let arbitrary = AcornType::Arbitrary(crate::acorn_type::TypeParam {
+            name: "U".into(),
+            typeclass: Some(TypeClass {
                 module_id: id,
                 name: "Order".into(),
             }),
-        );
+        });
         let constant = AcornValue::Constant(ConstantInstance {
             module_id: id,
             name: "Box.choose".into(),

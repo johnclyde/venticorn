@@ -244,7 +244,13 @@ fn recursive_generic_methods_preserve_phantom_actuals_in_declaration_order() {
         .bindings
         .get_definition_and_params("Box.repeat")
         .unwrap();
-    assert_eq!(params, &["T", "U"]);
+    assert_eq!(
+        params,
+        &[
+            venticorn::acorn_type::TypeParam::unconstrained("T"),
+            venticorn::acorn_type::TypeParam::unconstrained("U")
+        ]
+    );
     definition.validate().unwrap();
     assert!(!definition.has_arbitrary());
     let mut recursive = vec![];
@@ -257,8 +263,14 @@ fn recursive_generic_methods_preserve_phantom_actuals_in_declaration_order() {
         assert_eq!(
             constant.params,
             vec![
-                AcornType::Variable("T".into(), None),
-                AcornType::Variable("U".into(), None)
+                AcornType::Variable(venticorn::acorn_type::TypeParam {
+                    name: "T".into(),
+                    typeclass: None
+                }),
+                AcornType::Variable(venticorn::acorn_type::TypeParam {
+                    name: "U".into(),
+                    typeclass: None
+                })
             ]
         );
         assert!(constant.instance_type.has_type_variable("T"));

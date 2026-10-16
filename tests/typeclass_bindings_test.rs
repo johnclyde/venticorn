@@ -81,11 +81,17 @@ fn scoped_instance_types_preserve_the_canonical_class_bound() {
     let instance = bindings.add_arbitrary_type_with_class("M", Some(&class));
     assert_eq!(
         instance,
-        AcornType::Arbitrary("M".into(), Some(class.clone()))
+        AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "M".into(),
+            typeclass: Some(class.clone())
+        })
     );
     assert_eq!(
         instance.to_generic(),
-        AcornType::Variable("M".into(), Some(class.clone()))
+        AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "M".into(),
+            typeclass: Some(class.clone())
+        })
     );
     assert_eq!(
         instance.parametrize(2, &["M".into()]),
@@ -93,11 +99,17 @@ fn scoped_instance_types_preserve_the_canonical_class_bound() {
     );
     assert_ne!(
         instance.to_generic(),
-        AcornType::Variable("M".into(), Some(foreign))
+        AcornType::Variable(venticorn::acorn_type::TypeParam {
+            name: "M".into(),
+            typeclass: Some(foreign)
+        })
     );
     assert_eq!(
         bindings.add_arbitrary_type("U"),
-        AcornType::Arbitrary("U".into(), None)
+        AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "U".into(),
+            typeclass: None
+        })
     );
     bindings.remove_data_type("M");
     assert!(!bindings.name_in_use("M"));

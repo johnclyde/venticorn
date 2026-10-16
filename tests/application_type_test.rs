@@ -42,8 +42,14 @@ fn parametrization_updates_recursive_constant_types() {
     assert_eq!(
         generic.get_type(),
         AcornType::new_functional(
-            vec![AcornType::Variable("T".into(), None)],
-            AcornType::Variable("T".into(), None)
+            vec![AcornType::Variable(venticorn::acorn_type::TypeParam {
+                name: "T".into(),
+                typeclass: None
+            })],
+            AcornType::Variable(venticorn::acorn_type::TypeParam {
+                name: "T".into(),
+                typeclass: None
+            })
         )
     );
 }
@@ -97,7 +103,10 @@ fn resolved_simple_constants_keep_their_plain_normalized_identity() {
         .normalize(&resolved, true)
         .expect_clauses()
         .is_empty());
-    let generic = AcornType::Variable("T".into(), None);
+    let generic = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     let instance = AcornValue::new_constant(
         10,
         "f".into(),
@@ -171,11 +180,20 @@ fn inference_preserves_declared_parameter_order_instead_of_sorting_names() {
     use venticorn::project::Project;
     let mut env = Environment::new_test();
     env.add("inductive Nat {\n zero\n suc(Nat)\n}");
-    let z = AcornType::Variable("Z".into(), None);
-    let a = AcornType::Variable("A".into(), None);
+    let z = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "Z".into(),
+        typeclass: None,
+    });
+    let a = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "A".into(),
+        typeclass: None,
+    });
     env.bindings.add_constant(
         "choose",
-        vec!["Z".into(), "A".into()],
+        vec![
+            venticorn::acorn_type::TypeParam::unconstrained("Z"),
+            venticorn::acorn_type::TypeParam::unconstrained("A"),
+        ],
         AcornType::new_functional(vec![z, a.clone()], a),
         None,
         None,
@@ -260,14 +278,24 @@ fn pending_generic_values_are_rejected_before_declaration_admission() {
 
 #[test]
 fn resolved_type_transformations_preserve_declaration_namespaces() {
-    let t = AcornType::Variable("T".into(), None);
+    let t = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "T".into(),
+        typeclass: None,
+    });
     let plain = identity(t.clone());
     assert!(plain.is_generic());
     assert_eq!(
         plain.to_arbitrary().get_type(),
-        identity(AcornType::Arbitrary("T".into(), None)).get_type()
+        identity(AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None
+        }))
+        .get_type()
     );
-    let a = AcornType::Variable("A".into(), None);
+    let a = AcornType::Variable(venticorn::acorn_type::TypeParam {
+        name: "A".into(),
+        typeclass: None,
+    });
     let template = AcornType::new_functional(vec![a.clone()], a);
     let instance = AcornValue::new_constant(
         10,
@@ -282,9 +310,19 @@ fn resolved_type_transformations_preserve_declaration_namespaces() {
     };
     assert_eq!(
         c.instance_type,
-        identity(AcornType::Arbitrary("T".into(), None)).get_type()
+        identity(AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None
+        }))
+        .get_type()
     );
-    assert_eq!(c.params, vec![AcornType::Arbitrary("T".into(), None)]);
+    assert_eq!(
+        c.params,
+        vec![AcornType::Arbitrary(venticorn::acorn_type::TypeParam {
+            name: "T".into(),
+            typeclass: None
+        })]
+    );
 }
 
 #[test]
