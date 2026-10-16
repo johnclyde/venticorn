@@ -2,3 +2,16 @@ structure Pair<T, U> {
     first: T
     second: U
 }
+
+class Pair<T, U> {
+    define swap(self) -> Pair<U, T> {
+        Pair.new(self.second, self.first)
+    }
+}
+
+theorem swap_swap<T, U>(p: Pair<T, U>) {
+    p.swap.swap = p
+} by {
+    p.swap = Pair.new(p.second, p.first)
+    Pair.new(p.second, p.first).swap = Pair.new(p.first, p.second)
+}

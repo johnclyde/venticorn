@@ -1,3 +1,4 @@
+// Modified for Venticorn: name the sequence and limit in the convergence proof.
 from nat import Nat
 from int import Int
 from rat import Rat
@@ -1401,197 +1402,16 @@ theorem sub_moves_sides(a: Real, b: Real, c: Real) {
     a + b = c -> a = c - b
 }
 
-define pos_mul_gt(a: Real, b: Real, r: Rat) -> Bool {
-    exists(ra: Rat, rb: Rat) {
-        ra.is_positive and Real.from_rat(ra) < a and
-        rb.is_positive and Real.from_rat(rb) < b and
-        r <= ra * rb
-    }
-}
-
-theorem pos_mul_not_gt(a: Real, b: Real, ra: Rat, rb: Rat) {
-    a <= Real.from_rat(ra) and b <= Real.from_rat(rb) ->
-    not pos_mul_gt(a, b, ra * rb)
+theorem lte_abs(a: Real) {
+    a <= a.abs
 } by {
-    if pos_mul_gt(a, b, ra * rb) {
-        let (r1: Rat, r2: Rat) satisfy {
-            r1.is_positive and Real.from_rat(r1) < a and
-            r2.is_positive and Real.from_rat(r2) < b and
-            ra * rb <= r1 * r2
-        }
-        a > Real.from_rat(r1)
-        Real.from_rat(ra).gt_rat(r1)
-        r1 < ra
-        b > Real.from_rat(r2)
-        Real.from_rat(rb).gt_rat(r2)
-        r2 < rb
-        r1 * r2 < ra * rb
-        false
-    }
-}
-
-theorem pos_mul_not_gt_something(a: Real, b: Real) {
-    a.is_positive and b.is_positive -> exists(r: Rat) {
-        not pos_mul_gt(a, b, r)
-    }
-} by {
-    let ra: Rat satisfy {
-        a < Real.from_rat(ra)
-    }
-    Real.from_rat(ra).is_positive
-    ra.is_positive
-    let rb: Rat satisfy {
-        b < Real.from_rat(rb)
-    }
-    Real.from_rat(rb).is_positive
-    rb.is_positive
-    not pos_mul_gt(a, b, ra * rb)
-}
-
-theorem pos_mul_gt_zero(a: Real, b: Real) {
-    a.is_positive and b.is_positive -> pos_mul_gt(a, b, Rat.0)
-} by {
-    Real.0 < a
-    let ra: Rat satisfy {
-        Real.0 < Real.from_rat(ra) and Real.from_rat(ra) < a
-    }
-    Rat.0 < ra
-    Real.0 < b
-    let rb: Rat satisfy {
-        Real.0 < Real.from_rat(rb) and Real.from_rat(rb) < b
-    }
-    Rat.0 < rb
-    rb.is_positive
-    ra.is_positive
-    (ra * rb).is_positive
-    Rat.0 < ra * rb
-    Rat.0 <= ra * rb
-}
-
-theorem pos_mul_gt_is_cut(a: Real, b: Real) {
-    a.is_positive and b.is_positive -> is_cut(pos_mul_gt(a, b))
-}
-
-theorem pos_mul_gt_is_lower(a: Real, b: Real) {
-    a.is_positive and b.is_positive -> is_lower(pos_mul_gt(a, b))
-} by {
-    forall(x: Rat, y: Rat) {
-        if pos_mul_gt(a, b, y) and x < y {
-            let (ra: Rat, rb: Rat) satisfy {
-                ra.is_positive and Real.from_rat(ra) < a and
-                rb.is_positive and Real.from_rat(rb) < b and
-                y <= ra * rb
-            }
-            y <= ra * rb
-            x <= ra * rb
-            pos_mul_gt(a, b, x)
-        }
-    }
-}
-
-theorem pos_mul_gt_has_no_greatest(a: Real, b: Real, r: Rat) {
-    a.is_positive and b.is_positive -> not is_greatest(pos_mul_gt(a, b), r)
-} by {
-    if is_greatest(pos_mul_gt(a, b), r) {
-        pos_mul_gt(a, b, r)
-        let (ra: Rat, rb: Rat) satisfy {
-            ra.is_positive and Real.from_rat(ra) < a and
-            rb.is_positive and Real.from_rat(rb) < b and
-            r <= ra * rb
-        }
-        let ra2: Rat satisfy {
-            Real.from_rat(ra) < Real.from_rat(ra2) and Real.from_rat(ra2) < a
-        }
-        let rb2: Rat satisfy {
-            Real.from_rat(rb) < Real.from_rat(rb2) and Real.from_rat(rb2) < b
-        }
-        ra < ra2
-        ra2.is_positive
-        rb < rb2
-        rb2.is_positive
-        ra * rb < ra2 * rb2
-        r < ra2 * rb2
-        pos_mul_gt(a, b, ra2 * rb2)
-        ra2 * rb2 <= r
-        false
-    }
-}
-
-theorem pos_mul_gt_is_dedekind_cut(a: Real, b: Real) {
-    a.is_positive and b.is_positive -> is_dedekind_cut(pos_mul_gt(a, b))
-}
-
-define mul_abs(a: Real, b: Real) -> Real {
-    if a = Real.0 or b = Real.0 {
-        Real.0
-    } else {
-        Real.new(pos_mul_gt(a.abs, b.abs))
-    }
-}
-
-class Real {
-    define mul(self, other: Real) -> Real {
-        if self.is_negative {
-            if other.is_negative {
-                mul_abs(self, other)
-            } else {
-                -mul_abs(-self, other)
-            }
-        } else {
-            if other.is_negative {
-                -mul_abs(self, other)
-            } else {
-                mul_abs(self, other)
-            }
-        }
-    }
-}
-
-theorem mul_zero_left(a: Real) {
-    Real.0 * a = Real.0
-} by {
-    not Real.0.is_negative
     if a.is_negative {
-        Real.0 * a = Real.0
+        a <= Real.0
+        Real.0 <= a.abs
+        a <= a.abs
     } else {
-        Real.0 * a = Real.0
-    }
-}
-
-theorem mul_zero_right(a: Real) {
-    a * Real.0 = Real.0
-} by {
-    not Real.0.is_negative
-    if a.is_negative {
-        a * Real.0 = Real.0
-    } else {
-        a * Real.0 = Real.0
-    }
-}
-
-theorem pos_mul_gt_imp_swap(a: Real, b: Real, r: Rat) {
-    pos_mul_gt(a, b, r) -> pos_mul_gt(b, a, r)
-} by {
-    let (ra: Rat, rb: Rat) satisfy {
-        ra.is_positive and Real.from_rat(ra) < a and
-        rb.is_positive and Real.from_rat(rb) < b and
-        r <= ra * rb
-    }
-    pos_mul_gt(b, a, r)
-}
-
-theorem pos_mul_gt_comm(a: Real, b: Real) {
-    pos_mul_gt(a, b) = pos_mul_gt(b, a)
-} by {
-    forall(r: Rat) {
-        if pos_mul_gt(a, b, r) {
-            pos_mul_gt(b, a, r)
-            pos_mul_gt(a, b, r) = pos_mul_gt(b, a, r)
-        } else {
-            not pos_mul_gt(a, b, r)
-            not pos_mul_gt(b, a, r)
-            pos_mul_gt(a, b, r) = pos_mul_gt(b, a, r)
-        }
+        a = a.abs
+        a <= a.abs
     }
 }
 
@@ -1610,683 +1430,16 @@ theorem abs_neg(a: Real) {
     }
 }
 
-theorem mul_abs_neg_left(a: Real, b: Real) {
-    mul_abs(-a, b) = mul_abs(a, b)
-} by {
-    if a = Real.0 or b = Real.0 {
-        mul_abs(-a, b) = Real.0
-        mul_abs(a, b) = Real.0
-        mul_abs(-a, b) = mul_abs(a, b)
-    } else {
-        mul_abs(-a, b) = Real.new(pos_mul_gt((-a).abs, b.abs))
-        mul_abs(a, b) = Real.new(pos_mul_gt(a.abs, b.abs))
-        (-a).abs = a.abs
-        mul_abs(-a, b) = mul_abs(a, b)
-    }
-}
-
-theorem mul_abs_comm(a: Real, b: Real) {
-    mul_abs(a, b) = mul_abs(b, a)
-} by {
-    if a = Real.0 or b = Real.0 {
-        mul_abs(a, b) = Real.0
-        mul_abs(b, a) = Real.0
-        mul_abs(a, b) = mul_abs(b, a)
-    } else {
-        mul_abs(a, b) = Real.new(pos_mul_gt(a.abs, b.abs))
-        mul_abs(b, a) = Real.new(pos_mul_gt(b.abs, a.abs))
-        pos_mul_gt(a.abs, b.abs) = pos_mul_gt(b.abs, a.abs)
-        mul_abs(a, b) = mul_abs(b, a)
-    }
-}
-
-theorem mul_comm(a: Real, b: Real) {
-    a * b = b * a
-} by {
-    if a.is_negative {
-        if b.is_negative {
-            a * b = b * a
-        } else {
-            a * b = b * a
-        }
-    } else {
-        if b.is_negative {
-            a * b = b * a
-        } else {
-            a * b = b * a
-        }
-    }
-}
-
-theorem pos_mul_gt_imp_rat_mul_gt(p: Rat, q: Rat, r: Rat) {
-    pos_mul_gt(Real.from_rat(p), Real.from_rat(q), r) -> p * q > r
-} by {
-    let (rp: Rat, rq: Rat) satisfy {
-        rp.is_positive and Real.from_rat(rp) < Real.from_rat(p) and
-        rq.is_positive and Real.from_rat(rq) < Real.from_rat(q) and
-        r <= rp * rq
-    }
-    p > rp
-    q > rq
-    p * q > rp * rq
-    r < p * q
-}
-
-theorem pos_mul_gt_combined(a: Rat, b: Rat, c: Rat, d: Rat) {
-    a.is_positive and b.is_positive and a < c and b < d -> pos_mul_gt(Real.from_rat(c), Real.from_rat(d), a * b)
-}
-
-theorem pos_mul_gt_trans(y: Real, z: Real, p: Rat, q: Rat) {
-    pos_mul_gt(y, z, q) and p <= q -> pos_mul_gt(y, z, p)
-} by {
-    let (ry: Rat, rz: Rat) satisfy {
-        ry.is_positive and Real.from_rat(ry) < y and
-        rz.is_positive and Real.from_rat(rz) < z and
-        q <= ry * rz
-    }
-    p <= ry * rz
-}
-
-theorem rat_mul_gt_pos_imp_pos_mul_gt(p: Rat, q: Rat, r: Rat) {
-    p.is_positive and q.is_positive and r.is_positive
-    and p * q > r -> pos_mul_gt(Real.from_rat(p), Real.from_rat(q), r)
-} by {
-    // We need to find p1 and q1 that are less than p and q,
-    // but they still multiply greater than r.
-    let r1: Rat satisfy {
-        r < r1 and r1 < p * q
-    }
-    r1.is_positive
-    let r2: Rat satisfy {
-        r1 < r2 and r2 < p * q
-    }
-    r2.is_positive
-    let p1: Rat satisfy {
-        p1 * q = r2
-    }
-    (p1 * q).is_positive
-    p1.is_positive
-    p * q > p1 * q
-    p1 < p
-    p1 != Rat.0
-    let q1: Rat satisfy {
-        p1 * q1 = r1
-    }
-    p1 * q > p1 * q1
-    q1 < q
-
-    pos_mul_gt(Real.from_rat(p), Real.from_rat(q), p1 * q1)
-}
-
-theorem rat_mul_gt_imp_pos_mul_gt(p: Rat, q: Rat, r: Rat) {
-    p.is_positive and q.is_positive and p * q > r -> pos_mul_gt(Real.from_rat(p), Real.from_rat(q), r)
-} by {
-    if r.is_positive {
-        pos_mul_gt(Real.from_rat(p), Real.from_rat(q), r)
-    } else {
-        Real.from_rat(p).is_positive
-        Real.from_rat(q).is_positive
-        pos_mul_gt(Real.from_rat(p), Real.from_rat(q), Rat.0)
-        r <= Rat.0
-        pos_mul_gt(Real.from_rat(p), Real.from_rat(q), r)
-    }
-}
-
-theorem pos_mul_gt_imp_mul_abs_gt(p: Rat, q: Rat, r: Rat) {
-    p.is_positive and q.is_positive
-    and pos_mul_gt(Real.from_rat(p), Real.from_rat(q), r) ->
-    mul_abs(Real.from_rat(p), Real.from_rat(q)) > Real.from_rat(r)
-} by {
-    Real.from_rat(p) = Real.from_rat(p).abs
-    Real.from_rat(p) != Real.0
-    Real.from_rat(p).is_positive
-
-    Real.from_rat(q) = Real.from_rat(q).abs
-    Real.from_rat(q) != Real.0
-    Real.from_rat(q).is_positive
-
-    mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.new(pos_mul_gt(Real.from_rat(p).abs, Real.from_rat(q).abs))
-    mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.new(pos_mul_gt(Real.from_rat(p), Real.from_rat(q)))
-    let f: Rat -> Bool = pos_mul_gt(Real.from_rat(p), Real.from_rat(q))
-    f(r)
-    Real.new(f).gt_rat(r)
-}
-
-theorem rat_mul_gt_imp_mul_abs_gt(p: Rat, q: Rat, r: Rat) {
-    p.is_positive and q.is_positive and p * q > r ->
-    mul_abs(Real.from_rat(p), Real.from_rat(q)) > Real.from_rat(r)
-}
-
-theorem mul_abs_gt_imp_rat_mul_gt(p: Rat, q: Rat, r: Rat) {
-    p.is_positive and q.is_positive
-    and mul_abs(Real.from_rat(p), Real.from_rat(q)) > Real.from_rat(r) ->
-    p * q > r
-} by {
-    Real.from_rat(p) = Real.from_rat(p).abs
-    Real.from_rat(p) != Real.0
-    Real.from_rat(p).is_positive
-
-    Real.from_rat(q) = Real.from_rat(q).abs
-    Real.from_rat(q) != Real.0
-    Real.from_rat(q).is_positive
-
-    let f: Rat -> Bool = pos_mul_gt(Real.from_rat(p), Real.from_rat(q))
-    Real.new(pos_mul_gt(Real.from_rat(p).abs, Real.from_rat(q).abs)) = mul_abs(Real.from_rat(p), Real.from_rat(q))
-    mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.new(f)
-    Real.new(f).gt_rat(r)
-}
-
-theorem mul_abs_pos(p: Rat, q: Rat) {
-    p.is_positive and q.is_positive ->
-        mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.from_rat(p * q)
-} by {
-    if mul_abs(Real.from_rat(p), Real.from_rat(q)) < Real.from_rat(p * q) {
-        let r: Rat satisfy {
-            mul_abs(Real.from_rat(p), Real.from_rat(q)) < Real.from_rat(r)
-            and Real.from_rat(r) < Real.from_rat(p * q)
-        }
-        p * q > r
-        false
-    }
-    if mul_abs(Real.from_rat(p), Real.from_rat(q)) > Real.from_rat(p * q) {
-        false
-    }
-}
-
-theorem mul_abs_eats_left_abs(y: Real, z: Real) {
-    mul_abs(y.abs, z) = mul_abs(y, z)
-}
-
-theorem mul_abs_eats_right_abs(y: Real, z: Real) {
-    mul_abs(y, z.abs) = mul_abs(y, z)
-}
-
-theorem mul_abs_zero_left(z: Real) {
-    mul_abs(Real.0, z) = Real.0
-}
-
-theorem mul_abs_zero_right(z: Real) {
-    mul_abs(z, Real.0) = Real.0
-}
-
-theorem mul_abs_nonneg(p: Rat, q: Rat) {
-    p >= Rat.0 and q >= Rat.0 -> mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.from_rat(p * q)
-} by {
-    if p = Rat.0 {
-        mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.0
-        p * q = Rat.0
-        Real.from_rat(p * q) = Real.0
-        mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.from_rat(p * q)
-    } else {
-        if q = Rat.0 {
-            mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.from_rat(p * q)
-        } else {
-            p.is_positive
-            q.is_positive
-            mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.from_rat(p * q)
-        }
-    }
-}
-
-theorem abs_from_rat(p: Rat) {
-    Real.from_rat(p).abs = Real.from_rat(p.abs)
-} by {
-    if Real.from_rat(p).is_negative {
-        p.is_negative
-        Real.from_rat(p).abs = -Real.from_rat(p)
-        Real.from_rat(p.abs) = -Real.from_rat(p)
-        Real.from_rat(p).abs = Real.from_rat(p.abs)
-    } else {
-        not p.is_negative
-        p.abs = p
-        Real.from_rat(p).abs = Real.from_rat(p)
-        Real.from_rat(p.abs) = Real.from_rat(p)
-        Real.from_rat(p).abs = Real.from_rat(p.abs)
-    }
-}
-
-theorem mul_abs_rat(p: Rat, q: Rat) {
-    mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.from_rat((p * q).abs)
-} by {
-    p.abs >= Rat.0
-    Real.from_rat(p.abs) = Real.from_rat(p).abs
-    q.abs >= Rat.0
-    Real.from_rat(q.abs) = Real.from_rat(q).abs
-    mul_abs(Real.from_rat(p.abs), Real.from_rat(q.abs)) = Real.from_rat(p.abs * q.abs)
-    mul_abs(Real.from_rat(p.abs), Real.from_rat(q.abs)) = Real.from_rat((p * q).abs)
-    mul_abs(Real.from_rat(p).abs, Real.from_rat(q).abs) = Real.from_rat((p * q).abs)
-}
-
-theorem mul_nonneg_nonneg_lifts(p: Rat, q: Rat) {
-    not p.is_negative and not q.is_negative
-    implies
-    Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-} by {
-    not Real.from_rat(p).is_negative
-    not Real.from_rat(q).is_negative
-    mul_abs(Real.from_rat(p), Real.from_rat(q)) = Real.from_rat(p * q)
-}
-
-theorem mul_nonneg_nonneg(y: Real, z: Real) {
-    not y.is_negative and not z.is_negative
-    implies
-    y * z = mul_abs(y, z)
-}
-
-theorem mul_nonneg_nonpos(y: Real, z: Real) {
-    not y.is_negative and not z.is_positive
-    implies
-    y * z = -mul_abs(y, z)
-}
-
-theorem mul_nonpos_nonneg(y: Real, z: Real) {
-    not y.is_positive and not z.is_negative
-    implies
-    y * z = -mul_abs(y, z)
-}
-
-theorem mul_nonpos_nonpos(y: Real, z: Real) {
-    not y.is_positive and not z.is_positive
-    implies
-    y * z = mul_abs(y, z)
-} by {
-    if y = Real.0 or z = Real.0 {
-        if y = Real.0 {
-            y * z = Real.0
-        } else {
-            y * z = Real.0
-        }
-        mul_abs(y, z) = Real.0
-        y * z = mul_abs(y, z)
-    } else {
-        y.is_negative
-        z.is_negative
-        y * z = mul_abs(y, z)
-    }
-}
-
-theorem mul_neg_left(y: Real, z: Real) {
-    (-y) * z = -(y * z)
-} by {
-    if y.is_positive {
-        (-y).is_negative
-        if z.is_positive {
-            (-y) * z = -mul_abs(y, z)
-            (-y) * z = -(y * z)
-        } else {
-            (-y) * z = mul_abs(y, z)
-            (-y) * z = -(y * z)
-        }
-    } else {
-        if z.is_positive {
-            (-y) * z = mul_abs(y, z)
-            (-y) * z = -(y * z)
-        } else {
-            (-y) * z = -mul_abs(y, z)
-            (-y) * z = -(y * z)
-        }
-    }
-}
-
-theorem mul_neg_right(y: Real, z: Real) {
-    y * (-z) = -(y * z)
-}
-
-theorem mul_neg_neg(y: Real, z: Real) {
-    (-y) * (-z) = y * z
-}
-
-theorem mul_nonneg_nonnpos_lifts(p: Rat, q: Rat) {
-    not p.is_negative and not q.is_positive
-    implies
-    Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-} by {
-    not (-q).is_negative
-    Real.from_rat(p) * Real.from_rat(-q) = Real.from_rat(p * -q)
-}
-
-theorem mul_nonpos_nonneg_lifts(p: Rat, q: Rat) {
-    not p.is_positive and not q.is_negative
-    implies
-    Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-} by {
-    not (-p).is_negative
-    Real.from_rat(-p) * Real.from_rat(q) = Real.from_rat(-p * q)
-}
-
-theorem mul_nonpos_nonpos_lifts(p: Rat, q: Rat) {
-    not p.is_positive and not q.is_positive
-    implies
-    Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-} by {
-    not (-p).is_negative
-    Real.from_rat(-p) * Real.from_rat(-q) = Real.from_rat(-p * -q)
-}
-
-// This is important, that multiplication and
-// type conversion are interchangeable.
-theorem mul_from_rat(p: Rat, q: Rat) {
-    Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-} by {
-    if p.is_negative {
-        if q.is_negative {
-            Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-        } else {
-            Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-        }
-    } else {
-        if q.is_negative {
-            Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-        } else {
-            Real.from_rat(p) * Real.from_rat(q) = Real.from_rat(p * q)
-        }
-    }
-}
-
-theorem gte_pos_rat(z: Real, r: Rat) {
-    r.is_positive and z >= Real.from_rat(r)
-    implies z.is_positive
-} by {
-    Real.from_rat(r).is_positive
-}
-
-theorem rat_gte_pos(z: Real, r: Rat) {
-    z.is_positive and Real.from_rat(r) >= z
-    implies r.is_positive
-} by {
-    z.gt_rat(Rat.0)
-    r > Rat.0
-    Rat.0 < r
-}
-
-theorem mul_pos_is_pos_mul(a: Real, b: Real) {
-    a.is_positive and b.is_positive
-    implies
-    a * b = Real.new(pos_mul_gt(a, b))
-} by {
-    not a.is_negative
-    not b.is_negative
-    a * b = mul_abs(a, b)
-    Real.0 < a
-    Real.0 < b
-    Real.0 != b
-    mul_abs(a, b) = Real.new(pos_mul_gt(a.abs, b.abs))
-}
-
-theorem pos_mul_both_gt_rat(a: Real, b: Real, p: Rat, q: Rat) {
-    p.is_positive and q.is_positive
-    and a > Real.from_rat(p) and b > Real.from_rat(q)
-    implies
-    a * b > Real.from_rat(p * q)
-} by {
-    a.is_positive
-    b.is_positive
-    pos_mul_gt(a, b, p * q)
-    Real.new(pos_mul_gt(a, b)).gt_rat(p * q)
-    (a * b).gt_rat(p * q)
-}
-
-theorem pos_mul_both_lte_rat(a: Real, b: Real, p: Rat, q: Rat) {
-    a.is_positive and b.is_positive
-    and a <= Real.from_rat(p) and b <= Real.from_rat(q)
-    implies
-    a * b <= Real.from_rat(p * q)
-} by {
-    p.is_positive
-    q.is_positive
-    not pos_mul_gt(a, b, p * q)
-    not Real.new(pos_mul_gt(a, b)).gt_rat(p * q)
-}
-
-theorem pos_lte_rat_mul_pos_rat(a: Real, p: Rat, q: Rat) {
-    a.is_positive and a <= Real.from_rat(p) and q.is_positive
-    implies
-    a * Real.from_rat(q) <= Real.from_rat(p * q)
-}
-
-theorem pos_lt_rat_mul_pos_rat(a: Real, p: Rat, q: Rat) {
-    a.is_positive and a < Real.from_rat(p) and q.is_positive
-    implies
-    a * Real.from_rat(q) < Real.from_rat(p * q)
-} by {
-    let r: Rat satisfy {
-        a < Real.from_rat(r) and Real.from_rat(r) < Real.from_rat(p)
-    }
-    r.is_positive
-    a * Real.from_rat(q) <= Real.from_rat(r) * Real.from_rat(q)
-    r < p
-    Real.from_rat(r) * Real.from_rat(q) < Real.from_rat(p) * Real.from_rat(q)
-}
-
-theorem pos_gt_rat_mul_pos_rat(a: Real, p: Rat, q: Rat) {
-    p.is_positive and a > Real.from_rat(p) and q.is_positive
-    implies
-    a * Real.from_rat(q) > Real.from_rat(p * q)
-} by {
-    a.is_positive
-    let r: Rat satisfy {
-        Real.from_rat(p) < Real.from_rat(r) and Real.from_rat(r) < a
-    }
-    r.is_positive
-    r > p
-    r * q > p * q
-    q * r > p * q
-    q * r / r > p * q / r
-    q * r / r = q
-    q > p * q / r
-    (p * q / r).is_positive
-    Real.from_rat(q) > Real.from_rat(p * q / r)
-    a * Real.from_rat(q) > Real.from_rat(r * (p * q / r))
-    a * Real.from_rat(q) > Real.from_rat(p * q / r * r)
-    p * q / r * r = p * q
-}
-
-theorem pos_gte_rat_mul_pos_rat(a: Real, p: Rat, q: Rat) {
-    p.is_positive and a >= Real.from_rat(p) and q.is_positive
-    implies
-    a * Real.from_rat(q) >= Real.from_rat(p * q)
-} by {
-    if a = Real.from_rat(p) {
-        a * Real.from_rat(q) >= Real.from_rat(p * q)
-    } else {
-        a > Real.from_rat(p)
-        a * Real.from_rat(q) > Real.from_rat(p * q)
-        a * Real.from_rat(q) >= Real.from_rat(p * q)
-    }
-}
-
-theorem pos_lt_mul_pos_rat(a: Real, b: Real, r: Rat) {
-    a.is_positive and a < b and r.is_positive
-    implies
-    a * Real.from_rat(r) < b * Real.from_rat(r)
-} by {
-    b.is_positive
-    let p: Rat satisfy {
-        a < Real.from_rat(p) and Real.from_rat(p) < b
-    }
-    p.is_positive
-    a * Real.from_rat(r) < Real.from_rat(p) * Real.from_rat(r)
-    Real.from_rat(p) * Real.from_rat(r) < b * Real.from_rat(r)
-}
-
-theorem pos_lte_mul_pos_rat(a: Real, b: Real, r: Rat) {
-    a.is_positive and a <= b and r.is_positive
-    implies
-    a * Real.from_rat(r) <= b * Real.from_rat(r)
-} by {
-    if a = b {
-        a * Real.from_rat(r) <= b * Real.from_rat(r)
-    } else {
-        a < b
-        a * Real.from_rat(r) < b * Real.from_rat(r)
-        a * Real.from_rat(r) <= b * Real.from_rat(r)
-    }
-}
-
-theorem pos_gt_mul_pos_rat(a: Real, b: Real, r: Rat) {
-    b.is_positive and a > b and r.is_positive
-    implies
-    a * Real.from_rat(r) > b * Real.from_rat(r)
-}
-
-theorem pos_gte_mul_pos_rat(a: Real, b: Real, r: Rat) {
-    b.is_positive and a >= b and r.is_positive
-    implies
-    a * Real.from_rat(r) >= b * Real.from_rat(r)
-}
-
-theorem pos_mul_pos_is_pos(a: Real, b: Real) {
-    a.is_positive and b.is_positive
-    implies
-    (a * b).is_positive
-} by {
-    Real.new(pos_mul_gt(a, b)) = a * b
-    pos_mul_gt(a, b, Rat.0)
-    Real.new(pos_mul_gt(a, b)).gt_rat(Rat.0)
-    (a * b).gt_rat(Rat.0)
-}
-
-theorem pos_mul_rat_lt_rat_cancel(a: Real, p: Rat, q: Rat) {
-    a.is_positive and p.is_positive and q.is_positive
-    and a * Real.from_rat(q) < Real.from_rat(p)
-    implies
-    a < Real.from_rat(p / q)
-} by {
-    if a = Real.from_rat(p / q) {
-        Real.from_rat(p / q) * Real.from_rat(q) < Real.from_rat(p)
-        Real.from_rat(p / q * q) < Real.from_rat(p)
-        p / q * q < p
-        p / q * q = p
-        false
-    }
-    if a > Real.from_rat(p / q) {
-        let r: Rat satisfy {
-            Real.from_rat(p / q) < Real.from_rat(r) and Real.from_rat(r) < a
-        }
-        p / q < r
-        (p / q).is_positive
-        r.is_positive
-        Real.from_rat(r) * Real.from_rat(q) < a * Real.from_rat(q)
-        Real.from_rat(r) * Real.from_rat(q) < Real.from_rat(p)
-        r * q < p
-        r * q / q < p / q
-        r * q / q = r
-        false
-    }
-}
-
-theorem pos_mul_rat_gt_rat_cancel(a: Real, p: Rat, q: Rat) {
-    a.is_positive and p.is_positive and q.is_positive
-    and a * Real.from_rat(q) > Real.from_rat(p)
-    implies
-    a > Real.from_rat(p / q)
-} by {
-    if a = Real.from_rat(p / q) {
-        Real.from_rat(p / q) * Real.from_rat(q) > Real.from_rat(p)
-        Real.from_rat(p / q * q) > Real.from_rat(p)
-        p / q * q > p
-        p / q * q = p
-        false
-    }
-    if a < Real.from_rat(p / q) {
-        Real.from_rat(p / q) > a
-        let r: Rat satisfy {
-            Real.from_rat(p / q) > Real.from_rat(r) and Real.from_rat(r) > a
-        }
-        p / q > r
-        (p / q).is_positive
-        r.is_positive
-        Real.from_rat(r) * Real.from_rat(q) > a * Real.from_rat(q)
-        Real.from_rat(r) * Real.from_rat(q) > Real.from_rat(p)
-        r * q > p
-        r * q / q > p / q
-        r * q / q = r
-        false
-    }
-}
-
-theorem pos_mul_rat_eq_rat_cancel(a: Real, p: Rat, q: Rat) {
-    a.is_positive and p.is_positive and q.is_positive
-    and a * Real.from_rat(q) = Real.from_rat(p)
-    implies
-    a = Real.from_rat(p / q)
-} by {
-    (p / q).is_positive
-    p / q * q = p
-    if a < Real.from_rat(p / q) {
-        a * Real.from_rat(q) < Real.from_rat(p / q * q)
-        a * Real.from_rat(q) < Real.from_rat(p)
-        false
-    }
-    if a > Real.from_rat(p / q) {
-        a * Real.from_rat(q) > Real.from_rat(p / q * q)
-        false
-    }
-}
-
-theorem pos_mul_rat_lte_rat_cancel(a: Real, p: Rat, q: Rat) {
-    a.is_positive and p.is_positive and q.is_positive
-    and a * Real.from_rat(q) <= Real.from_rat(p)
-    implies
-    a <= Real.from_rat(p / q)
-} by {
-    if a * Real.from_rat(q) < Real.from_rat(p) {
-        a < Real.from_rat(p / q)
-        a <= Real.from_rat(p / q)
-    } else {
-        a * Real.from_rat(q) = Real.from_rat(p)
-        a = Real.from_rat(p / q)
-        a <= Real.from_rat(p / q)
-    }
-}
-
-theorem pos_mul_rat_gte_rat_cancel(a: Real, p: Rat, q: Rat) {
-    a.is_positive and p.is_positive and q.is_positive
-    and a * Real.from_rat(q) >= Real.from_rat(p)
-    implies
-    a >= Real.from_rat(p / q)
-} by {
-    if a * Real.from_rat(q) > Real.from_rat(p) {
-        a > Real.from_rat(p / q)
-        a >= Real.from_rat(p / q)
-    } else {
-        a * Real.from_rat(q) = Real.from_rat(p)
-        a = Real.from_rat(p / q)
-        a >= Real.from_rat(p / q)
-    }
-}
-
-theorem pos_rat_lte_rat_mul_pos(p: Rat, q: Rat, a: Real) {
-    p.is_positive and p <= q and a.is_positive
-    implies
-    Real.from_rat(p) * a <= Real.from_rat(q) * a
-} by {
-    if Real.from_rat(q) * a < Real.from_rat(p) * a {
-        let r: Rat satisfy {
-            Real.from_rat(q) * a < Real.from_rat(r)
-            and Real.from_rat(r) < Real.from_rat(p) * a 
-        }
-        q.is_positive
-        (Real.from_rat(q) * a).is_positive
-        Real.from_rat(r).is_positive
-        r.is_positive
-        a < Real.from_rat(r / q)
-        Real.from_rat(r / p) < a
-        Real.from_rat(r / p) < Real.from_rat(r / q)
-        r / p < r / q
-        q < p
-        false
-    }
-}
-
-theorem pos_rat_gte_rat_mul_pos(p: Rat, q: Rat, a: Real) {
-    q.is_positive and p >= q and a.is_positive
-    implies
-    Real.from_rat(p) * a >= Real.from_rat(q) * a
-}
-
 define min(a: Real, b: Real) -> Real {
     if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+define max(a: Real, b: Real) -> Real {
+    if a > b {
         a
     } else {
         b
@@ -2307,6 +1460,20 @@ theorem min_pos_pos(a: Real, b: Real) {
     }
 }
 
+theorem max_pos_pos(a: Real, b: Real) {
+    a.is_positive and b.is_positive
+    implies
+    max(a, b).is_positive
+} by {
+    if a > b {
+        a.is_positive
+        max(a, b).is_positive
+    } else {
+        b.is_positive
+        max(a, b).is_positive
+    }
+}
+
 theorem min_lte_left(a: Real, b: Real) {
     min(a, b) <= a
 } by {
@@ -2316,6 +1483,18 @@ theorem min_lte_left(a: Real, b: Real) {
     } else {
         min(a, b) = b
         min(a, b) <= a
+    }
+}
+
+theorem max_gte_left(a: Real, b: Real) {
+    max(a, b) >= a
+} by {
+    if a > b {
+        max(a, b) = a
+        max(a, b) >= a
+    } else {
+        max(a, b) = b
+        max(a, b) >= a
     }
 }
 
@@ -2331,114 +1510,78 @@ theorem min_lte_right(a: Real, b: Real) {
     }
 }
 
-// TODO: the theorem citations shouldn't be necessary here.
-theorem pos_rat_lt_rat_mul_pos(p: Rat, q: Rat, a: Real) {
-    p.is_positive and p < q and a.is_positive
-    implies
-    Real.from_rat(p) * a < Real.from_rat(q) * a
+theorem max_gte_right(a: Real, b: Real) {
+    max(a, b) >= b
 } by {
-    // We find epsilon satisfying two bounds to be explained later.
-    Real.0 < a
-    let ar: Rat satisfy {
-        Real.0 < Real.from_rat(ar) and Real.from_rat(ar) < a
+    if a > b {
+        max(a, b) = a
+        max(a, b) >= b
+    } else {
+        max(a, b) = b
+        max(a, b) >= b
     }
-    let bound1: Rat = ar / Rat.2
-    ar.is_positive
-    bound1.is_positive
-    ((q - p) / p).is_positive
-    ((q - p) / p * bound1).is_positive
-    Real.from_rat(((q - p) / p * bound1)).is_positive
-    let bound2: Rat = (q - p) / p * bound1
-    bound2.is_positive
-    let minbound: Real = min(Real.from_rat(bound1), Real.from_rat(bound2))
-    Real.from_rat(bound1).is_positive
-    Real.from_rat(bound2).is_positive
-    min(Real.from_rat(bound1), Real.from_rat(bound2)).is_positive
-    Real.0 < min(Real.from_rat(bound1), Real.from_rat(bound2))
-    let eps: Rat satisfy {
-        Real.0 < Real.from_rat(eps)
-        and Real.from_rat(eps) < minbound
-    }
-    eps.is_positive
+}
 
-    // r is an approximation of a
-    rat_window(a, eps)
-    let r: Rat satisfy {
-        Real.from_rat(r) < a and a < Real.from_rat(r + eps)
-    }
-
-    Real.from_rat(eps) < Real.from_rat(bound1)
-    eps < bound1
-    Real.from_rat(eps) < Real.from_rat(bound2)
-    eps < bound2
-
-    // bound1 was set to handle this case
-    if r <= Rat.0 {
-        r + eps <= Rat.0 + eps
-        r + eps <= eps
-        (ar / Rat.2).is_positive
-        ar / Rat.2 < ar / Rat.2 + ar / Rat.2
-        ar / Rat.2 < ar
-        Real.from_rat(bound1) < a
-        Real.from_rat(r + eps) <= Real.from_rat(eps)
-        Real.from_rat(r + eps) < Real.from_rat(bound1)
-        Real.from_rat(r + eps) < a
+theorem lt_both_imp_lt_min(a: Real, b: Real, c: Real) {
+    a < b and a < c implies a < min(b, c)
+} by {
+    if not a < min(b, c) {
+        not b <= min(b, c)
+        min(b, c) < b
+        min(b, c) != b
+        not c <= min(b, c)
+        min(b, c) < c
+        min(b, c) != c
         false
     }
-    r.is_positive
-
-    Real.from_rat(p).is_positive
-    Real.from_rat(p) * a <= Real.from_rat(p) * Real.from_rat(r + eps)
-    p <= q
-    Real.from_rat(r).is_positive
-    Real.from_rat(r) * Real.from_rat(q) < a * Real.from_rat(q)
-    Real.from_rat(q) * Real.from_rat(r) < Real.from_rat(q) * a
-
-    // bound2 was set to handle this case
-    eps < (q - p) / p * bound1
-    Real.from_rat(ar) < Real.from_rat(r + eps)
-    Real.from_rat(r + eps).gt_rat(ar)
-    ar < r + eps
-    eps < ar / Rat.2
-    r + eps < r + ar / Rat.2
-    ar < r + ar / Rat.2
-    ar / Rat.2 + ar / Rat.2 < r + ar / Rat.2
-    bound1 + bound1 < r + bound1
-    bound1 < r
-    (q - p) / p * bound1 < (q - p) / p * r
-    eps < (q - p) / p * r
-    eps < r * (q - p) / p
-    eps * p < r * (q - p) / p * p
-    p != Rat.0
-    r * (q - p) / p * p = r * (q - p)
-    eps * p < r * (q - p)
-    r * (q - p) = r * q - r * p
-    eps * p < r * q - r * p
-    eps * p < q * r - p * r
-    eps * p + p * r < q * r - p * r + p * r
-    eps * p + p * r < q * r
-    p * (r + eps) < q * r
-    Real.from_rat(p) * Real.from_rat(r + eps) < Real.from_rat(q) * Real.from_rat(r)
-
-    lte_lt_trans(Real.from_rat(p) * a,
-                 Real.from_rat(p) * Real.from_rat(r + eps),
-                 Real.from_rat(q) * Real.from_rat(r))
-    Real.from_rat(p) * a < Real.from_rat(q) * Real.from_rat(r)
 }
 
-theorem pos_rat_gt_rat_mul_pos(p: Rat, q: Rat, a: Real) {
-    q.is_positive and p > q and a.is_positive
-    implies
-    Real.from_rat(p) * a > Real.from_rat(q) * a
-}
-
-theorem pos_mul_lt_imp_pos(a: Real, b: Real, c: Real) {
-    a.is_positive and b.is_positive and a * b < c
-    implies
-    c.is_positive
+theorem lt_min_imp_lt_left(a: Real, b: Real, c: Real) {
+    a < min(b, c) implies a < b
 } by {
-    (a * b).is_positive
-    a * b <= c
+    if not a < b {
+        not a < min(b, c)
+        false
+    }
+}
+
+theorem lt_min_imp_lt_right(a: Real, b: Real, c: Real) {
+    a < min(b, c) implies a < c
+} by {
+    if not a < c {
+        not a < min(b, c)
+        false
+    }
+}
+
+theorem gt_both_imp_gt_max(a: Real, b: Real, c: Real) {
+    a > b and a > c implies a > max(b, c)
+} by {
+    if not a > max(b, c) {
+        not max(b, c) < b
+        max(b, c) != b
+        not max(b, c) < c
+        max(b, c) != c
+        false
+    }
+}
+
+theorem gt_max_imp_gt_left(a: Real, b: Real, c: Real) {
+    a > max(b, c) implies a > b
+} by {
+    if not a > b {
+        not a > max(b, c)
+        false
+    }
+}
+
+theorem gt_max_imp_gt_right(a: Real, b: Real, c: Real) {
+    a > max(b, c) implies a > c
+} by {
+    if not a > c {
+        not a > max(b, c)
+        false
+    }
 }
 
 theorem rat_dual_upper_bound(a: Real, b: Real) {
@@ -2459,44 +1602,1208 @@ theorem rat_dual_upper_bound(a: Real, b: Real) {
     }
 }
 
-// theorem pos_rat_mul_insert_rat(a: Real, b: Real, c: Real) {
-//     a.is_positive and b.is_positive and a * b < c
+theorem abs_gte_zero(a: Real) {
+    a.abs >= Real.0
+} by {
+    if a.is_negative {
+        a.abs = -a
+        (-a).is_positive
+        -a > Real.0
+        a.abs >= Real.0
+    } else {
+        a.abs = a
+        a >= Real.0
+        a.abs >= Real.0
+    }
+}
+
+theorem abs_from_rat(p: Rat) {
+    Real.from_rat(p).abs = Real.from_rat(p.abs)
+} by {
+    if Real.from_rat(p).is_negative {
+        p.is_negative
+        Real.from_rat(p).abs = -Real.from_rat(p)
+        Real.from_rat(p.abs) = -Real.from_rat(p)
+        Real.from_rat(p).abs = Real.from_rat(p.abs)
+    } else {
+        not p.is_negative
+        p.abs = p
+        Real.from_rat(p).abs = Real.from_rat(p)
+        Real.from_rat(p.abs) = Real.from_rat(p)
+        Real.from_rat(p).abs = Real.from_rat(p.abs)
+    }
+}
+
+// It's a little roundabout, but we can define lifting from rationals to reals
+// before we are capable of defining general metric spaces.
+
+class Real {
+    define is_close(self, other: Real, eps: Real) -> Bool {
+        (self - other).abs < eps
+    }
+}
+
+theorem close_imp_eps_pos(a: Real, b: Real, eps: Real) {
+    a.is_close(b, eps) implies eps.is_positive
+} by {
+    (a - b).abs < eps
+    (a - b).abs >= Real.0
+    Real.0 <= (a - b).abs
+    Real.0 < eps
+    eps.is_positive
+}
+
+theorem close_comm(a: Real, b: Real, eps: Real) {
+    a.is_close(b, eps) implies b.is_close(a, eps)
+} by {
+    a - b = -(b - a)
+    (a - b).abs = (b - a).abs
+    (a - b).abs < eps
+    (b - a).abs < eps
+}
+
+theorem close_imp_bounds(a: Real, b: Real, eps: Real) {
+    a.is_close(b, eps) implies b - eps < a and a < b + eps and a > b - eps
+} by {
+    // Left ineq
+    (a - b).abs < eps
+    a - b <= (a - b).abs
+    a - b < eps
+    a - b + b < eps + b
+    a < eps + b
+    a < b + eps
+
+    // Right ineq
+    (b - a).abs < eps
+    b - a <= (b - a).abs
+    b - a < eps
+    b - a + a < eps + a
+    b - a + a = b
+    b < eps + a
+    eps + a > b
+    a + eps > b
+    a + eps + -eps > b + -eps
+    a > b + -eps
+}
+
+theorem bounds_imp_close(a: Real, b: Real, eps: Real) {
+    b - eps < a and a < b + eps implies a.is_close(b, eps)
+} by {
+    if (a - b).is_negative {
+        (a - b).abs = b - a
+        a > b + -eps
+        a + eps + -eps > b + -eps
+        a + eps > b
+        eps + a > b
+        b < eps + a
+        b - a + a = b
+        b - a + a < eps + a
+        b - a < eps
+        (a - b).abs < eps
+        a.is_close(b, eps)
+    } else {
+        (a - b).abs = a - b
+        a < eps + b
+        a - b + b < eps + b
+        a - b < eps
+        a - b < eps
+        (a - b).abs < eps
+        a.is_close(b, eps)
+    }
+}
+
+theorem self_close(a: Real, eps: Real) {
+    eps.is_positive implies a.is_close(a, eps)
+}
+
+// Closeness is preserved in the real<->rat conversion.
+theorem close_rats_imp_close_reals(q: Rat, r: Rat, eps: Rat) {
+    q.is_close(r, eps) implies Real.from_rat(q).is_close(Real.from_rat(r), Real.from_rat(eps))
+} by {
+    (q - r).abs < eps
+    Real.from_rat((q - r).abs) < Real.from_rat(eps)
+    (Real.from_rat(q) - Real.from_rat(r)).abs < Real.from_rat(eps)
+}
+
+theorem close_reals_imp_close_rats(q: Rat, r: Rat, eps: Rat) {
+    Real.from_rat(q).is_close(Real.from_rat(r), Real.from_rat(eps))
+    implies q.is_close(r, eps)
+} by {
+    (Real.from_rat(q) - Real.from_rat(r)).abs < Real.from_rat(eps)
+    Real.from_rat((q - r).abs) < Real.from_rat(eps)
+    (q - r).abs < eps
+}
+
+// Every real can be approximated by a rational.
+theorem rat_approx_exists(x: Real, eps: Rat) {
+    eps.is_positive implies exists(r: Rat) {
+        x.is_close(Real.from_rat(r), Real.from_rat(eps))
+    }
+} by {
+    let r: Rat satisfy {
+        Real.from_rat(r) < x and x < Real.from_rat(r + eps)
+    }
+    r - eps < r
+    Real.from_rat(r - eps) < Real.from_rat(r)
+    Real.from_rat(r) - Real.from_rat(eps) < Real.from_rat(r)
+    Real.from_rat(r) - Real.from_rat(eps) < x
+}
+
+// Every real has a rational that is a distant upper bound.
+theorem rat_upper(x: Real, eps: Rat) {
+    eps.is_positive implies exists(r: Rat) {
+        not x.is_close(Real.from_rat(r), Real.from_rat(eps)) and x < Real.from_rat(r)
+    }
+} by {
+    let r1: Rat satisfy {
+        x < Real.from_rat(r1)
+    }
+    let r: Rat = r1 + eps
+    if x.is_close(Real.from_rat(r), Real.from_rat(eps)) {
+        x < Real.from_rat(r) - Real.from_rat(eps)
+        x < Real.from_rat(r - eps)
+        x < Real.from_rat(r1)
+        false
+    }
+    x < Real.from_rat(r)
+}
+
+// Every real has a rational that is a distant lower bound.
+theorem rat_lower(x: Real, eps: Rat) {
+    eps.is_positive implies exists(r: Rat) {
+        not x.is_close(Real.from_rat(r), Real.from_rat(eps)) and Real.from_rat(r) < x
+    }
+} by {
+    let r1: Rat satisfy {
+        Real.from_rat(r1) < x
+    }
+    let r: Rat = r1 - eps
+    if x.is_close(Real.from_rat(r), Real.from_rat(eps)) {
+        Real.from_rat(r) + Real.from_rat(eps) < x
+        Real.from_rat(r + eps) < x
+        Real.from_rat(r1) < x
+        false
+    }
+    r < r1
+    Real.from_rat(r) < x
+}
+
+// Every intersecting pair of intervals has a rational number in it.
+theorem rat_intersect(a: Real, b: Real, c: Real, d: Real, e: Real) {
+    a.is_close(b, c) and a.is_close(d, e)
+    implies
+    exists(r: Rat) {
+        Real.from_rat(r).is_close(b, c) and Real.from_rat(r).is_close(d, e)
+    }
+} by {
+    a < b + c
+    a < d + e
+    a < min(b + c, d + e)
+    let r: Rat satisfy {
+        a < Real.from_rat(r) and Real.from_rat(r) < min(b + c, d + e)
+    }
+    Real.from_rat(r) < b + c
+    b - c < a
+    b - c < Real.from_rat(r)
+    Real.from_rat(r).is_close(b, c)
+    Real.from_rat(r) < d + e
+    d - e < a
+    d - e < Real.from_rat(r)
+    Real.from_rat(r).is_close(d, e)
+}
+
+// The Cauchy condition for the convergence of a sequence.
+define cauchy_condition(q: Nat -> Real, n: Nat, eps: Real) -> Bool {
+    forall(i: Nat, j: Nat) {
+        n <= i and n <= j implies q(i).is_close(q(j), eps)
+    }
+}
+
+define converges(q: Nat -> Real) -> Bool {
+    forall(eps: Real) {
+        eps.is_positive implies exists(n: Nat) {
+            cauchy_condition(q, n, eps)
+        }
+    }
+}
+
+// lb is eventually a lower bound of this sequence.
+define eventual_lb(q: Nat -> Real, lb: Real) -> Bool {
+    exists(n: Nat) {
+        forall(i: Nat) {
+            n <= i implies lb <= q(i)
+        }
+    }
+}
+
+// For demonstrating the equivalent of Cauchy sequences and Dedekind cuts.
+define cauchy_gt_rat(q: Nat -> Real, r: Rat) -> Bool {
+    exists(lb: Real) {
+        lb > Real.from_rat(r) and eventual_lb(q, lb)
+    }
+}
+
+theorem cauchy_gt_something(q: Nat -> Real) {
+    converges(q) implies exists(r: Rat) {
+        cauchy_gt_rat(q, r)
+    }
+} by {
+    let eps: Real = Real.1
+    eps.is_positive
+    let n: Nat satisfy {
+        cauchy_condition(q, n, eps)
+    }
+    let lb: Real satisfy {
+        lb < q(n) - eps
+    }
+    let r: Rat satisfy {
+        lb > Real.from_rat(r)
+    }
+    forall(i: Nat) {
+        if n <= i {
+            q(n).is_close(q(i), eps)
+            q(i) > q(n) - eps
+            q(i) > lb
+            lb <= q(i)
+        }
+    }
+    eventual_lb(q, lb)
+    cauchy_gt_rat(q, r)
+}
+
+theorem cauchy_gt_not_everything(q: Nat -> Real) {
+    converges(q) implies exists(r: Rat) {
+        not cauchy_gt_rat(q, r)
+    }
+} by {
+    let eps: Real = Real.1
+    eps.is_positive
+    let n: Nat satisfy {
+        cauchy_condition(q, n, eps)
+    }
+    let r: Rat satisfy {
+        Real.from_rat(r) > q(n) + eps
+    }
+    if cauchy_gt_rat(q, r) {
+        let lb: Real satisfy {
+            lb > Real.from_rat(r) and eventual_lb(q, lb)
+        }
+        let n2: Nat satisfy {
+            forall(i: Nat) {
+                n2 <= i implies q(i) >= lb
+            }
+        }
+        if n <= n2 {
+            q(n2).is_close(q(n), eps)
+            not Real.from_rat(r) <= q(n) + Real.1
+            not lb < q(n) + Real.1
+            q(n2) > lb
+            q(n2) > Real.from_rat(r)
+            false
+        } else {
+            n2 <= n
+            not Real.from_rat(r) <= q(n) + Real.1
+            Real.from_rat(r) < lb + Real.1
+            q(n) != lb
+            q(n) > lb
+            q(n) > Real.from_rat(r)
+            false
+        }
+    }
+}
+
+theorem cauchy_gt_is_cut(q: Nat -> Real) {
+    converges(q) implies is_cut(cauchy_gt_rat(q))
+}
+
+theorem cauchy_gt_is_lower(q: Nat -> Real) {
+    converges(q) implies is_lower(cauchy_gt_rat(q))
+} by {
+    forall(x: Rat, y: Rat) {
+        if cauchy_gt_rat(q, y) and x < y {
+            let lb: Real satisfy {
+                Real.from_rat(y) < lb and eventual_lb(q, lb)
+            }
+            Real.from_rat(x) < lb
+            cauchy_gt_rat(q, x)
+        }
+    }
+}
+
+theorem cauchy_gt_has_no_greatest(q: Nat -> Real) {
+    converges(q) implies not has_greatest(cauchy_gt_rat(q))
+} by {
+    if has_greatest(cauchy_gt_rat(q)) {
+        let r: Rat satisfy {
+            is_greatest(cauchy_gt_rat(q), r)
+        }
+        cauchy_gt_rat(q, r)
+        let lb: Real satisfy {
+            Real.from_rat(r) < lb and eventual_lb(q, lb)
+        }
+        let b: Rat satisfy {
+            lb > Real.from_rat(b) and b > r
+        }
+        cauchy_gt_rat(q, b)
+        false
+    }
+}
+
+theorem cauchy_gt_is_dedekind_cut(q: Nat -> Real) {
+    converges(q) implies is_dedekind_cut(cauchy_gt_rat(q))
+}
+
+define limit(q: Nat -> Real) -> Real {
+    Real.new(cauchy_gt_rat(q))
+}
+
+theorem eventual_lb_extends(q: Nat -> Real, lb1: Real, lb2: Real) {
+    eventual_lb(q, lb1) and lb2 < lb1 implies eventual_lb(q, lb2)
+} by {
+    let n: Nat satisfy {
+        forall(i: Nat) {
+            n <= i implies lb1 <= q(i)
+        }
+    }
+    forall(i: Nat) {
+        if n <= i {
+            lb1 <= q(i)
+            lb2 < lb1
+            lb2 <= q(i)
+        }
+    }
+}
+
+theorem lt_limit_imp_lb(q: Nat -> Real, lb: Real) {
+    converges(q) and lb < limit(q) implies eventual_lb(q, lb)
+} by {
+    let r: Rat satisfy {
+        lb < Real.from_rat(r) and Real.from_rat(r) < limit(q)
+    }
+    limit(q).gt_rat(r)
+    cauchy_gt_rat(q, r)
+    let lb2: Real satisfy {
+        lb2 > Real.from_rat(r) and eventual_lb(q, lb2)
+    }
+    lb < lb2
+}
+
+theorem lb_lte_limit(q: Nat -> Real, lb: Real) {
+    converges(q) and eventual_lb(q, lb) implies lb <= limit(q)
+}
+
+// The other direction of the lower bound.
+// We can prove basically the same stuff here.
+define eventual_ub(q: Nat -> Real, ub: Real) -> Bool {
+    exists(n: Nat) {
+        forall(i: Nat) {
+            n <= i implies q(i) <= ub
+        }
+    }
+}
+
+theorem eventual_ub_extends(q: Nat -> Real, ub1: Real, ub2: Real) {
+    eventual_ub(q, ub1) and ub1 < ub2 implies eventual_ub(q, ub2)
+} by {
+    let n: Nat satisfy {
+        forall(i: Nat) {
+            n <= i implies q(i) <= ub1
+        }
+    }
+    forall(i: Nat) {
+        if n <= i {
+            q(i) <= ub1
+            q(i) <= ub2
+        }
+    }
+}
+
+define eventual_eq(q: Nat -> Real, a: Real) -> Bool {
+    exists(n: Nat) {
+        forall(i: Nat) {
+            n <= i implies q(i) = a
+        }
+    }
+}
+
+theorem eventual_eq_imp_ub(q: Nat -> Real, a: Real) {
+    eventual_eq(q, a) implies eventual_lb(q, a)
+} by {
+    let n: Nat satisfy {
+        forall(i: Nat) {
+            n <= i implies q(i) = a
+        }
+    }
+    forall(i: Nat) {
+        if n <= i {
+            q(i) = a
+        }
+    }
+}
+
+theorem eventual_eq_imp_lb(q: Nat -> Real, a: Real) {
+    eventual_eq(q, a) implies eventual_ub(q, a)
+} by {
+    let n: Nat satisfy {
+        forall(i: Nat) {
+            n <= i implies q(i) = a
+        }
+    }
+    forall(i: Nat) {
+        if n <= i {
+            q(i) = a
+        }
+    }
+}
+
+theorem eq_converges(q: Nat -> Real, a: Real) {
+    eventual_eq(q, a) implies converges(q)
+} by {
+    let n: Nat satisfy {
+        forall(i: Nat) {
+            n <= i implies q(i) = a
+        }
+    }
+    forall(eps: Real) {
+        if eps.is_positive {
+            forall(i: Nat, j: Nat) {
+                if n <= i and n <= j {
+                    q(i) = a
+                    q(j) = a
+                    q(i).is_close(q(j), eps)
+                }
+            }
+            cauchy_condition(q, n, eps)
+        }
+    }
+}
+
+theorem lb_ub_imp_eq(q: Nat -> Real, a: Real) {
+    eventual_lb(q, a) and eventual_ub(q, a) implies eventual_eq(q, a)
+} by {
+    let n1: Nat satisfy {
+        forall(i: Nat) {
+            n1 <= i implies q(i) <= a
+        }
+    }
+    let n2: Nat satisfy {
+        forall(i: Nat) {
+            n2 <= i implies q(i) >= a
+        }
+    }
+    let n: Nat satisfy {
+        n1 <= n and n2 <= n
+    }
+    forall(i: Nat) {
+        if n <= i {
+            q(i) <= a
+            q(i) >= a
+            q(i) = a
+        }
+    }
+}
+
+theorem lb_lte_ub(q: Nat -> Real, lb: Real, ub: Real) {
+    eventual_lb(q, lb) and eventual_ub(q, ub)
+    implies
+    lb <= ub
+} by {
+    let n1: Nat satisfy {
+        forall(i: Nat) {
+            n1 <= i implies lb <= q(i)
+        }
+    }
+    let n2: Nat satisfy {
+        forall(i: Nat) {
+            n2 <= i implies q(i) <= ub
+        }
+    }
+    let n: Nat satisfy {
+        n1 <= n and n2 <= n
+    }
+    lb <= q(n)
+    q(n) <= ub
+}
+
+theorem ub_imp_limit_lte(q: Nat -> Real, ub: Real) {
+    converges(q) and eventual_ub(q, ub) implies limit(q) <= ub
+} by {
+    if limit(q) > ub {
+        let r: Rat satisfy {
+            limit(q) > Real.from_rat(r) and Real.from_rat(r) > ub
+        }
+        limit(q).gt_rat(r)
+        let lb: Real satisfy {
+            lb > Real.from_rat(r) and eventual_lb(q, lb)
+        }
+        lb > ub
+        lb <= ub
+        false
+    }
+}
+
+// Relate the cauchy condition to eventual bounds
+
+theorem cauchy_imp_lb(q: Nat -> Real, n: Nat, eps: Real) {
+    cauchy_condition(q, n, eps) implies eventual_lb(q, q(n) - eps)
+} by {
+    forall(i: Nat) {
+        if n <= i {
+            q(i).is_close(q(n), eps)
+            q(i) >= q(n) - eps
+        }
+    }
+}
+
+theorem cauch_imp_ub(q: Nat -> Real, n: Nat, eps: Real) {
+    cauchy_condition(q, n, eps) implies eventual_ub(q, q(n) + eps)
+} by {
+    forall(i: Nat) {
+        if n <= i {
+            q(i).is_close(q(n), eps)
+            q(i) <= q(n) + eps
+        }
+    }
+}
+
+theorem lt_imp_minus_pos(a: Real, b: Real) {
+    a < b implies (b - a).is_positive
+} by {
+    forall(x0: Real) { a + x0 < b + x0 }
+    (a + -b).is_negative
+    (-(b + -a)).is_negative
+    (-(b - a)).is_negative
+}
+
+theorem from_rat_pos(r: Rat) {
+    r.is_positive implies Real.from_rat(r).is_positive
+}
+
+theorem sub_lte(a: Real, b: Real, c: Real) {
+    a - c <= b implies a <= b + c
+} by {
+    a - c + c <= b + c
+    a <= b + c
+}
+
+theorem limit_lt_imp_ub(q: Nat -> Real, ub: Real) {
+    converges(q) and limit(q) < ub implies eventual_ub(q, ub)
+} by {
+    Real.0 < ub - limit(q)
+    let eps2: Rat satisfy {
+        eps2.is_positive and Real.from_rat(eps2) < (ub - limit(q))
+    }
+    let eps: Real = Real.from_rat(eps2 / Rat.2)
+    (eps2 / Rat.2).is_positive
+    eps.is_positive
+    eps + eps = Real.from_rat(eps2)
+    eps + eps < ub - limit(q)
+    eps + eps + limit(q) < ub - limit(q) + limit(q)
+    eps + eps + limit(q) < ub - limit(q) - -limit(q)
+    eps + eps + limit(q) < ub
+    limit(q) + eps + eps < ub
+
+    let n: Nat satisfy {
+        cauchy_condition(q, n, eps)
+    }
+    eventual_ub(q, q(n) + eps)
+    eventual_lb(q, q(n) - eps)
+    q(n) - eps <= limit(q)
+    q(n) <= limit(q) + eps
+    q(n) + eps <= limit(q) + eps + eps
+    if q(n) + eps = limit(q) + eps + eps {
+        eventual_ub(q, ub)
+    } else {
+        q(n) + eps < limit(q) + eps + eps
+        q(n) + eps < ub
+        eventual_ub(q, ub)
+    }
+}
+
+theorem eq_imp_limit(q: Nat -> Real, a: Real) {
+    eventual_eq(q, a) implies limit(q) = a
+} by {
+    converges(q)
+    eventual_ub(q, a)
+    eventual_lb(q, a)
+    if limit(q) < a {
+        let ub: Real satisfy {
+            limit(q) < ub and ub < a
+        }
+        eventual_ub(q, ub)
+        a < ub
+        false
+    }
+    if limit(q) > a {
+        let lb: Real satisfy {
+            a < lb and lb < limit(q)
+        }
+        eventual_lb(q, lb)
+        a > lb
+        false
+    }
+}
+
+// converges_to is the Weierstrass definition.
+define converges_to(q: Nat -> Real, a: Real) -> Bool {
+    forall(eps: Real) {
+        eps.is_positive implies exists(n: Nat) {
+            forall(i: Nat) {
+                n <= i implies q(i).is_close(a, eps)
+            }
+        }
+    }
+}
+
+theorem lt_converges_to_imp_lb(q: Nat -> Real, a: Real, b: Real) {
+    converges_to(q, b) and a < b implies eventual_lb(q, a)
+} by {
+    let eps: Real = b - a
+    eps.is_positive
+    eps + a = b
+    a = b - eps
+    let n: Nat satisfy {
+        forall(i: Nat) {
+            n <= i implies q(i).is_close(b, eps)
+        }
+    }
+    forall(i: Nat) {
+        if n <= i {
+            q(i).is_close(b, eps)
+            q(i) >= b - eps
+            q(i) >= a
+        }
+    }
+}
+
+theorem gt_converges_to_imp_ub(q: Nat -> Real, a: Real, b: Real) {
+    converges_to(q, b) and a > b implies eventual_ub(q, a)
+} by {
+    let eps: Real = a - b
+    eps.is_positive
+    a = b + eps
+    let n: Nat satisfy {
+        forall(i: Nat) {
+            n <= i implies q(i).is_close(b, eps)
+        }
+    }
+    forall(i: Nat) {
+        if n <= i {
+            q(i).is_close(b, eps)
+            q(i) <= b + eps
+            q(i) <= a
+        }
+    }
+}
+
+theorem eps_lt_half(a: Real) {
+    a.is_positive implies exists(b: Real) {
+        b.is_positive and b + b < a
+    }
+} by {
+    Real.0 < a
+    let c: Rat satisfy {
+        Real.0 < Real.from_rat(c) and Real.from_rat(c) < a
+    }
+    let b: Rat = c / Rat.2
+    b + b = c
+    (Real.from_rat(c) - Real.0).is_positive
+    Real.from_rat(c).gt_rat(Rat.0)
+    Rat.0 < c
+    c.is_positive
+    b.is_positive
+    Real.from_rat(b).is_positive
+    Real.from_rat(b) + Real.from_rat(b) = Real.from_rat(c)
+}
+
+theorem add_gt_imp_gt_sub(a: Real, b: Real, c: Real) {
+    a + b > c implies a > c - b
+} by {
+    a + b > c
+    a + b + -b > c + -b
+    a > c - b
+}
+
+theorem sub_either_order(a: Real, b: Real, c: Real) {
+    a - b - c = a - c - b
+}
+
+theorem sub_both_eq_sub_add(a: Real, b: Real, c: Real) {
+    a - b - c = a - (b + c)
+}
+
+theorem is_close_triangle(a: Real, b: Real, c: Real, ace: Real, bce: Real) {
+    a.is_close(c, ace) and b.is_close(c, bce)
+    implies
+    a.is_close(b, ace + bce)
+} by {
+    // First let's lower-bound a
+    a > c - ace
+    a + ace > c
+    c > b - bce
+    a + ace > b - bce
+    a > b - bce - ace
+    a > b - ace - bce
+    a > b - (ace + bce)
+
+    // Then let's upper-bound a
+    a < c + ace
+    c < b + bce
+    c + ace < b + bce + ace
+    a < b + ace + bce
+
+    a.is_close(b, ace + bce)
+}
+
+// Prove our two definitions of convergence are equivalent.
+
+theorem converges_to_imp_converges(q: Nat -> Real, a: Real) {
+    converges_to(q, a) implies converges(q)
+} by {
+    forall(eps: Real) {
+        if eps.is_positive {
+            let eps2: Real satisfy {
+                eps2.is_positive and eps2 + eps2 < eps
+            }
+            let n: Nat satisfy {
+                forall(i: Nat) {
+                    n <= i implies q(i).is_close(a, eps2)
+                }
+            }
+            forall(i: Nat, j: Nat) {
+                if n <= i and n <= j {
+                    q(i).is_close(a, eps2)
+                    q(j).is_close(a, eps2)
+                    q(i).is_close(q(j), eps2 + eps2)
+                    q(i).is_close(q(j), eps)
+                }
+            }
+            cauchy_condition(q, n, eps)
+        }
+    }
+}
+
+theorem sub_lt_is_gt(a: Real, b: Real, c: Real) {
+    b < c implies a - b > a - c
+} by {
+    -c < -b
+    a + -c < a + -b
+    a + -b > a - c
+}
+
+theorem converges_imp_converges_to(q: Nat -> Real) {
+    converges(q) implies converges_to(q, limit(q))
+} by {
+    forall(eps: Real) {
+        if eps.is_positive {
+            let eps2: Real satisfy {
+                eps2.is_positive and eps2 < eps
+            }
+
+            // Find a lower bound
+            let lb: Real = limit(q) - eps2
+            lb < limit(q)
+            limit(q) - eps2 > limit(q) - eps
+            lb > limit(q) - eps
+            eventual_lb(q, lb)
+            let n1: Nat satisfy {
+                forall(i: Nat) {
+                    n1 <= i implies q(i) >= lb
+                }
+            }
+
+            // Find an upper bound
+            let ub: Real = limit(q) + eps2
+            ub > limit(q)
+            limit(q) + eps2 < limit(q) + eps
+            ub < limit(q) + eps
+            eventual_ub(q, ub)
+            let n2: Nat satisfy {
+                forall(i: Nat) {
+                    n2 <= i implies q(i) <= ub
+                }
+            }
+
+            // Once both of those are hit, the Weierstrass condition is ok
+            let n: Nat satisfy {
+                n1 <= n and n2 <= n
+            }
+            forall(i: Nat) {
+                if n <= i {
+                    q(i) >= lb
+                    q(i) > limit(q) - eps
+                    q(i) <= ub
+                    q(i) < limit(q) + eps
+                    q(i).is_close(limit(q), eps)
+                }
+            }            
+        }
+    }
+}
+
+theorem converges_to_unique_one_way(q: Nat -> Real, a: Real, b: Real) {
+    converges_to(q, a) and converges_to(q, b) implies not a < b
+} by {
+    converges(q)
+    if a < b {
+        let r1: Real satisfy {
+            a < r1 and r1 < b
+        }
+        let r2: Real satisfy {
+            r1 < r2 and r2 < b
+        }
+        eventual_ub(q, r1)
+        limit(q) <= r1
+        eventual_lb(q, r2)
+        limit(q) >= r2
+        r2 <= r1
+        false
+    }
+}
+
+theorem converges_to_unique(q: Nat -> Real, a: Real, b: Real) {
+    converges_to(q, a) and converges_to(q, b) implies a = b
+} by {
+    if a < b {
+        false
+    }
+    if b < a {
+        false
+    }
+}
+
+// The condition for uniform continuity on the rationals.
+define rat_condition(f: Rat -> Real, delta: Rat, eps: Real) -> Bool {
+    forall(r1: Rat, r2: Rat) {
+        r1.is_close(r2, delta) implies f(r1).is_close(f(r2), eps)
+    }
+}
+
+// The definition of uniform continuity on the rationals.
+define rat_uniform(f: Rat -> Real) -> Bool {
+    forall(eps: Real) {
+        eps.is_positive implies exists(delta: Rat) {
+            delta.is_positive and rat_condition(f, delta, eps)
+        }
+    }
+}
+
+// Probably this should go somewhere else.
+define compose<T, U, V>(f: U -> V, g: T -> U) -> T -> V {
+    function(t: T) {
+        f(g(t))
+    }
+}
+
+// Lifting a sequence of rationals to a sequence of reals
+define lift_seq(q: Nat -> Rat) -> Nat -> Real {
+    compose(Real.from_rat, q)
+}
+
+theorem lift_seq_elt(q: Nat -> Rat, n: Nat) {
+    lift_seq(q)(n) = Real.from_rat(q(n))
+} by {
+    lift_seq(q)(n) = compose(Real.from_rat, q)(n)
+    lift_seq(q)(n) = Real.from_rat(q(n))
+}
+
+// Uniform continuity implies sequential continuity.
+theorem uniform_imp_seq(f: Rat -> Real, q: Nat -> Rat) {
+    rat_uniform(f) and converges(lift_seq(q))
+    implies
+    converges(compose(f, q))
+} by {
+    forall(eps: Real) {
+        if eps.is_positive {
+            let delta: Rat satisfy {
+                delta.is_positive and rat_condition(f, delta, eps)
+            }
+            let n: Nat satisfy {
+                cauchy_condition(lift_seq(q), n, Real.from_rat(delta))
+            }
+
+            forall(i: Nat, j: Nat) {
+                if n <= i and n <= j {
+                    lift_seq(q)(i).is_close(lift_seq(q)(j), Real.from_rat(delta))
+                    Real.from_rat(q(i)).is_close(Real.from_rat(q(j)), Real.from_rat(delta))
+                    q(i).is_close(q(j), delta)
+                    f(q(i)).is_close(f(q(j)), eps)
+                    compose(f, q)(i).is_close(compose(f, q)(j), eps)
+                }
+            }
+
+            cauchy_condition(compose(f, q), n, eps)
+        }
+    }
+}
+
+let rat_approx(x: Real, eps: Rat) -> r: Rat satisfy {
+    eps.is_positive implies
+    x.is_close(Real.from_rat(r), Real.from_rat(eps))
+}
+
+// A sequence of rationals that approximates a real number.
+// Chosen to be easy to calculate with.
+define rat_seq(x: Real, n: Nat) -> Rat {
+    rat_approx(x, rat.iop(n))
+}
+
+theorem rat_seq_is_close(x: Real, n: Nat) {
+    x.is_close(Real.from_rat(rat_seq(x, n)), Real.from_rat(rat.iop(n)))
+}
+
+theorem abs_lt_imp_close_to_zero(x: Real, eps: Real) {
+    x.abs < eps implies x.is_close(Real.0, eps)
+} by {
+    if x.is_negative {
+        x.abs = -x
+        -x < eps
+        x > -eps
+        x.is_close(Real.0, eps)
+    } else {
+        x.abs = x
+        x < eps
+        x.is_close(Real.0, eps)
+    }
+}
+
+theorem iop_limit {
+    converges_to(lift_seq(rat.iop), Real.0)
+} by {
+    forall(eps: Real) {
+        if eps.is_positive {
+            Real.0 < eps
+            let reps: Rat satisfy {
+                reps.is_positive and Real.from_rat(reps) < eps
+            }
+            let n: Nat satisfy {
+                forall(i: Nat) {
+                    n <= i implies rat.iop(i) < reps
+                }
+            }
+
+            forall(i: Nat) {
+                if n <= i {
+                    rat.iop(i) < reps
+                    rat.iop(i).is_positive
+                    Real.from_rat(rat.iop(i)).is_positive
+                    Real.from_rat(rat.iop(i)).abs = Real.from_rat(rat.iop(i))
+                    Real.from_rat(rat.iop(i)) < eps
+                    Real.from_rat(rat.iop(i)).abs < eps
+                    lift_seq(rat.iop)(i) = Real.from_rat(rat.iop(i))
+                    lift_seq(rat.iop)(i).abs < eps
+                    lift_seq(rat.iop)(i).is_close(Real.0, eps)
+                }
+            }
+        }
+    }
+}
+
+define add_seq(a: Nat -> Real, b: Nat -> Real, n: Nat) -> Real {
+    a(n) + b(n)
+}
+
+theorem half_pos_is_pos(a: Real, b: Real) {
+    b.is_positive and a + a = b
+    implies
+    a.is_positive
+}
+
+theorem add_close(a1: Real, b1: Real, a2: Real, b2: Real, a_eps: Real, b_eps: Real) {
+    a1.is_close(a2, a_eps) and b1.is_close(b2, b_eps)
+    implies
+    (a1 + b1).is_close(a2 + b2, a_eps + b_eps)
+} by {
+    // The less-than direction
+    a1 < a2 + a_eps
+    b2 < b2 + b_eps
+    a1 + b1 < a2 + a_eps + b2 + b_eps
+    a1 + b1 < (a2 + b2) + (a_eps + b_eps)
+
+    // The greater-than direction
+    a1 > a2 - a_eps
+    b2 > b2 - b_eps
+    a1 + b1 > (a2 - a_eps) + (b2 - b_eps)
+    a2 - a_eps + (b2 - b_eps) != a1 + b1
+    max(a1 + b1, a2 - a_eps + (b2 - b_eps)) = a1 + b1
+    max(a1 + b1, a2 + b2 - (a_eps + b_eps)) != a2 + b2 - (a_eps + b_eps)
+    a1 + b1 > (a2 + b2) - (a_eps + b_eps)
+}
+
+theorem limit_add_seq(a: Nat -> Real, b: Nat -> Real) {
+    converges(a) and converges(b)
+    implies
+    converges_to(add_seq(a, b), limit(a) + limit(b))
+} by {
+    let q: Nat -> Real = add_seq(a, b)
+    let ql: Real = limit(a) + limit(b)
+    forall(eps: Real) {
+        if eps.is_positive {
+            let eps2: Real satisfy {
+                eps2.is_positive and eps2 + eps2 < eps
+            }
+
+            let n1: Nat satisfy {
+                forall(i: Nat) {
+                    n1 <= i implies a(i).is_close(limit(a), eps2)
+                }
+            }
+
+            let n2: Nat satisfy {
+                forall(i: Nat) {
+                    n2 <= i implies b(i).is_close(limit(b), eps2)
+                }
+            }
+
+            let n: Nat satisfy {
+                n1 <= n and n2 <= n
+            }
+
+            forall(i: Nat) {
+                if n <= i {
+                    a(i).is_close(limit(a), eps2)
+                    b(i).is_close(limit(b), eps2)
+                    (a(i) + b(i)).is_close(limit(a) + limit(b), eps2 + eps2)
+                    (q(i) - ql).abs < eps
+                    q(i).is_close(ql, eps)
+                }
+            }
+        }
+    }
+    converges_to(q, ql)
+}
+
+theorem lift_rat_seq_close(x: Real, n: Nat) {
+    lift_seq(rat_seq(x))(n).is_close(x, Real.from_rat(rat.iop(n)))
+}
+
+theorem rat_seq_converges_to(x: Real) {
+    converges_to(lift_seq(rat_seq(x)), x)
+} by {
+    forall(eps: Real) {
+        if eps.is_positive {
+            Real.0 < eps
+            let reps: Rat satisfy {
+                Real.from_rat(reps) < eps and reps.is_positive
+            }
+            let n: Nat satisfy {
+                forall(i: Nat) {
+                    n <= i implies rat.iop(i) < reps
+                }
+            }
+
+            forall(i: Nat) {
+                if n <= i {
+                    lift_seq(rat_seq(x))(i).is_close(x, Real.from_rat(rat.iop(i)))
+                    Real.from_rat(rat.iop(i)) < eps
+                    (Real.from_rat(rat_seq(x, i)) - x).abs < eps
+                    lift_seq(rat_seq(x))(i).is_close(x, eps)
+                }
+            }
+        }
+    }
+}
+
+// The condition for uniform continuity on the reals.
+define uniform_condition(f: Real -> Real, delta: Real, eps: Real) -> Bool {
+    forall(r1: Real, r2: Real) {
+        r1.is_close(r2, delta) implies f(r1).is_close(f(r2), eps)
+    }
+}
+
+// The definition of uniform continuity on the reals.
+define uniform(f: Real -> Real) -> Bool {
+    forall(eps: Real) {
+        eps.is_positive implies exists(delta: Real) {
+            delta.is_positive and uniform_condition(f, delta, eps)
+        }
+    }
+}
+
+theorem limit_compose_uniform(f: Real -> Real, a: Nat -> Real) {
+    uniform(f) and converges(a)
+    implies
+    converges_to(compose(f, a), f(limit(a)))
+} by {
+    forall(eps: Real) {
+        if eps.is_positive {
+            let delta: Real satisfy {
+                delta.is_positive and uniform_condition(f, delta, eps)
+            }
+            let n: Nat satisfy {
+                forall(i: Nat) {
+                    n <= i implies a(i).is_close(limit(a), delta)
+                }
+            }
+
+            forall(i: Nat) {
+                if n <= i {
+                    compose(f, a)(i).is_close(f(limit(a)), eps)
+                }
+            }
+        }
+    }
+}
+
+theorem limit_compose_rat_uniform(f: Rat -> Real, a: Nat -> Rat, r: Rat) {
+    rat_uniform(f)
+    and converges_to(lift_seq(a), Real.from_rat(r))
+    implies
+    converges_to(compose(f, a), f(r))
+} by {
+    let q: Nat -> Real = compose(f, a)
+    let ql: Real = f(r)
+    forall(eps: Real) {
+        if eps.is_positive {
+            let delta: Rat satisfy {
+                delta.is_positive and rat_condition(f, delta, eps)
+            }
+            Real.from_rat(delta).is_positive
+            let n: Nat satisfy {
+                forall(i: Nat) {
+                    n <= i implies lift_seq(a)(i).is_close(Real.from_rat(r), Real.from_rat(delta))
+                }
+            }
+
+            forall(i: Nat) {
+                if n <= i {
+                    lift_seq(a)(i).is_close(Real.from_rat(r), Real.from_rat(delta))
+                    a(i).is_close(r, delta)
+                    f(a(i)).is_close(f(r), eps)
+                    compose(f, a)(i).is_close(f(r), eps)
+                    q(i).is_close(ql, eps)
+                }
+            }
+        }
+    }
+    converges_to(q, ql)
+}
+
+// Lifting a uniformly continuous function of rationals
+// to a function over the reals.
+define lift_uc(f: Rat -> Real, x: Real) -> Real {
+    limit(compose(f, rat_seq(x)))
+}
+
+theorem lift_fixes_rats(f: Rat -> Real, r: Rat) {
+    rat_uniform(f)
+    implies
+    lift_uc(f, Real.from_rat(r)) = f(r)
+} by {
+    converges_to(lift_seq(rat_seq(Real.from_rat(r))), Real.from_rat(r))
+    converges_to(compose(f, rat_seq(Real.from_rat(r))), f(r))
+    limit(compose(f, rat_seq(Real.from_rat(r)))) = f(r)
+}
+
+// theorem lift_uniform_is_uniform(f: Rat -> Real) {
+//     rat_uniform(f)
 //     implies
-//     exists(r: Rat) {
-//         b < Real.from_rat(r) and a * Real.from_rat(r) < c
-//     }
+//     uniform(lift_uc(f))
 // } by {
-//     let r1: Rat satisfy {
-//         a * b < Real.from_rat(r1) and Real.from_rat(r1) < c
-//     }
-//     let r2: Rat satisfy {
-//         Real.from_rat(r1) < Real.from_rat(r2) and Real.from_rat(r2) < c
-//     }
-//     let diff: Rat = r2 - r1
-//     let upper: Rat satisfy {
-//         a < Real.from_rat(upper) and b < Real.from_rat(upper)
-//     }
-//     r1 < r2
-//     diff.is_positive
-//     (diff / Rat.2).is_positive
-//     let eps1: Rat satisfy {
-//         eps1.is_positive and eps1 * eps1 < diff / Rat.2
-//     }
-//     (diff / Rat.2 / Rat.2).is_positive
-//     upper.is_positive
-//     (diff / Rat.2 / Rat.2 / upper).is_positive
-//     rat.smaller_positive(diff / Rat.2 / Rat.2 / upper)
-//     let eps2: Rat satisfy {
-//         eps2.is_positive and eps2 < (diff / Rat.2 / Rat.2 / upper)
-//     }
-//     let eps: Rat satisfy {
-//         eps.is_positive and eps <= eps1 and eps <= eps2
-//     }
-//     eps * Rat.2 * upper + eps * eps < diff
 // }
 
-// plan:
-// handle comparing two pos reals, times a pos real
-// general interchange of multiplication and comparison
-// prove that multiplication is associative
-// prove that multiplication is distributive
+// TODO:
+// Prove that lift_uc(f) is uniform when rat_uniform(f).
+// Prove that lifting fixes rationals.
+// Prove that lifting an increasing function is increasing.
+// multiplication.

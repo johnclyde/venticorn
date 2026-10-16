@@ -2075,3 +2075,114 @@ theorem plus_abs_gte_zero(n: Int) {
     }
 }
 
+class Int {
+    // Note that 0^0 = 1.
+    define exp(self, b: Nat) -> Int {
+        match b {
+            Nat.0 {
+                1
+            }
+            Nat.suc(pred) {
+                self * self.exp(pred)
+            }
+        }
+    }
+}
+
+theorem exp_one(a: Int) {
+    a.exp(Nat.1) = a
+} by {
+    a * a.exp(Nat.0) = a
+    a.exp(Nat.0.suc) = a
+}
+
+theorem exp_zero(a: Int) {
+    a.exp(Nat.0) = 1
+}
+
+theorem exp_add(a: Int, b: Nat, c: Nat) {
+    a.exp(b + c) = a.exp(b) * a.exp(c)
+} by {
+    // Inductive step
+    let f: Nat -> Bool = function(x: Nat) {
+        a.exp(b + x) = a.exp(b) * a.exp(x)
+    }
+    f(Nat.0)
+    forall(x: Nat) {
+        if f(x) {
+            a.exp(b + x) = a.exp(b) * a.exp(x)
+            a.exp(b + x.suc) = a.exp(b) * a.exp(x.suc)
+            f(x.suc)
+        }
+    }
+    f(c)
+}
+
+theorem exp_mul(a: Int, b: Nat, c: Nat) {
+    a.exp(b * c) = a.exp(b).exp(c)
+} by {
+    // Inductive step
+    let f: Nat -> Bool = function(x: Nat) {
+        a.exp(b * x) = a.exp(b).exp(x)
+    }
+    f(Nat.0)
+    forall(x: Nat) {
+        if f(x) {
+            a.exp(b * x) = a.exp(b).exp(x)
+            a.exp(b * x.suc) = a.exp(b).exp(x.suc)
+            f(x.suc)
+        }
+    }
+    f(c)
+}
+
+theorem zero_exp(n: Nat) {
+    n != Nat.0 implies 0.exp(n) = 0
+} by {
+    let b: Nat satisfy {
+        n = b.suc
+    }
+}
+
+theorem one_exp(n: Nat) {
+    1.exp(n) = 1
+} by {
+    one_exp(Nat.0)
+    one_exp(n)
+}
+
+theorem pos_exp(a: Int, n: Nat) {
+    a.is_positive implies a.exp(n).is_positive
+} by {
+    let f: Nat -> Bool = function(x: Nat) {
+        a.exp(x).is_positive
+    }
+    f(Nat.0)
+    f(n)
+}
+
+theorem sq_eq_mul(a: Int) {
+    a * a = a.exp(Nat.2)
+}
+
+theorem sq_pos(a: Int) {
+    a != 0 implies a.exp(Nat.2).is_positive
+}
+
+theorem exp_abs_eq_abs_exp(a: Int, n: Nat) {
+    abs(a.exp(n)) = abs(a).exp(n)
+} by {
+    let f: Nat -> Bool = function(x: Nat) {
+        abs(a.exp(x)) = abs(a).exp(x)
+    }
+    f(Nat.0)
+    forall(x: Nat) {
+        if f(x) {
+            abs(a.exp(x)) = abs(a).exp(x)
+            abs(a.exp(x.suc)) = abs(a).exp(x.suc)
+            f(x.suc)
+        }
+    }
+    f(n)
+}
+

@@ -1282,3 +1282,169 @@ theorem two_neq_zero {
 theorem three_neq_zero {
     3 != 0
 }
+
+// Note that 0^0 = 1.
+class Nat {
+    define exp(self, b: Nat) -> Nat {
+        match b {
+            Nat.0 {
+                1
+            }
+            Nat.suc(pred) {
+                self * self.exp(pred)
+            }
+        }
+    }
+}
+
+theorem exp_one(a: Nat) {
+    a.exp(1) = a
+} by {
+    a * a.exp(0) = a
+    a.exp(0.suc) = a
+}
+
+theorem exp_zero(a: Nat) {
+    a.exp(0) = 1
+}
+
+theorem exp_add(a: Nat, b: Nat, c: Nat) {
+    a.exp(b + c) = a.exp(b) * a.exp(c)
+} by {
+    // Inductive step
+    let f: Nat -> Bool = function(x: Nat) {
+        a.exp(b + x) = a.exp(b) * a.exp(x)
+    }
+    f(0)
+    forall(x: Nat) {
+        if f(x) {
+            a.exp(b + x) = a.exp(b) * a.exp(x)
+            a.exp(b + x.suc) = a.exp(b) * a.exp(x.suc)
+            f(x.suc)
+        }
+    }
+    f(c)
+}
+
+theorem exp_mul(a: Nat, b: Nat, c: Nat) {
+    a.exp(b * c) = a.exp(b).exp(c)
+} by {
+    // Inductive step
+    let f: Nat -> Bool = function(x: Nat) {
+        a.exp(b * x) = a.exp(b).exp(x)
+    }
+    f(0)
+    forall(x: Nat) {
+        if f(x) {
+            a.exp(b * x) = a.exp(b).exp(x)
+            a.exp(b * x.suc) = a.exp(b).exp(x.suc)
+            f(x.suc)
+        }
+    }
+    f(c)
+}
+
+theorem zero_exp(n: Nat) {
+    n != 0 implies 0.exp(n) = 0
+} by {
+    let b: Nat satisfy {
+        n = b.suc
+    }
+}
+
+theorem one_exp(n: Nat) {
+    1.exp(n) = 1
+} by {
+    one_exp(0)
+    one_exp(n)
+}
+
+theorem exp_gte_one(a: Nat, b: Nat) {
+    a != 0 implies 1 <= a.exp(b)
+} by {
+    // Induction step
+    let f: Nat -> Bool = function(x: Nat) {
+        1 <= a.exp(x)
+    }
+    f(0)
+    forall(x: Nat) {
+        if f(x) {
+            1 <= a.exp(x)
+            a.exp(x) <= a.exp(x.suc)
+            1 <= a.exp(x.suc)
+            f(x.suc)
+        }
+    }
+    f(b)
+}
+
+theorem exp_gt_one(a: Nat, b: Nat) {
+    1 < a and b != 0 implies 1 < a.exp(b)
+} by {
+    let b_pred: Nat satisfy {
+        b = b_pred.suc
+    }
+    a.exp(b) = a * a.exp(b_pred)
+    1 <= a.exp(b_pred)
+}
+
+theorem exp_ne_zero(a: Nat, b: Nat) {
+    a != 0 implies a.exp(b) != 0
+} by {
+    1 <= a.exp(b)
+}
+
+theorem lte_imp_exp_lte(a: Nat, b: Nat, c: Nat) {
+    a != 0 and b <= c implies a.exp(b) <= a.exp(c)
+} by {
+    let d: Nat satisfy {
+        b + d = c
+    }
+    a.exp(c) = a.exp(b) * a.exp(d)
+    a.exp(d) != 0
+    a.exp(b) <= a.exp(c)
+}
+
+theorem lte_exp(a: Nat, b: Nat) {
+    a != 0 and b != 0 implies a <= a.exp(b)
+}
+
+theorem lt_imp_exp_lt(a: Nat, b: Nat, c: Nat) {
+    1 < a and b < c implies a.exp(b) < a.exp(c)
+} by {
+    let d: Nat satisfy {
+        b + d = c
+    }
+    d != 0
+    a.exp(c) = a.exp(b) * a.exp(d)
+    a.exp(b) != 0
+    1 < a.exp(d)
+}
+
+theorem exp_lte_imp_lte(a: Nat, b: Nat, c: Nat) {
+    1 < a and a.exp(b) <= a.exp(c)
+    implies
+    b <= c
+}
+
+theorem exp_lt_imp_lt(a: Nat, b: Nat, c: Nat) {
+    1 < a and a.exp(b) < a.exp(c)
+    implies
+    b < c
+}
+
+theorem exp_eq_one_imp(a: Nat, b: Nat) {
+    a != 1 and a.exp(b) = 1 implies b = 0
+} by {
+    if b != 0 {
+        let b_pred: Nat satisfy {
+            b = b_pred.suc
+        }
+        a.exp(b) = a * a.exp(b_pred)
+        false
+    }
+}
+
+theorem sq_eq_mul(a: Nat) {
+    a.exp(2) = a * a
+}
