@@ -640,6 +640,12 @@ impl<'a> Builder<'a> {
             )?;
         }
         writeln!(writer, "{} searches performed", self.searches_total)?;
+        writeln!(
+            writer,
+            "{} full searches, {} filtered searches",
+            self.full_searches(),
+            self.hinted_searches
+        )?;
         if self.searches_total == 0 {
             return Ok(());
         }
@@ -750,6 +756,7 @@ mod tests {
         builder.num_success = 1;
         builder.num_cached = 3;
         builder.searches_total = 2;
+        builder.hinted_searches = 1;
         builder.num_activated = 6;
         builder.sum_square_activated = 20;
         builder.num_clauses = 14;
@@ -761,6 +768,7 @@ mod tests {
             "80.0% success rate",
             "3 goals reused",
             "2 searches performed",
+            "1 full searches, 1 filtered searches",
             "3.00 average activations",
             "10.0 mean square activations",
             "7.00 average clauses",
@@ -789,6 +797,10 @@ mod tests {
             let text = statistics(&builder);
             assert!(text.contains("100.0% success rate"), "{text}");
             assert!(text.contains("0 searches performed"), "{text}");
+            assert!(
+                text.contains("0 full searches, 0 filtered searches"),
+                "{text}"
+            );
             assert!(!text.contains("average") && !text.contains("NaN") && !text.contains("inf"));
         }
     }

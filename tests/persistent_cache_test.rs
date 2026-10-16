@@ -360,6 +360,10 @@ fn filtered_cli_reproves_each_goal_and_rejects_conflicting_cache_modes() {
         );
         if mode == "--filtered" {
             assert!(
+                output.contains("0 full searches, 2 filtered searches"),
+                "{output}"
+            );
+            assert!(
                 output.contains("2 searches performed") && !output.contains("goals reused"),
                 "{output}"
             );
