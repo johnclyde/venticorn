@@ -1233,7 +1233,11 @@ impl Project {
     // Set the file content. This has priority over the actual filesystem.
     pub fn mock(&mut self, filename: &str, content: &str) {
         assert!(!self.use_filesystem);
-        self.update_file(PathBuf::from(filename), content, 0)
+        let path = PathBuf::from(filename);
+        let version = self.get_version(&path).map_or(0, |version| {
+            version.checked_add(1).expect("mock file version overflow")
+        });
+        self.update_file(path, content, version)
             .expect("mock file update failed");
     }
 
