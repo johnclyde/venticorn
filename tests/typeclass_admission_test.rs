@@ -62,3 +62,15 @@ fn class_headers_validate_names_without_leaking_temporary_types() {
         assert!(env.bindings.get_typeclass_for_name("Reserved").is_some());
     }
 }
+
+#[test]
+fn class_name_is_not_a_member_return_type() {
+    let mut env = Environment::new_test();
+    env.bad(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> Magma
+            }
+            "#,
+    );
+}
