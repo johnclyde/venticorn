@@ -24,6 +24,15 @@ use crate::persistent_cache::{CachePolicy, PersistentCache};
 use crate::prover::Prover;
 use crate::token::{Token, TokenType};
 
+// Per-module build state is separate from compatibility traversal callbacks.
+struct ModuleVerification<'a> {
+    target: &'a ModuleRef,
+    hash: Option<&'a ModuleHash>,
+    reuse_enabled: bool,
+    hints_enabled: bool,
+    goal_index: usize,
+}
+
 // A synchronous build's actual proof counts and completed metadata. The cache is
 // absent if the build was interrupted or had a fatal error, even if a final event
 // displayed complete progress. Only finalized records can seed subsequent verification.
@@ -656,14 +665,9 @@ impl Project {
             .into_iter()
             .map(|id| self.modules[id as usize].descriptor.clone())
             .collect();
-        let nodes = env.iter_goals().collect::<Vec<_>>();
-        let goals = nodes
-            .iter()
+        let goals = env
+            .iter_goals()
             .map(|node| node.goal_context().expect("no goal context"))
-            .collect::<Vec<_>>();
-        let theorem_names = nodes
-            .iter()
-            .map(|node| node.top_theorem_name())
             .collect::<Vec<_>>();
         let ranges = goals
             .iter()
@@ -696,47 +700,104 @@ impl Project {
             return;
         }
         if reuse_enabled && builder.previous_cache().matches(target, hash, &ranges) {
-            for (goal, theorem) in goals.iter().zip(&theorem_names) {
+            for (goal, node) in goals.iter().zip(env.iter_goals()) {
                 if builder.stop_if_requested(&self.build_stopped) {
                     break;
                 }
-                self.retain_theorem_premises(target, *theorem, builder);
+                self.retain_theorem_premises(target, node.top_theorem_name(), builder);
                 builder.cached_goal_finished(goal);
             }
-        } else {
-            // Use the same proving order as the complete goal/range collection above.
-            let mut goal_index = 0;
-            self.for_each_prover_fast(env, &mut |prover, goal_context| {
-                if builder.stop_if_requested(&self.build_stopped) {
-                    return false;
+        } else if !env.nodes.is_empty() {
+            let mut context = ModuleVerification {
+                target,
+                hash,
+                reuse_enabled,
+                hints_enabled: self.cache_policy != CachePolicy::Disabled
+                    && builder.dataset.is_none(),
+                goal_index: 0,
+            };
+            let mut prover = Prover::new(self, false);
+            for fact in self.imported_facts(env.module_id) {
+                prover.add_fact(fact);
+            }
+            let mut node = NodeCursor::new(env, 0);
+            loop {
+                if !self.verify_build_node(&prover, &mut node, &mut context, builder) {
+                    break;
                 }
-                let reused = reuse_enabled
-                    && hash.is_some_and(|hash| {
-                        builder.previous_cache().matches_prefix(
-                            target,
-                            hash,
-                            &goal_context,
-                            goal_index,
-                        )
-                    });
-                let theorem =
-                    if self.cache_policy != CachePolicy::Disabled && builder.dataset.is_none() {
-                        theorem_names[goal_index]
-                    } else {
-                        None
-                    };
-                goal_index += 1;
-                if reused {
-                    self.retain_theorem_premises(target, theorem, builder);
-                    builder.cached_goal_finished(&goal_context);
-                    true
-                } else {
-                    self.prove(prover, goal_context, theorem, builder)
+                if !node.has_next() {
+                    break;
                 }
-            });
+                prover.add_fact(node.get_fact());
+                node.next();
+            }
         }
 
         builder.module_proving_complete(target);
+    }
+
+    // Children are checked before their containing goal. Only earlier siblings
+    // enter the prover, so neither future declarations nor the goal itself leak in.
+    fn verify_build_node(
+        &self,
+        prover: &Prover,
+        node: &mut NodeCursor,
+        context: &mut ModuleVerification,
+        builder: &mut Builder,
+    ) -> bool {
+        if builder.stop_if_requested(&self.build_stopped) {
+            return false;
+        }
+        if node.num_children() == 0 && !node.current().has_goal() {
+            return true;
+        }
+        let mut prover = prover.clone();
+        if node.num_children() > 0 {
+            node.descend(0);
+            loop {
+                if !self.verify_build_node(&prover, node, context, builder) {
+                    return false;
+                }
+                prover.add_fact(node.get_fact());
+                if !node.has_next() {
+                    break;
+                }
+                node.next();
+            }
+            node.ascend();
+        }
+        if node.current().has_goal() {
+            // A child completion callback can cancel before its parent is reached.
+            if builder.stop_if_requested(&self.build_stopped) {
+                return false;
+            }
+            let goal = node.goal_context().expect("parsed goal");
+            let reused = context.reuse_enabled
+                && context.hash.is_some_and(|hash| {
+                    builder.previous_cache().matches_prefix(
+                        context.target,
+                        hash,
+                        &goal,
+                        context.goal_index,
+                    )
+                });
+            context.goal_index += 1;
+            let theorem = if context.hints_enabled {
+                node.top_theorem_name()
+            } else {
+                None
+            };
+            if reused {
+                self.retain_theorem_premises(context.target, theorem, builder);
+                builder.cached_goal_finished(&goal);
+            } else {
+                prover.set_goal(&goal);
+                if !self.prove(prover, goal, theorem, builder) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     fn retain_theorem_premises(
