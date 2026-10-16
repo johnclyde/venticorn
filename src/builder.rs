@@ -591,6 +591,12 @@ impl<'a> Builder<'a> {
         self.status = BuildStatus::Error;
     }
 
+    // Completed full-context attempts, including retries after a bounded hint miss.
+    // searches_total counts actual work, so both attempts of a fallback are counted.
+    pub fn full_searches(&self) -> i32 {
+        self.searches_total - self.hinted_searches
+    }
+
     pub fn print_stats(&self) {
         self.write_stats(&mut std::io::stdout().lock())
             .expect("could not print build statistics");

@@ -313,3 +313,47 @@ fn cancellation_after_a_guided_child_stops_before_its_parent() {
     }
     assert_eq!(events.iter().filter(|e| e.verified.is_some()).count(), 1);
 }
+
+#[test]
+fn full_and_hinted_counts_account_for_actual_attempts() {
+    let mut project = learned();
+    for (version, claim, expected) in [
+        (1, "first and first", (1, 0, 1, 0)),
+        (2, "second", (2, 1, 1, 1)),
+    ] {
+        edit(
+            &mut project,
+            &format!("{FACTS}theorem goal {{ {claim} }}"),
+            version,
+        );
+        let mut builder = project.builder(|_| {});
+        project.build(&mut builder);
+        assert_eq!(builder.status, BuildStatus::Good);
+        assert_eq!(
+            (
+                builder.searches_total,
+                builder.full_searches(),
+                builder.hinted_searches,
+                builder.hint_fallbacks
+            ),
+            expected
+        );
+        assert_eq!(
+            builder.full_searches() + builder.hinted_searches,
+            builder.searches_total
+        );
+        assert_eq!((builder.num_success, builder.goals_done), (1, 1));
+    }
+    let mut warm = project.builder(|_| {});
+    project.build(&mut warm);
+    assert_eq!(warm.status, BuildStatus::Good);
+    assert_eq!(
+        (
+            warm.searches_total,
+            warm.full_searches(),
+            warm.hinted_searches,
+            warm.num_cached
+        ),
+        (0, 0, 0, 1)
+    );
+}
