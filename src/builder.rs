@@ -129,8 +129,8 @@ pub struct Builder<'a> {
     // If dataset is not None, we are gathering data for training.
     pub dataset: Option<Dataset>,
 
-    // The Builder also tracks statistics.
-    // Think of these as having a "goal_done" denominator.
+    // Search work includes failed attempts and retries, but excludes cache hits.
+    pub searches_total: i32,
 
     // Number of goals successfully proven by a fresh search.
     pub num_success: i32,
@@ -176,6 +176,7 @@ impl<'a> Builder<'a> {
             new_cache: Some(BuildCache::default()),
             cache_ready: false,
             dataset: None,
+            searches_total: 0,
             num_success: 0,
             num_cached: 0,
             num_activated: 0,
@@ -375,6 +376,17 @@ impl<'a> Builder<'a> {
         self.take_cache()
     }
 
+    // Record a completed attempt that will be retried, without completing its goal.
+    // Do not also pass this same attempt to search_finished, which counts its own work.
+    pub fn search_attempt_finished(&mut self, prover: &Prover, elapsed: Duration) {
+        self.searches_total += 1;
+        self.proving_time += elapsed.as_secs_f64();
+        let num_activated = prover.num_activated() as i32;
+        self.num_activated += num_activated;
+        self.num_clauses += num_activated + prover.num_passive() as i32;
+        self.sum_square_activated += (num_activated as u64).pow(2);
+    }
+
     // Called when a single proof search completes.
     // Statistics are tracked here.
     pub fn search_finished(
@@ -392,12 +404,7 @@ impl<'a> Builder<'a> {
 
         // Tracking statistics
         self.goals_done += 1;
-        self.proving_time += elapsed_f64;
-        let num_activated = prover.num_activated() as i32;
-        self.num_activated += num_activated;
-        let num_passive = prover.num_passive() as i32;
-        self.num_clauses += num_activated + num_passive;
-        self.sum_square_activated += (num_activated * num_activated) as u64;
+        self.search_attempt_finished(prover, elapsed);
 
         match outcome {
             Outcome::Success => match prover.get_proof() {
@@ -529,41 +536,56 @@ impl<'a> Builder<'a> {
     }
 
     pub fn print_stats(&self) {
-        println!();
+        self.write_stats(&mut std::io::stdout().lock())
+            .expect("could not print build statistics");
+    }
+
+    fn write_stats(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        writeln!(writer)?;
         match self.status {
             BuildStatus::Error => {
-                println!("Build failed.");
-                return;
+                writeln!(writer, "Build failed.")?;
+                return Ok(());
             }
             BuildStatus::Warning => {
-                println!("Build completed with warnings.");
+                writeln!(writer, "Build completed with warnings.")?;
             }
             BuildStatus::Good => {
-                println!("Build completed successfully.");
+                writeln!(writer, "Build completed successfully.")?;
             }
         }
         let verified = self.num_success + self.num_cached;
-        println!("{}/{} OK", verified, self.goals_total);
+        writeln!(writer, "{}/{} OK", verified, self.goals_total)?;
         let success_percent = if self.goals_total == 0 {
             100.0
         } else {
             100.0 * verified as f64 / self.goals_total as f64
         };
-        println!("{:.1}% success rate", success_percent);
+        writeln!(writer, "{:.1}% success rate", success_percent)?;
         if self.num_cached > 0 {
-            println!("{} goals reused from completed builds", self.num_cached);
+            writeln!(
+                writer,
+                "{} goals reused from completed builds",
+                self.num_cached
+            )?;
         }
-        if self.num_success == 0 {
-            return;
+        writeln!(writer, "{} searches performed", self.searches_total)?;
+        if self.searches_total == 0 {
+            return Ok(());
         }
-        let num_activated = self.num_activated as f64 / self.num_success as f64;
-        println!("{:.2} average activations", num_activated);
-        let mean_square_activated = self.sum_square_activated as f64 / self.num_success as f64;
-        println!("{:.1} mean square activations", mean_square_activated);
-        let num_clauses = self.num_clauses as f64 / self.num_success as f64;
-        println!("{:.2} average clauses", num_clauses);
-        let proving_time_ms = 1000.0 * self.proving_time / self.num_success as f64;
-        println!("{:.1} ms average proving time", proving_time_ms);
+        let num_activated = self.num_activated as f64 / self.searches_total as f64;
+        writeln!(writer, "{:.2} average activations", num_activated)?;
+        let mean_square_activated = self.sum_square_activated as f64 / self.searches_total as f64;
+        writeln!(
+            writer,
+            "{:.1} mean square activations",
+            mean_square_activated
+        )?;
+        let num_clauses = self.num_clauses as f64 / self.searches_total as f64;
+        writeln!(writer, "{:.2} average clauses", num_clauses)?;
+        let proving_time_ms = 1000.0 * self.proving_time / self.searches_total as f64;
+        writeln!(writer, "{:.1} ms average proving time", proving_time_ms)?;
+        Ok(())
     }
 }
 
@@ -573,6 +595,14 @@ mod tests {
     use crate::project::Project;
 
     fn simulate_result(outcome: Outcome, expected_goals: usize) -> Builder<'static> {
+        simulate_result_with_retry(outcome, expected_goals, false)
+    }
+
+    fn simulate_result_with_retry(
+        outcome: Outcome,
+        expected_goals: usize,
+        retry: bool,
+    ) -> Builder<'static> {
         let mut project = Project::new_mock();
         project.mock("/mock/main.ac", "theorem identity { true }");
         let module = ModuleRef::Name("main".into());
@@ -594,6 +624,11 @@ mod tests {
             project.get_module_hash(env.module_id).cloned(),
             Some(expected_goals),
         );
+        if retry {
+            builder.search_attempt_finished(&prover, Duration::from_millis(250));
+            assert_eq!(builder.goals_done, 0);
+            assert_eq!(builder.status, BuildStatus::Good);
+        }
         builder.search_finished(&prover, &goal, outcome, Duration::from_secs(1));
         builder.module_proving_complete(&module);
         builder.finish_build(true);
@@ -615,7 +650,76 @@ mod tests {
     fn interrupted_or_incomplete_modules_never_enter_the_cache() {
         let interrupted = simulate_result(Outcome::Interrupted, 1);
         assert!(interrupted.cache().is_none());
+        assert_eq!(interrupted.searches_total, 1);
         let incomplete = simulate_result(Outcome::Success, 2);
         assert_eq!(incomplete.cache().unwrap().num_modules(), 0);
+    }
+
+    fn statistics(builder: &Builder) -> String {
+        let mut output = Vec::new();
+        builder.write_stats(&mut output).unwrap();
+        String::from_utf8(output).unwrap()
+    }
+
+    #[test]
+    fn retried_searches_count_work_without_completing_the_goal_twice() {
+        let builder = simulate_result_with_retry(Outcome::Success, 1, true);
+        assert_eq!(builder.searches_total, 2);
+        assert_eq!(builder.goals_done, 1);
+        assert_eq!(builder.num_success, 1);
+        assert_eq!(builder.proving_time, 1.25);
+        assert_eq!(builder.status, BuildStatus::Good);
+        assert!(statistics(&builder).contains("2 searches performed"));
+    }
+
+    #[test]
+    fn statistics_use_all_searches_and_keep_cached_successes_separate() {
+        let mut builder = Builder::new(|_| {});
+        builder.goals_total = 5;
+        builder.goals_done = 5;
+        builder.num_success = 1;
+        builder.num_cached = 3;
+        builder.searches_total = 2;
+        builder.num_activated = 6;
+        builder.sum_square_activated = 20;
+        builder.num_clauses = 14;
+        builder.proving_time = 0.8;
+        builder.status = BuildStatus::Warning;
+        let text = statistics(&builder);
+        for expected in [
+            "4/5 OK",
+            "80.0% success rate",
+            "3 goals reused",
+            "2 searches performed",
+            "3.00 average activations",
+            "10.0 mean square activations",
+            "7.00 average clauses",
+            "400.0 ms average proving time",
+        ] {
+            assert!(text.contains(expected), "{text}");
+        }
+    }
+
+    #[test]
+    fn failed_searches_and_zero_search_builds_have_finite_statistics() {
+        for outcome in [Outcome::Timeout, Outcome::Constrained, Outcome::Exhausted] {
+            let builder = simulate_result(outcome, 1);
+            assert_eq!(builder.searches_total, 1);
+            assert_eq!(builder.num_success, 0);
+            let text = statistics(&builder);
+            assert!(text.contains("1 searches performed"), "{text}");
+            assert!(text.contains("average proving time"), "{text}");
+            assert!(!text.contains("NaN") && !text.contains("inf"));
+        }
+        for cached in [0, 2] {
+            let mut builder = Builder::new(|_| {});
+            builder.num_cached = cached;
+            builder.goals_total = cached;
+            builder.goals_done = cached;
+            let text = statistics(&builder);
+            assert!(text.contains("100.0% success rate"), "{text}");
+            assert!(text.contains("0 searches performed"), "{text}");
+            assert!(!text.contains("average") && !text.contains("NaN") && !text.contains("inf"));
+        }
     }
 }
