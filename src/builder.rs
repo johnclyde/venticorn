@@ -1,11 +1,12 @@
 // Modified for Venticorn: bounded build identity and explicit diagnostic events.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
-use crate::build_cache::CachedGoal;
+use crate::build_cache::{CachedGoal, PremiseSet};
 use crate::compilation::Error;
 use crate::dataset::Dataset;
 use crate::environment::Environment;
@@ -92,6 +93,8 @@ struct ModuleInfo {
     goals_started_at: i32,
     verified: Vec<(u32, u32)>,
     goals: Vec<CachedGoal>,
+    // None taints the whole theorem when a reused goal has no recorded premises.
+    theorem_premises: BTreeMap<String, Option<PremiseSet>>,
 }
 
 // Preserve the existing metadata paths while storage lives in its own module.
@@ -276,12 +279,35 @@ impl<'a> Builder<'a> {
             goals_started_at: self.goals_done,
             verified: Vec::new(),
             goals: Vec::new(),
+            theorem_premises: BTreeMap::new(),
         });
     }
 
     // Preserve explicit snapshot builders without assigning reuse policy to the reporter.
     pub(crate) fn previous_cache(&self) -> &BuildCache {
         &self.old_cache
+    }
+
+    // Union all accepted/reused goals of a theorem. Missing metadata cannot be
+    // repaired by a later goal: publishing that partial union would lose premises.
+    pub(crate) fn record_theorem_premises(&mut self, theorem: &str, premises: Option<PremiseSet>) {
+        let Some(module) = &mut self.current_module else {
+            return;
+        };
+        use std::collections::btree_map::Entry;
+        match module.theorem_premises.entry(theorem.to_string()) {
+            Entry::Vacant(entry) => {
+                entry.insert(premises);
+            }
+            Entry::Occupied(mut entry) => match (entry.get_mut(), premises) {
+                (Some(existing), Some(new)) => {
+                    for (module, names) in new {
+                        existing.entry(module).or_default().extend(names);
+                    }
+                }
+                (existing, _) => *existing = None,
+            },
+        }
     }
 
     // Project checks this before reporting a reused result or starting a search.
@@ -339,6 +365,12 @@ impl<'a> Builder<'a> {
                         info.direct_dependencies,
                         info.verified,
                         info.goals,
+                        info.theorem_premises
+                            .into_iter()
+                            .filter_map(|(name, premises)| {
+                                premises.map(|premises| (name, premises))
+                            })
+                            .collect(),
                     );
                 }
             }
@@ -396,6 +428,19 @@ impl<'a> Builder<'a> {
         outcome: Outcome,
         elapsed: Duration,
     ) {
+        self.finish_search(prover, goal_context, outcome, elapsed);
+    }
+
+    // Return the same accepted-proof decision used for verified events and cache
+    // publication, without requiring the caller to reconstruct a condensed proof.
+    pub(crate) fn finish_search(
+        &mut self,
+        prover: &Prover,
+        goal_context: &GoalContext,
+        outcome: Outcome,
+        elapsed: Duration,
+    ) -> bool {
+        let mut accepted = false;
         // Time conversion
         let secs = elapsed.as_secs() as f64;
         let subsec_nanos = elapsed.subsec_nanos() as f64;
@@ -414,6 +459,7 @@ impl<'a> Builder<'a> {
                         self.log_proving_warning(&prover, &goal_context, "needs simplification");
                     } else {
                         // Both of these count as a success.
+                        accepted = true;
                         self.num_success += 1;
                         self.record_verified_goal(goal_context);
                         if self.log_when_slow && elapsed_f64 > 0.1 {
@@ -463,6 +509,7 @@ impl<'a> Builder<'a> {
                 "stopped after hitting constraints",
             ),
         }
+        accepted
     }
 
     // Logs a successful proof.

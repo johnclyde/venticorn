@@ -492,6 +492,15 @@ impl<'a> NodeCursor<'a> {
         &env.nodes[*index]
     }
 
+    // All goals below a named top-level theorem contribute to one premise hint.
+    pub(crate) fn top_theorem_name(&self) -> Option<&str> {
+        let (env, index) = self.annotated_path[0];
+        match &env.nodes[index].claim.source.source_type {
+            crate::proposition::SourceType::Theorem(name) => name.as_deref(),
+            _ => None,
+        }
+    }
+
     // Can use this as an identifier for the iterator, to compare two of them
     pub fn path(&self) -> Vec<usize> {
         self.annotated_path.iter().map(|(_, i)| *i).collect()

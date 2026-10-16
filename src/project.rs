@@ -11,7 +11,7 @@ use walkdir::WalkDir;
 
 use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
-use crate::build_cache::CachedGoal;
+use crate::build_cache::{CachedGoal, PremiseSet};
 use crate::builder::{BuildCache, BuildEvent, BuildStatus, Builder};
 use crate::compilation;
 use crate::environment::Environment;
@@ -437,6 +437,12 @@ impl Project {
                     .collect::<Vec<_>>();
                 dependencies.sort();
                 dependencies.dedup();
+                // A disk result promotes current obligations, but must not erase
+                // advisory hints learned earlier in this process.
+                let premises = cache
+                    .get(module)
+                    .map(|entry| entry.theorem_premises().clone())
+                    .unwrap_or_default();
                 cache.insert_completed(
                     module.clone(),
                     hash,
@@ -446,6 +452,7 @@ impl Project {
                         .map(|goal| (goal.first_line, goal.last_line))
                         .collect(),
                     goals.iter().map(CachedGoal::new).collect(),
+                    premises,
                 );
             }
         }
@@ -649,9 +656,14 @@ impl Project {
             .into_iter()
             .map(|id| self.modules[id as usize].descriptor.clone())
             .collect();
-        let goals = env
-            .iter_goals()
+        let nodes = env.iter_goals().collect::<Vec<_>>();
+        let goals = nodes
+            .iter()
             .map(|node| node.goal_context().expect("no goal context"))
+            .collect::<Vec<_>>();
+        let theorem_names = nodes
+            .iter()
+            .map(|node| node.top_theorem_name())
             .collect::<Vec<_>>();
         let ranges = goals
             .iter()
@@ -684,10 +696,11 @@ impl Project {
             return;
         }
         if reuse_enabled && builder.previous_cache().matches(target, hash, &ranges) {
-            for goal in &goals {
+            for (goal, theorem) in goals.iter().zip(&theorem_names) {
                 if builder.stop_if_requested(&self.build_stopped) {
                     break;
                 }
+                self.retain_theorem_premises(target, *theorem, builder);
                 builder.cached_goal_finished(goal);
             }
         } else {
@@ -706,17 +719,52 @@ impl Project {
                             goal_index,
                         )
                     });
+                let theorem =
+                    if self.cache_policy != CachePolicy::Disabled && builder.dataset.is_none() {
+                        theorem_names[goal_index]
+                    } else {
+                        None
+                    };
                 goal_index += 1;
                 if reused {
+                    self.retain_theorem_premises(target, theorem, builder);
                     builder.cached_goal_finished(&goal_context);
                     true
                 } else {
-                    self.prove(prover, goal_context, builder)
+                    self.prove(prover, goal_context, theorem, builder)
                 }
             });
         }
 
         builder.module_proving_complete(target);
+    }
+
+    fn retain_theorem_premises(
+        &self,
+        target: &ModuleRef,
+        theorem: Option<&str>,
+        builder: &mut Builder,
+    ) {
+        if let Some(theorem) = theorem {
+            let premises = builder
+                .previous_cache()
+                .get(target)
+                .and_then(|entry| entry.theorem_premises().get(theorem))
+                .cloned();
+            builder.record_theorem_premises(theorem, premises);
+        }
+    }
+
+    fn collect_theorem_premises(&self, prover: &Prover) -> Option<PremiseSet> {
+        let mut premises = PremiseSet::new();
+        for (module_id, name) in prover.get_useful_fact_names()? {
+            let module = self.modules.get(module_id as usize)?.descriptor.clone();
+            if module == ModuleRef::Anonymous {
+                return None;
+            }
+            premises.entry(module).or_default().insert(name);
+        }
+        Some(premises)
     }
 
     fn goal_ranges(env: &Environment) -> Vec<(u32, u32)> {
@@ -838,11 +886,30 @@ impl Project {
     // Proves a single goal in the target, using the provided prover.
     // Reports using the handler as appropriate.
     // Returns true if we should keep building, false if we should stop.
-    fn prove(&self, mut prover: Prover, goal_context: GoalContext, builder: &mut Builder) -> bool {
+    fn prove(
+        &self,
+        mut prover: Prover,
+        goal_context: GoalContext,
+        theorem: Option<&str>,
+        builder: &mut Builder,
+    ) -> bool {
         let start = std::time::Instant::now();
         let outcome = prover.verification_search();
+        let elapsed = start.elapsed();
+        if builder.stop_if_requested(&self.build_stopped) {
+            builder.search_attempt_finished(&prover, elapsed);
+            return false;
+        }
 
-        builder.search_finished(&prover, &goal_context, outcome, start.elapsed());
+        let accepted = builder.finish_search(&prover, &goal_context, outcome, elapsed);
+        if let Some(theorem) = theorem {
+            let premises = if accepted {
+                self.collect_theorem_premises(&prover)
+            } else {
+                None
+            };
+            builder.record_theorem_premises(theorem, premises);
+        }
 
         !builder.status.is_error()
     }
