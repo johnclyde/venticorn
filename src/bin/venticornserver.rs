@@ -20,6 +20,7 @@ use venticorn::interfaces::{
 };
 use venticorn::live_document::LiveDocument;
 use venticorn::module::{Module, ModuleRef};
+use venticorn::persistent_cache::CachePolicy;
 use venticorn::project::Project;
 use venticorn::prover::{Outcome, Prover};
 use venticorn::token::Token;
@@ -37,11 +38,14 @@ struct Args {
 }
 
 // Keep selection independent of the server process working directory.
-fn select_library(args: &Args, workspace_uri: Option<&Url>) -> jsonrpc::Result<PathBuf> {
+fn select_library(
+    args: &Args,
+    workspace_uri: Option<&Url>,
+) -> jsonrpc::Result<(PathBuf, CachePolicy)> {
     if let Some(root) = Project::library_override()
         .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
     {
-        return Ok(root);
+        return Ok((root, CachePolicy::ReadWrite));
     }
     let workspace_root = match &args.workspace_root {
         Some(path) => Some(path.clone()),
@@ -60,7 +64,7 @@ fn select_library(args: &Args, workspace_uri: Option<&Url>) -> jsonrpc::Result<P
         if let Some(root) = Project::find_local_library(path)
             .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?
         {
-            return Ok(root);
+            return Ok((root, CachePolicy::ReadWrite));
         }
     }
     if let Some(extension_root) = &args.extension_root {
@@ -79,6 +83,7 @@ fn select_library(args: &Args, workspace_uri: Option<&Url>) -> jsonrpc::Result<P
         }
         return bundled
             .canonicalize()
+            .map(|root| (root, CachePolicy::ReadOnly))
             .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()));
     }
     Err(jsonrpc::Error::invalid_params(match workspace_root {
@@ -885,10 +890,11 @@ impl LanguageServer for LazyBackend {
             .or(params.root_uri.as_ref());
         self.backend
             .get_or_try_init(|| async {
-                let library_root = select_library(&self.args, root_uri)?;
+                let (library_root, cache_policy) = select_library(&self.args, root_uri)?;
                 log(&format!("using library at {}", library_root.display()));
-                let project = Project::from_library_root(library_root)
+                let mut project = Project::from_library_root(library_root)
                     .map_err(|error| jsonrpc::Error::invalid_params(error.to_string()))?;
+                project.set_cache_policy(cache_policy);
                 Ok::<_, jsonrpc::Error>(Backend::new(self.client.clone(), project))
             })
             .await?;
