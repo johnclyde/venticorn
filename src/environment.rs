@@ -1351,14 +1351,46 @@ impl Environment {
         Ok(scope)
     }
 
+    fn prepare_typeclass(
+        &self,
+        project: &Project,
+        ts: &TypeclassStatement,
+    ) -> compilation::Result<(BindingMap, Vec<(String, AcornType)>)> {
+        let scope = self.typeclass_scope(ts)?;
+        if let Some(condition) = ts.conditions.first() {
+            return Err(condition
+                .name
+                .error("typeclass conditions are not supported yet"));
+        }
+        let mut names = HashSet::new();
+        let mut members = vec![];
+        let params = vec![ts.instance_name.text().to_string()];
+        for (name, expression) in &ts.constants {
+            let full_name = format!("{}.{}", ts.typeclass_name, name);
+            if scope.name_in_use(&full_name) || !names.insert(full_name.clone()) {
+                return Err(name.error("typeclass member already defined in this scope"));
+            }
+            let member_type = scope
+                .evaluate_type(project, expression)?
+                .parametrize(self.module_id, &params);
+            if member_type.has_arbitrary() {
+                return Err(
+                    expression.error("typeclass member cannot capture an outer arbitrary type")
+                );
+            }
+            members.push((full_name, member_type));
+        }
+        Ok((scope, members))
+    }
+
     fn add_typeclass_statement(
         &mut self,
-        _project: &mut Project,
+        project: &mut Project,
         statement: &Statement,
         ts: &TypeclassStatement,
     ) -> compilation::Result<()> {
-        let _scope = self.typeclass_scope(ts)?;
-        // Reject before changing scope or source visibility until member admission exists.
+        let (_scope, _members) = self.prepare_typeclass(project, ts)?;
+        // Publish only after complete member admission is implemented.
         Err(statement
             .first_token
             .error("typeclass declarations are not supported yet"))
