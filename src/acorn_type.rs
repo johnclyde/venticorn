@@ -110,10 +110,13 @@ impl FunctionType {
 
 // TypeClasses are represented by the module they were defined in, and their name.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub struct TypeClass {
+pub struct Typeclass {
     pub module_id: ModuleId,
     pub name: String,
 }
+
+// Compatibility spelling for callers using the original public type name.
+pub type TypeClass = Typeclass;
 
 // Every AcornValue has an AcornType.
 // This is the "richer" form of a type. The environment uses these types; the prover uses ids.
