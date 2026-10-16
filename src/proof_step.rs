@@ -73,6 +73,13 @@ pub struct ResolutionInfo {
     pub long_id: usize,
 }
 
+// A specialization is justified by the pattern; inspiration only guides search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecializationInfo {
+    pub pattern_id: usize,
+    pub inspiration_id: Option<usize>,
+}
+
 // Information about a rewrite inference.
 // Rewrites have two parts, the "pattern" that determines what gets rewritten into what,
 // and the "target" which contains the subterm that gets rewritten.
@@ -116,7 +123,7 @@ pub enum Rule {
     EqualityFactoring(usize),
     EqualityResolution(usize),
     FunctionElimination(usize),
-    Specialization(usize),
+    Specialization(SpecializationInfo),
 
     // A contradiction found by repeatedly rewriting identical terms.
     MultipleRewrite(MultipleRewriteInfo),
@@ -140,8 +147,8 @@ impl Rule {
             ],
             Rule::EqualityFactoring(rewritten)
             | Rule::EqualityResolution(rewritten)
-            | Rule::FunctionElimination(rewritten)
-            | Rule::Specialization(rewritten) => vec![ProofStepId::Active(*rewritten)],
+            | Rule::FunctionElimination(rewritten) => vec![ProofStepId::Active(*rewritten)],
+            Rule::Specialization(info) => vec![ProofStepId::Active(info.pattern_id)],
             Rule::MultipleRewrite(multi_rewrite_info) => {
                 let mut answer = vec![ProofStepId::Active(multi_rewrite_info.inequality_id)];
                 for id in &multi_rewrite_info.active_ids {
@@ -279,17 +286,29 @@ impl ProofStep {
 
     // Construct a ProofStep that is a specialization of a general pattern.
     pub fn new_specialization(
-        general_id: usize,
-        general_step: &ProofStep,
+        pattern_id: usize,
+        pattern_step: &ProofStep,
+        clause: Clause,
+    ) -> ProofStep {
+        Self::new_specialization_with_inspiration(pattern_id, None, pattern_step, clause)
+    }
+
+    pub fn new_specialization_with_inspiration(
+        pattern_id: usize,
+        inspiration_id: Option<usize>,
+        pattern_step: &ProofStep,
         clause: Clause,
     ) -> ProofStep {
         ProofStep {
             clause,
-            truthiness: general_step.truthiness,
-            rule: Rule::Specialization(general_id),
+            truthiness: pattern_step.truthiness,
+            rule: Rule::Specialization(SpecializationInfo {
+                pattern_id,
+                inspiration_id,
+            }),
             simplification_rules: vec![],
-            proof_size: general_step.proof_size + 1,
-            depth: general_step.depth,
+            proof_size: pattern_step.proof_size + 1,
+            depth: pattern_step.depth,
             printable: true,
         }
     }
@@ -502,15 +521,22 @@ impl ProofStep {
     }
 
     /// Select the dependency policy for proof extraction or search advice.
-    /// Existing rules currently have only mathematical dependencies.
-    pub fn active_dependencies_with_inspiration(&self, _include_inspiration: bool) -> Vec<usize> {
-        self.dependencies()
+    /// Inspiration is advice, never an additional mathematical premise.
+    pub fn active_dependencies_with_inspiration(&self, include_inspiration: bool) -> Vec<usize> {
+        let mut dependencies: Vec<_> = self
+            .dependencies()
             .iter()
             .filter_map(|id| match id {
                 ProofStepId::Active(id) => Some(*id),
                 _ => None,
             })
-            .collect()
+            .collect();
+        if include_inspiration {
+            if let Rule::Specialization(info) = &self.rule {
+                dependencies.extend(info.inspiration_id);
+            }
+        }
+        dependencies
     }
 
     pub fn depends_on_active(&self, id: usize) -> bool {
