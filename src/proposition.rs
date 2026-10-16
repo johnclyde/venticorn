@@ -156,6 +156,17 @@ impl Proposition {
         }
     }
 
+    // The constraint block proves inhabitation; its exported claim remains vacuous.
+    pub fn inhabited(module: ModuleId, type_name: &str, range: Range) -> Proposition {
+        Self::type_member_definition(
+            AcornValue::Bool(true),
+            module,
+            range,
+            type_name.to_string(),
+            "constraint".into(),
+        )
+    }
+
     // Compatibility constructor for callers without a more specific member name.
     pub fn type_definition(
         value: AcornValue,

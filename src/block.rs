@@ -453,6 +453,9 @@ impl Node {
             crate::proposition::SourceType::ConstantDefinition(_, name) => {
                 Some(Cow::Borrowed(name))
             }
+            crate::proposition::SourceType::TypeDefinition(name, member) => {
+                Some(Cow::Owned(format!("{name}.{member}")))
+            }
             _ => None,
         }
     }
