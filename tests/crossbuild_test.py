@@ -113,6 +113,20 @@ class CrossbuildTest(unittest.TestCase):
         self.assertEqual(cross[1], 'zigbuild')
         self.assertEqual(env['CARGO_ENCODED_RUSTFLAGS'], '-C\x1fdebuginfo=1')
 
+    def test_macos_crossbuild_normalizes_sdkroot_only_in_child_environment(self):
+        with tempfile.TemporaryDirectory() as home:
+            for supplied in ["~/macsdk", "relative sdk", "/sdk with spaces"]:
+                with self.subTest(sdkroot=supplied), patch.dict(
+                        os.environ, {"HOME": home, "SDKROOT": supplied}, clear=True):
+                    expected = str(Path(supplied).expanduser().resolve())
+                    command, env, _ = build.build_plan('aarch64-apple-darwin', LINUX)
+                    self.assertEqual(command[1], 'zigbuild')
+                    self.assertEqual(env['SDKROOT'], expected)
+                    self.assertEqual(os.environ['SDKROOT'], supplied)
+                    _, native_env, _ = build.build_plan(
+                        'aarch64-apple-darwin', 'aarch64-apple-darwin')
+                    self.assertEqual(native_env['SDKROOT'], supplied)
+
     def test_macos_crossbuild_rejects_unconfigured_sdk(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(build, 'require_tool'):
             with self.assertRaisesRegex(ValueError, 'SDKROOT'):
