@@ -30,3 +30,38 @@ fn class_names_preserve_canonical_identity_and_first_alias() {
     assert_eq!(clone.get_typeclass_for_name("Alias"), Some(&first));
     assert_eq!(clone.get_name_for_typeclass(&first), Some("Magma"));
 }
+
+#[test]
+fn datatype_declarations_reject_reserved_class_names_without_mutation() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+
+    for source in [
+        "structure Magma {\n value: Bool\n}",
+        "structure Wrapper<Magma> {\n value: Magma\n}",
+        "inductive Magma {\n unit\n}",
+    ] {
+        let mut env = Environment::new_test();
+        env.add("let keep: Bool = true");
+        let class = Typeclass {
+            module_id: env.module_id,
+            name: "Magma".into(),
+        };
+        env.bindings.add_typeclass("Magma", class.clone());
+        let nodes = env.nodes.len();
+        let last_line = env.last_line();
+        let statement = Statement::parse_str(source).unwrap();
+        let error = env
+            .add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert!(error.message().contains("already defined"), "{error}");
+        assert_eq!(env.nodes.len(), nodes);
+        assert_eq!(env.last_line(), last_line);
+        assert_eq!(env.bindings.get_typeclass_for_name("Magma"), Some(&class));
+        assert!(!env.bindings.has_type_name("Magma"));
+        assert!(!env.bindings.name_in_use("Wrapper"));
+        assert!(env.bindings.has_identifier("keep"));
+        env.add("structure Wrapper<T> {\n value: T\n}");
+    }
+}
