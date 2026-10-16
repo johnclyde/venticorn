@@ -10,6 +10,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
+use venticorn::persistent_cache::CachePolicy;
 use venticorn::project::Project;
 
 #[derive(Parser)]
@@ -20,6 +21,10 @@ struct Args {
     /// Verify one module (compatible with the positional module argument).
     #[clap(long, conflicts_with = "target")]
     module: Option<String>,
+
+    /// Verify every goal without reading, writing or reusing cached results.
+    #[clap(long)]
+    no_cache: bool,
 
     // Create a dataset from the prover logs.
     #[clap(long)]
@@ -36,6 +41,11 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    project.set_cache_policy(if args.no_cache {
+        CachePolicy::Disabled
+    } else {
+        CachePolicy::ReadWrite
+    });
     if let Some(target) = args.target {
         if target.ends_with(".ac") {
             if let Err(error) = project.add_target_by_path(Path::new(&target)) {

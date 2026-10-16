@@ -11,6 +11,7 @@ use walkdir::WalkDir;
 
 use crate::binding_map::BindingMap;
 use crate::block::NodeCursor;
+use crate::build_cache::CachedGoal;
 use crate::builder::{BuildCache, BuildEvent, BuildStatus, Builder};
 use crate::compilation;
 use crate::environment::Environment;
@@ -409,7 +410,46 @@ impl Project {
         if self.cache_policy == CachePolicy::Disabled {
             return BuildCache::default();
         }
-        self.build_cache.lock().unwrap().clone()
+        let mut cache = self.build_cache.lock().unwrap().clone();
+        if let Some(storage) = &self.persistent_cache {
+            for (id, hash) in self.current_disk_hashes() {
+                let module = &self.modules[id as usize].descriptor;
+                let env = self.get_env_by_id(id).unwrap();
+                let goals = env
+                    .iter_goals()
+                    .map(|node| node.goal_context().expect("parsed goal"))
+                    .collect::<Vec<_>>();
+                let Some(record) = storage.record(module, &hash, &goals, |id| {
+                    self.modules
+                        .get(id as usize)
+                        .map(|module| module.descriptor.clone())
+                }) else {
+                    continue;
+                };
+                if !storage.matches(&record) {
+                    continue;
+                }
+                let mut dependencies = env
+                    .bindings
+                    .direct_dependencies()
+                    .into_iter()
+                    .map(|id| self.modules[id as usize].descriptor.clone())
+                    .collect::<Vec<_>>();
+                dependencies.sort();
+                dependencies.dedup();
+                cache.insert_completed(
+                    module.clone(),
+                    hash,
+                    dependencies,
+                    goals
+                        .iter()
+                        .map(|goal| (goal.first_line, goal.last_line))
+                        .collect(),
+                    goals.iter().map(CachedGoal::new).collect(),
+                );
+            }
+        }
+        cache
     }
 
     // Read all source bytes again before disk reuse/publication. An open editor

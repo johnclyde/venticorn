@@ -12,3 +12,5 @@ profile.json*
 **/__pycache__/
 
 *.vsix
+
+.venticorn-cache/
