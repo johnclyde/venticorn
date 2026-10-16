@@ -22,7 +22,11 @@ struct Args {
     #[clap(long, conflicts_with = "target")]
     module: Option<String>,
 
-    /// Verify every goal without reading, writing or reusing cached results.
+    /// Reuse validated proof results and save completed builds for future runs.
+    #[clap(long, conflicts_with = "no_cache")]
+    cache: bool,
+
+    /// Verify without cached results (the default; retained for compatibility).
     #[clap(long)]
     no_cache: bool,
 
@@ -41,10 +45,10 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    project.set_cache_policy(if args.no_cache {
-        CachePolicy::Disabled
-    } else {
+    project.set_cache_policy(if args.cache {
         CachePolicy::ReadWrite
+    } else {
+        CachePolicy::Disabled
     });
     if let Some(target) = args.target {
         if target.ends_with(".ac") {
