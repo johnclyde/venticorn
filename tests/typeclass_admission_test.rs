@@ -312,3 +312,34 @@ fn bounded_theorem_admission_does_not_assume_class_laws() {
         venticorn::prover::Outcome::Exhausted
     );
 }
+
+#[test]
+fn bounded_member_typechecking_rejects_value_function_equality() {
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            "#,
+    );
+    let source = r#"
+            theorem wrong_by_typecheck<Q: Magma>(a: Q, b: Q) {
+                a.mul(b) = b.mul
+            }
+            "#;
+    let count = env.nodes.len();
+    let error = env
+        .add_statement(
+            &mut Project::new_mock(),
+            &Statement::parse_str(source).unwrap(),
+        )
+        .unwrap_err();
+    assert!(error.message().contains("type"), "{error}");
+    assert_eq!(env.nodes.len(), count);
+    assert!(!env.bindings.name_in_use("wrong_by_typecheck"));
+    assert!(!env.bindings.name_in_use("Q"));
+    env.add("define partial<Q: Magma>(a: Q) -> (Q -> Q) { a.mul }");
+}
