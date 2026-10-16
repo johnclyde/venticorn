@@ -133,3 +133,23 @@ fn functional_definitions_and_substitutions_keep_their_original_proofs() {
         }
     }
 }
+
+#[test]
+fn theorem_names_are_distinct_from_fact_selection_names() {
+    let mut env = Environment::new_test();
+    env.add("define identity(value: Bool) -> Bool { value }\naxiom named_axiom { true }\ntheorem named_theorem { true }\naxiom { true }");
+    for node in &env.nodes {
+        assert_eq!(node.claim.name(), node.claim.theorem_name());
+        match node.claim.source.name().as_deref() {
+            Some("identity") => assert_eq!(node.claim.theorem_name(), None),
+            Some("named_axiom") => assert_eq!(node.claim.theorem_name(), Some("named_axiom")),
+            Some("named_theorem") => assert_eq!(node.claim.theorem_name(), Some("named_theorem")),
+            Some("4") => assert_eq!(node.claim.theorem_name(), None),
+            unexpected => panic!("unexpected fact source: {unexpected:?}"),
+        }
+    }
+    assert!(env.get_theorem_claim("identity").is_none());
+    assert!(env.get_theorem_claim("named_axiom").is_some());
+    assert!(env.get_theorem_claim("named_theorem").is_some());
+    assert!(env.get_theorem_claim("4").is_none());
+}

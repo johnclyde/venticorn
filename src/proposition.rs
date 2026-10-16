@@ -236,7 +236,12 @@ impl Proposition {
     }
 
     // Theorems and axioms can have names
+    // Compatibility name for theorem/axiom declarations, distinct from Source::name.
     pub fn name(&self) -> Option<&str> {
+        self.theorem_name()
+    }
+
+    pub fn theorem_name(&self) -> Option<&str> {
         match &self.source.source_type {
             SourceType::Axiom(name) | SourceType::Theorem(name) => name.as_deref(),
             _ => None,
