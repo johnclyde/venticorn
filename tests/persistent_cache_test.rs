@@ -39,11 +39,19 @@ impl Library {
         files
     }
     fn cli(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_verify"))
+        let output = Command::new(env!("CARGO_BIN_EXE_verify"))
             .env("VENTICORN_LIBRARY", &self.0)
             .args(args)
             .output()
-            .unwrap()
+            .unwrap();
+        #[cfg(feature = "onnx")]
+        for stream in [&output.stdout, &output.stderr] {
+            assert!(
+                !String::from_utf8_lossy(stream).contains("Could not load the proof-scoring model"),
+                "native CLI silently fell back to the heuristic scorer"
+            );
+        }
+        output
     }
 }
 impl Drop for Library {
@@ -412,6 +420,24 @@ fn filtered_cli_reproves_each_goal_and_rejects_conflicting_cache_modes() {
     let output = String::from_utf8(false_claim.stdout).unwrap();
     assert!(
         output.contains("1/2 OK") && !output.contains("goals reused"),
+        "{output}"
+    );
+}
+
+#[test]
+fn cli_reports_an_actual_filtered_fallback_once() {
+    let library = Library::new();
+    let facts = "let seed: Bool = axiom\nlet first: Bool = axiom\nlet second: Bool = axiom\naxiom start { seed }\naxiom left { seed implies first }\naxiom right { seed implies second }\n";
+    library.write("main.ac", &format!("{facts}theorem goal {{ first }}"));
+    assert!(library.cli(&["--cache"]).status.success());
+    library.write("main.ac", &format!("{facts}theorem goal {{ second }}"));
+    let result = library.cli(&["--filtered"]);
+    assert!(result.status.success(), "{result:?}");
+    let output = String::from_utf8(result.stdout).unwrap();
+    assert!(
+        output.contains("2 searches performed")
+            && output.contains("1 full searches, 1 filtered searches")
+            && output.contains("1 filtered searches fell back to full search"),
         "{output}"
     );
 }
