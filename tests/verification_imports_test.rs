@@ -157,3 +157,24 @@ fn self_premise_exclusion_keeps_imported_homonyms() {
         )])
     );
 }
+
+#[test]
+fn an_unchanged_second_verification_performs_no_searches() {
+    let source = MAIN.replace("theorem goal(a", "theorem goal1(a");
+    let project = project(&source);
+    let cold = project.sync_build_report();
+    assert_eq!(cold.status, BuildStatus::Good);
+    assert_eq!((cold.num_success, cold.num_cached), (5, 0));
+    let mut warm = project.builder(|_| {});
+    project.build(&mut warm);
+    assert_eq!(warm.status, BuildStatus::Good);
+    assert_eq!(
+        (
+            warm.searches_total,
+            warm.num_success,
+            warm.num_cached,
+            warm.goals_done
+        ),
+        (0, 0, 5, 5)
+    );
+}
