@@ -340,3 +340,74 @@ fn unsaved_alias_excludes_saved_named_sources_and_transitive_importers() {
         assert_eq!(report.num_cached, if changed { 0 } else { 2 });
     }
 }
+
+#[test]
+fn filtered_cli_reproves_each_goal_and_rejects_conflicting_cache_modes() {
+    let library = Library::new();
+    let facts = "let seed: Bool = axiom\nlet flag: Bool = axiom\naxiom start { seed }\naxiom known { seed implies flag }\n";
+    let source = format!("{facts}theorem first {{ flag }}\ntheorem second {{ flag and seed }}");
+    library.write("main.ac", &source);
+    assert!(library.cli(&["--cache"]).status.success());
+    for mode in ["--filtered", "--cache"] {
+        let result = library.cli(&[mode]);
+        assert!(result.status.success(), "{result:?}");
+        let output = String::from_utf8(result.stdout).unwrap();
+        #[cfg(feature = "onnx")]
+        assert!(
+            !output.contains("Could not load the proof-scoring model")
+                && !String::from_utf8_lossy(&result.stderr)
+                    .contains("Could not load the proof-scoring model")
+        );
+        if mode == "--filtered" {
+            assert!(
+                output.contains("2 searches performed") && !output.contains("goals reused"),
+                "{output}"
+            );
+        } else {
+            assert!(
+                output.contains("0 searches performed") && output.contains("2 goals reused"),
+                "{output}"
+            );
+        }
+    }
+    for conflict in ["--cache", "--no-cache"] {
+        assert_eq!(
+            library.cli(&["--filtered", conflict]).status.code(),
+            Some(2)
+        );
+    }
+    let mut project = library.project(CachePolicy::ReadOnly);
+    project.check_hashes = false;
+    let mut builder = project.builder(|_| {});
+    project.build(&mut builder);
+    assert_eq!(builder.status, BuildStatus::Good);
+    assert_eq!(
+        (
+            builder.searches_total,
+            builder.hinted_searches,
+            builder.num_cached
+        ),
+        (2, 2, 0)
+    );
+    let mut dataset = project.builder(|_| {});
+    dataset.create_dataset();
+    project.build(&mut dataset);
+    assert_eq!(dataset.status, BuildStatus::Good);
+    assert_eq!(
+        (
+            dataset.searches_total,
+            dataset.hinted_searches,
+            dataset.num_cached
+        ),
+        (2, 0, 0)
+    );
+    // A matching first block must not be reused when the later claim changes.
+    library.write("main.ac", &source.replace("flag and seed", "not flag"));
+    let false_claim = library.cli(&["--filtered"]);
+    assert_eq!(false_claim.status.code(), Some(1));
+    let output = String::from_utf8(false_claim.stdout).unwrap();
+    assert!(
+        output.contains("1/2 OK") && !output.contains("goals reused"),
+        "{output}"
+    );
+}
