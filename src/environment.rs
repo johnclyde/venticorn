@@ -1,6 +1,6 @@
 // Modified for Venticorn.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, Range};
 
@@ -1844,9 +1844,24 @@ impl Environment {
 
     // Get all facts that this environment exports.
     pub fn exported_facts(&self) -> Vec<Fact> {
+        self.exported_facts_filtered(None)
+    }
+
+    // All principles with a selected source remain available, including several
+    // facts generated from one datatype member. Anonymous facts use their line ID.
+    pub fn exported_facts_filtered(&self, filter: Option<&HashSet<String>>) -> Vec<Fact> {
         assert!(self.top_level);
         let mut facts = vec![];
         for node in &self.nodes {
+            if filter.is_some_and(|names| {
+                !node
+                    .claim
+                    .source
+                    .name()
+                    .is_some_and(|name| names.contains(&name))
+            }) {
+                continue;
+            }
             facts.push(Fact::new(node.claim.clone(), Truthiness::Factual));
         }
         facts
