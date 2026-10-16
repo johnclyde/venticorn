@@ -1055,10 +1055,10 @@ impl Environment {
         statement: &Statement,
         is: &crate::statement::InductiveStatement,
     ) -> compilation::Result<()> {
-        self.add_other_lines(statement);
-        if self.bindings.has_type_name(&is.name) {
+        if self.bindings.name_in_use(&is.name) {
             return Err(statement.error("type name already defined in this scope"));
         }
+        self.add_other_lines(statement);
         let range = Range {
             start: statement.first_token.start_pos(),
             end: is.name_token.end_pos(),
