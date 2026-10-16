@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, Range};
 
-use crate::acorn_type::{AcornType, PotentialType};
+use crate::acorn_type::{AcornType, PotentialType, Typeclass};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, PotentialValue, Stack};
@@ -1342,7 +1342,12 @@ impl Environment {
                 .error("instance and typeclass names must be distinct"));
         }
         let mut scope = self.bindings.clone();
-        scope.add_arbitrary_type(ts.instance_name.text());
+        let class = Typeclass {
+            module_id: self.module_id,
+            name: ts.typeclass_name.text().to_string(),
+        };
+        scope.add_typeclass(ts.typeclass_name.text(), class.clone());
+        scope.add_arbitrary_type_with_class(ts.instance_name.text(), Some(&class));
         Ok(scope)
     }
 

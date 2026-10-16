@@ -386,7 +386,17 @@ impl BindingMap {
 
     // Introduce a fixed but otherwise unknown type within a proof scope.
     pub fn add_arbitrary_type(&mut self, name: &str) -> AcornType {
-        let arbitrary = AcornType::Arbitrary(name.to_string(), None);
+        self.add_arbitrary_type_with_class(name, None)
+    }
+
+    // Preserve the defining class identity while introducing a scoped instance parameter.
+    pub fn add_arbitrary_type_with_class(
+        &mut self,
+        name: &str,
+        typeclass: Option<&Typeclass>,
+    ) -> AcornType {
+        assert!(!self.name_in_use(name), "type name {} already bound", name);
+        let arbitrary = AcornType::Arbitrary(name.to_string(), typeclass.cloned());
         self.insert_type_name(name.to_string(), arbitrary.clone());
         arbitrary
     }
