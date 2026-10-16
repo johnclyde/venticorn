@@ -260,3 +260,55 @@ fn bounded_function_without_member_access_is_admitted() {
             "#,
     );
 }
+
+#[test]
+fn bounded_instance_method_declarations_are_admitted() {
+    let mut env = Environment::new_test();
+    let source = r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            define squared<T: Magma>(a: T) -> T {
+                a.mul(a)
+            }
+            "#;
+    env.add(source);
+}
+
+#[test]
+fn bounded_theorem_admission_does_not_assume_class_laws() {
+    let mut env = Environment::new_test();
+    let source = r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            theorem wrong_but_syntactic<Q: Magma>(a: Q, b: Q) {
+                a.mul(b) = b.mul(a)
+            }
+            "#;
+    env.add(source);
+    use venticorn::project::Project;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", source);
+    let module = project.expect_ok("main");
+    let node = project
+        .get_env_by_id(module)
+        .unwrap()
+        .get_node_by_name("wrong_but_syntactic");
+    let mut prover = venticorn::prover::Prover::new(&project, false);
+    for fact in node.usable_facts(&project) {
+        prover.add_fact(fact);
+    }
+    prover.set_goal(&node.goal_context().unwrap());
+    let mut ordinary = prover.clone();
+    assert!(matches!(
+        ordinary.quick_search(),
+        venticorn::prover::Outcome::Exhausted
+            | venticorn::prover::Outcome::Timeout
+            | venticorn::prover::Outcome::Constrained
+    ));
+    assert_eq!(
+        prover.quick_verification_search(),
+        venticorn::prover::Outcome::Exhausted
+    );
+}
