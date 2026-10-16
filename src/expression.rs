@@ -215,6 +215,66 @@ impl Declaration {
     }
 }
 
+// A declaration parameter retains its name and optional class expression separately.
+#[derive(Debug)]
+pub struct TypeParam {
+    pub name: Token,
+    pub typeclass: Option<Expression>,
+}
+
+impl fmt::Display for TypeParam {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(class) = &self.typeclass {
+            write!(f, ": {}", class)?;
+        }
+        Ok(())
+    }
+}
+
+impl ErrorSource for TypeParam {
+    fn error(&self, message: &str) -> Error {
+        self.name.error(message)
+    }
+}
+
+impl TypeParam {
+    pub fn parse_list(tokens: &mut TokenIter) -> Result<Vec<Self>> {
+        if tokens.peek_type() != Some(TokenType::LessThan) {
+            return Ok(vec![]);
+        }
+        tokens.next();
+        let mut params = vec![];
+        loop {
+            let name = tokens.expect_type(TokenType::Identifier)?;
+            params.push(Self {
+                name,
+                typeclass: None,
+            });
+            let terminator = tokens.expect_token()?;
+            match terminator.token_type {
+                TokenType::GreaterThan => return Ok(params),
+                TokenType::Comma => {}
+                _ => return Err(terminator.error("expected '>' or ',' in type parameters")),
+            }
+        }
+    }
+
+    // Until the evaluator accepts class bounds, never silently discard a parsed bound.
+    pub fn unconstrained_tokens(params: &[Self]) -> Result<Vec<Token>> {
+        params
+            .iter()
+            .map(|param| {
+                if let Some(class) = &param.typeclass {
+                    Err(class.error("typeclass bounds are not supported yet"))
+                } else {
+                    Ok(param.name.clone())
+                }
+            })
+            .collect()
+    }
+}
+
 // We use terminators to tell the expression parser when it is allowed to stop.
 // This exists to make error messages more readable.
 pub enum Terminator {
