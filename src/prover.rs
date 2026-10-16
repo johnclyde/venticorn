@@ -674,6 +674,12 @@ impl Prover {
         false
     }
 
+    // Preserve immediately known full-context outcomes when considering a subset.
+    // This performs no search; set_goal can also establish an immediate result.
+    pub(crate) fn has_immediate_outcome(&self) -> bool {
+        self.error.is_some() || self.final_step.is_some() || self.passive_set.has_contradiction()
+    }
+
     // The activation_limit to use for verification mode.
     const VERIFICATION_LIMIT: i32 = 2000;
 
