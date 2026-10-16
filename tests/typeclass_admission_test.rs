@@ -2,7 +2,6 @@
 use venticorn::environment::Environment;
 
 #[test]
-#[ignore = "typeclass member admission is not implemented yet"]
 fn constant_only_typeclass_is_admitted() {
     let mut env = Environment::new_test();
     env.add(
@@ -34,7 +33,6 @@ fn class_headers_validate_names_without_leaking_temporary_types() {
             "Reserved already defined",
         ),
         ("typeclass M: M {\n value: M\n}", "names must be distinct"),
-        ("typeclass M: Magma {\n value: M\n}", "not supported yet"),
     ] {
         let mut env = Environment::new_test();
         env.add("type Existing: axiom");
@@ -122,4 +120,86 @@ fn member_validation_is_selective_and_transactional() {
         assert!(env.bindings.has_identifier("keep"));
         assert!(env.bindings.has_type_name("Outer"));
     }
+}
+
+#[test]
+fn admitted_members_keep_instance_parameters_and_scope_cleanup() {
+    use venticorn::acorn_type::{AcornType, Typeclass};
+    use venticorn::binding_map::PotentialValue;
+    let mut env = Environment::new_test();
+    env.add("typeclass M: Magma {\n mul: (M, M) -> M\n flag: Bool\n}");
+    let class = Typeclass {
+        module_id: env.module_id,
+        name: "Magma".into(),
+    };
+    assert_eq!(env.bindings.get_typeclass_for_name("Magma"), Some(&class));
+    assert!(!env.bindings.name_in_use("M"));
+    assert!(!env.bindings.has_type_name("Magma"));
+    assert!(env.nodes.is_empty());
+    for name in ["Magma.mul", "Magma.flag"] {
+        assert_eq!(env.bindings.get_params(name), ["M"]);
+        assert!(matches!(
+            env.bindings.get_constant_value(name),
+            Some(PotentialValue::Unresolved(_))
+        ));
+    }
+    let instance = AcornType::Variable("M".into(), Some(class));
+    assert_eq!(
+        env.bindings
+            .get_constant_value("Magma.mul")
+            .unwrap()
+            .get_type(),
+        AcornType::new_functional(vec![instance.clone(), instance.clone()], instance)
+    );
+    env.add("type M: axiom");
+    env.add("typeclass N: Other {\n value: N\n}");
+}
+
+#[test]
+fn failed_members_allow_safe_name_reuse_and_conditions_create_no_axioms() {
+    let mut env = Environment::new_test();
+    env.add("let keep: Bool = true");
+    let nodes = env.nodes.len();
+    for source in [
+        "typeclass M: Magma {\n mul: (M, M) -> M\n bad: Missing\n}",
+        "typeclass M: Magma {\n flag: Bool\n flag: Bool\n}",
+        "typeclass M: Magma {\n mul: (M, M) -> M\n law { false }\n}",
+    ] {
+        env.bad(source);
+        assert_eq!(env.nodes.len(), nodes);
+        assert!(!env.includes_explicit_false);
+        assert!(!env.bindings.name_in_use("Magma"));
+        assert!(!env.bindings.name_in_use("M"));
+        assert!(!env.bindings.name_in_use("Magma.mul"));
+    }
+    env.add("typeclass M: Magma {\n mul: (M, M) -> M\n}");
+}
+
+#[test]
+fn nested_class_declarations_are_located_and_cannot_escape_or_conflate() {
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut parent = Environment::new_test();
+    parent.add("let keep: Bool = true");
+    for _ in 0..2 {
+        let mut child = parent.child(0, false);
+        child.add("let local: Bool = true");
+        let nodes = child.nodes.len();
+        let last_line = child.last_line();
+        let statement = Statement::parse_str("typeclass T: Local {\n value: T\n}").unwrap();
+        let error = child
+            .add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert!(error.message().contains("only supported at the top level"));
+        assert_eq!(error.range().start.line, 0);
+        assert_eq!(error.range().start.character, 0);
+        assert_eq!(child.nodes.len(), nodes);
+        assert_eq!(child.last_line(), last_line);
+        for name in ["T", "Local", "Local.value"] {
+            assert!(!child.bindings.name_in_use(name));
+            assert!(!parent.bindings.name_in_use(name));
+        }
+        assert!(child.bindings.has_identifier("local"));
+    }
+    parent.add("typeclass T: Local {\n value: T\n}");
 }

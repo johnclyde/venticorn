@@ -19,18 +19,21 @@ fn typeclass_is_a_reserved_keyword_with_identifier_boundaries() {
 }
 
 #[test]
-fn unsupported_typeclass_declarations_report_an_error_without_verifying() {
+fn unsupported_typeclass_conditions_report_an_error_without_verifying() {
     let mut project = Project::new_mock();
-    project.mock("/mock/main.ac", "typeclass T: Example {\n value: T\n}\n");
+    project.mock(
+        "/mock/main.ac",
+        "typeclass T: Example {\n law { true }\n}\n",
+    );
     let errors = project.errors();
     assert_eq!(errors.len(), 1);
     assert!(errors[0]
         .1
         .message()
-        .contains("typeclass declarations are not supported yet"));
+        .contains("typeclass conditions are not supported yet"));
     assert_eq!(
         errors[0].1.range(),
-        Range::new(Position::new(0, 0), Position::new(0, 9))
+        Range::new(Position::new(1, 1), Position::new(1, 4))
     );
     let report = project.sync_build_report();
     assert_eq!(report.status, BuildStatus::Error);

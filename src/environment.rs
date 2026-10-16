@@ -1389,11 +1389,20 @@ impl Environment {
         statement: &Statement,
         ts: &TypeclassStatement,
     ) -> compilation::Result<()> {
-        let (_scope, _members) = self.prepare_typeclass(project, ts)?;
-        // Publish only after complete member admission is implemented.
-        Err(statement
-            .first_token
-            .error("typeclass declarations are not supported yet"))
+        if !self.top_level {
+            return Err(statement
+                .first_token
+                .error("typeclass declarations are only supported at the top level"));
+        }
+        let (mut scope, members) = self.prepare_typeclass(project, ts)?;
+        let params = vec![ts.instance_name.text().to_string()];
+        for (name, member_type) in members {
+            scope.add_constant(&name, params.clone(), member_type, None, None);
+        }
+        scope.remove_data_type(ts.instance_name.text());
+        self.bindings = scope;
+        self.add_other_lines(statement);
+        Ok(())
     }
 
     // Adds a statement to the environment.
