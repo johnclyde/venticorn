@@ -74,7 +74,10 @@ fn class_name_is_not_a_member_return_type() {
     let error = env
         .add_statement(&mut venticorn::project::Project::new_mock(), &statement)
         .unwrap_err();
-    assert_eq!(error.message(), "expected type name");
+    assert_eq!(
+        error.message(),
+        "name refers to a typeclass but we expected a type"
+    );
     assert_eq!(error.range().start.line, 2);
 }
 

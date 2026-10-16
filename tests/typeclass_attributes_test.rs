@@ -79,3 +79,74 @@ fn instance_lookup_uses_the_parameter_name_and_canonical_class() {
         "could not load bindings for attribute module"
     );
 }
+
+#[test]
+fn class_names_are_distinct_entities_with_qualified_member_completion() {
+    let mut project = Project::new_mock();
+    project.mock(
+        "/mock/left.ac",
+        "typeclass M: Magma {\n mul: (M, M) -> M\n}",
+    );
+    project.mock(
+        "/mock/right.ac",
+        "typeclass M: Magma {\n other: (M, M) -> M\n}",
+    );
+    project.mock(
+        "/mock/main.ac",
+        "import left\nimport right\ntypeclass N: Local {\n value: N\n}",
+    );
+    let id = project.expect_ok("main");
+    let env = project.get_env_by_id(id).unwrap();
+    for (prefix, expected) in [
+        ("left.Magma.", "mul"),
+        ("right.Magma.", "other"),
+        ("Local.", "value"),
+    ] {
+        let items = env
+            .bindings
+            .get_completions(&project, prefix, false)
+            .unwrap();
+        assert_eq!(
+            items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(),
+            [expected]
+        );
+    }
+    for input in ["Local", "left.Magma"] {
+        let error = env
+            .bindings
+            .evaluate_value(&project, &Expression::expect_value(input), None)
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("typeclass but we expected a value"),
+            "{error}"
+        );
+    }
+    for input in [
+        "Local.value<Bool>",
+        "left.Magma.mul(true, true)",
+        "left.Magma.mul<Bool>(true, true)",
+    ] {
+        let error = env
+            .bindings
+            .evaluate_value(&project, &Expression::expect_value(input), None)
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("specialization is not supported yet"),
+            "{error}"
+        );
+    }
+    let mut direct = Project::new_mock();
+    direct.mock(
+        "/mock/dependency.ac",
+        "typeclass M: Magma {\n mul: (M, M) -> M\n}",
+    );
+    direct.mock("/mock/main.ac", "from dependency import Magma");
+    assert!(direct
+        .errors()
+        .iter()
+        .any(|(_, e)| e.message().contains("cannot import typeclasses indirectly")));
+}
