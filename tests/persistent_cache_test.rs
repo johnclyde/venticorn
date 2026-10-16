@@ -215,7 +215,10 @@ fn disabled_policy_bypasses_memory_even_with_an_explicit_prior_cache() {
 fn cli_cold_warm_and_no_cache_runs_use_fresh_processes_and_preserve_false_controls() {
     let library = Library::new();
     library.write("main.ac", "theorem okay { true }");
-    let cold = library.cli(&[]);
+    let default = library.cli(&[]);
+    assert!(default.status.success());
+    assert!(library.records().is_empty());
+    let cold = library.cli(&["--cache"]);
     assert!(
         cold.status.success(),
         "{}",
@@ -224,30 +227,37 @@ fn cli_cold_warm_and_no_cache_runs_use_fresh_processes_and_preserve_false_contro
     let path = library.records().pop().unwrap();
     let original = fs::read(&path).unwrap();
     let modified = fs::metadata(&path).unwrap().modified().unwrap();
-    let warm = library.cli(&[]);
+    let warm = library.cli(&["--cache"]);
     assert!(warm.status.success());
     let text = String::from_utf8_lossy(&warm.stdout);
     assert!(
         text.contains("1 goals reused from completed builds"),
         "{text}"
     );
-    let no_cache = library.cli(&["--no-cache"]);
-    assert!(no_cache.status.success());
-    let text = String::from_utf8_lossy(&no_cache.stdout);
-    assert!(
-        text.contains("1/1 OK") && !text.contains("goals reused"),
-        "{text}"
-    );
+    for args in [&[][..], &["--no-cache"][..]] {
+        let cold = library.cli(args);
+        assert!(cold.status.success());
+        let text = String::from_utf8_lossy(&cold.stdout);
+        assert!(
+            text.contains("1/1 OK") && !text.contains("goals reused"),
+            "{text}"
+        );
+    }
     assert_eq!(fs::read(&path).unwrap(), original);
     assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
     library.write("main.ac", "theorem okay { false }");
-    let false_claim = library.cli(&[]);
-    assert_eq!(false_claim.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&false_claim.stdout).contains("warnings"));
+    for args in [&[][..], &["--cache"][..], &["--no-cache"][..]] {
+        let false_claim = library.cli(args);
+        assert_eq!(false_claim.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&false_claim.stdout).contains("warnings"));
+    }
     assert_eq!(fs::read(&path).unwrap(), original);
     let cold_library = Library::new();
     cold_library.write("main.ac", "theorem okay { true }");
     assert!(cold_library.cli(&["--no-cache"]).status.success());
+    assert!(cold_library.records().is_empty());
+    let conflicting = cold_library.cli(&["--cache", "--no-cache"]);
+    assert_eq!(conflicting.status.code(), Some(2));
     assert!(cold_library.records().is_empty());
 }
 
