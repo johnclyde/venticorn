@@ -15,7 +15,9 @@ use crate::module::ModuleId;
 use crate::project::{LoadError, Project};
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
-use crate::statement::{Body, DefineStatement, LetStatement, Statement, StatementInfo};
+use crate::statement::{
+    Body, DefineStatement, LetStatement, Statement, StatementInfo, TypeclassStatement,
+};
 use crate::token::{Token, TokenIter, TokenType};
 
 // Each line has a LineType, to handle line-based user interface.
@@ -1328,6 +1330,18 @@ impl Environment {
         Ok(())
     }
 
+    fn add_typeclass_statement(
+        &mut self,
+        _project: &mut Project,
+        statement: &Statement,
+        _ts: &TypeclassStatement,
+    ) -> compilation::Result<()> {
+        // Reject before changing scope or source visibility until member admission exists.
+        Err(statement
+            .first_token
+            .error("typeclass declarations are not supported yet"))
+    }
+
     // Adds a statement to the environment.
     // If the statement has a body, this call creates a sub-environment and adds the body
     // to that sub-environment.
@@ -1742,9 +1756,7 @@ impl Environment {
                 Ok(())
             }
 
-            StatementInfo::Typeclass(_) => Err(statement
-                .first_token
-                .error("typeclass declarations are not supported yet")),
+            StatementInfo::Typeclass(ts) => self.add_typeclass_statement(project, statement, ts),
 
             StatementInfo::Match(ms) => {
                 let scrutinee = self.bindings.evaluate_value(project, &ms.scrutinee, None)?;
