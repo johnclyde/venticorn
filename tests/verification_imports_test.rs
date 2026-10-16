@@ -98,3 +98,62 @@ fn imported_definition_does_not_validate_a_false_existential() {
         .get(&ModuleRef::Name("main".into()))
         .is_none());
 }
+
+#[test]
+fn completed_named_theorems_publish_imported_premises() {
+    let source = MAIN.replace("theorem goal(a", "theorem goal1(a");
+    let project = project(&source);
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!(
+        (report.num_success, report.num_cached, report.goals_done),
+        (5, 0, 5)
+    );
+    let cache = report.cache.unwrap();
+    let hints = cache
+        .get(&ModuleRef::Name("main".into()))
+        .unwrap()
+        .theorem_premises();
+    println!("named premise sets: {hints:?}");
+    assert_eq!(hints.len(), 2);
+    assert!(hints["goal1"].is_empty());
+    assert_eq!(
+        hints["goal2"],
+        std::collections::BTreeMap::from([(
+            ModuleRef::Name("nat".into()),
+            std::collections::BTreeSet::from([if cfg!(feature = "onnx") {
+                "Nat.induction"
+            } else {
+                "Nat.new"
+            }
+            .into()])
+        )])
+    );
+}
+
+#[test]
+fn self_premise_exclusion_keeps_imported_homonyms() {
+    let mut project = Project::new_mock();
+    project.mock(
+        "/mock/dependency.ac",
+        "let flag: Bool = axiom\naxiom goal { flag }",
+    );
+    project.mock(
+        "/mock/main.ac",
+        "import dependency\ntheorem goal { dependency.flag }",
+    );
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    let cache = report.cache.unwrap();
+    let hints = cache
+        .get(&ModuleRef::Name("main".into()))
+        .unwrap()
+        .theorem_premises();
+    assert_eq!(
+        hints["goal"],
+        std::collections::BTreeMap::from([(
+            ModuleRef::Name("dependency".into()),
+            std::collections::BTreeSet::from(["goal".into()])
+        )])
+    );
+}
