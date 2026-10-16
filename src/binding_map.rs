@@ -130,11 +130,21 @@ pub struct UnresolvedConstant {
 }
 
 impl UnresolvedConstant {
+    // Complete formal-bound validation is required before these applications become usable.
+    fn check_supported_bounds(&self, source: &dyn ErrorSource) -> compilation::Result<()> {
+        if self.generic_type.has_typeclass_bound() {
+            Err(source.error("bounded constant specialization is not supported yet"))
+        } else {
+            Ok(())
+        }
+    }
+
     fn resolve(
         &self,
         source: &dyn ErrorSource,
         actuals: Vec<AcornType>,
     ) -> compilation::Result<AcornValue> {
+        self.check_supported_bounds(source)?;
         if actuals.len() != self.params.len() {
             return Err(source.error(&format!(
                 "expected {} type parameters, but got {}",
@@ -1658,6 +1668,7 @@ impl BindingMap {
         arg_sources: &[&Expression],
         expected_type: Option<&AcornType>,
     ) -> compilation::Result<AcornValue> {
+        unresolved.check_supported_bounds(source)?;
         let function_type = match &unresolved.generic_type {
             AcornType::Function(ft) => ft,
             _ => return Err(source.error("expected a function")),
@@ -1921,6 +1932,7 @@ impl BindingMap {
                             let PotentialValue::Unresolved(unresolved) = function else {
                                 return Err(args_expr.error("unexpected type argument list"));
                             };
+                            unresolved.check_supported_bounds(args_expr.as_ref())?;
                             if arguments.len() != unresolved.params.len() {
                                 return Err(args_expr.error(&format!(
                                     "expected {} type arguments, but got {}",
@@ -2112,10 +2124,13 @@ impl BindingMap {
 
     fn evaluate_typeclass(
         &self,
-        _project: &Project,
+        project: &Project,
         expression: &Expression,
     ) -> compilation::Result<Typeclass> {
-        Err(expression.error("typeclass bounds are not supported yet"))
+        match self.evaluate_entity(&mut Stack::new(), project, expression)? {
+            NamedEntity::Typeclass(class) => Ok(class),
+            _ => Err(expression.error("expected a typeclass")),
+        }
     }
 
     // Evaluate an expression that creates a new scope for the value inside it.
@@ -2216,6 +2231,16 @@ impl BindingMap {
             Some(e) => self.evaluate_type(project, e)?,
             None => AcornType::Bool,
         };
+        for param in type_params {
+            if param.typeclass.is_some()
+                && !value_type.has_type_variable(param.name.text())
+                && !arg_types
+                    .iter()
+                    .any(|t| t.has_type_variable(param.name.text()))
+            {
+                return Err(param.error("phantom typeclass bounds are not supported yet"));
+            }
+        }
         if !type_param_names.is_empty()
             && (arg_types.iter().any(AcornType::has_arbitrary) || value_type.has_arbitrary())
         {

@@ -568,6 +568,9 @@ impl Environment {
         statement: &Statement,
         ts: &crate::statement::TheoremStatement,
     ) -> compilation::Result<()> {
+        if let Some(param) = ts.type_params.iter().find(|p| p.typeclass.is_some()) {
+            return Err(param.error("bounded theorem and axiom declarations are not supported yet"));
+        }
         if let Some(name) = &ts.name {
             if self.bindings.name_in_use(name) {
                 return Err(statement.first_token.error(&format!(

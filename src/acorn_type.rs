@@ -440,6 +440,18 @@ impl AcornType {
         }
     }
 
+    pub fn has_typeclass_bound(&self) -> bool {
+        match self {
+            AcornType::Variable(_, Some(_)) | AcornType::Arbitrary(_, Some(_)) => true,
+            AcornType::Data(_, _, actuals) => actuals.iter().any(Self::has_typeclass_bound),
+            AcornType::Function(function) => {
+                function.arg_types.iter().any(Self::has_typeclass_bound)
+                    || function.return_type.has_typeclass_bound()
+            }
+            _ => false,
+        }
+    }
+
     pub fn has_arbitrary(&self) -> bool {
         match self {
             AcornType::Arbitrary(..) => true,
