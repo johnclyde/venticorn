@@ -94,7 +94,22 @@ impl BuildCache {
 
     // Only finalized build snapshots are published. Entries for other targets remain valid.
     pub(crate) fn merge_completed(&mut self, completed: &BuildCache) {
-        self.modules.extend(completed.modules.clone());
+        for (module, replacement) in &completed.modules {
+            let mut replacement = replacement.clone();
+            // Dataset builds do not extract hints. Preserve previously learned
+            // memory hints only for exactly the same completed obligations.
+            if replacement.theorem_premises.is_empty() {
+                if let Some(previous) = self.modules.get(module) {
+                    if previous.hash == replacement.hash
+                        && previous.goals == replacement.goals
+                        && previous.verified == replacement.verified
+                    {
+                        replacement.theorem_premises = previous.theorem_premises.clone();
+                    }
+                }
+            }
+            self.modules.insert(module.clone(), replacement);
+        }
     }
 
     pub(crate) fn matches(

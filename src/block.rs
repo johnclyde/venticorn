@@ -507,6 +507,10 @@ impl<'a> NodeCursor<'a> {
         &env.nodes[*index]
     }
 
+    pub(crate) fn top_index(&self) -> usize {
+        self.annotated_path[0].1
+    }
+
     // All goals below a named top-level theorem contribute to one premise hint.
     pub(crate) fn top_theorem_name(&self) -> Option<&str> {
         let (env, index) = self.annotated_path[0];

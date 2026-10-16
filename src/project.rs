@@ -10,7 +10,7 @@ use tower_lsp::lsp_types::{CompletionItem, Url};
 use walkdir::WalkDir;
 
 use crate::binding_map::BindingMap;
-use crate::block::NodeCursor;
+use crate::block::{Node, NodeCursor};
 use crate::build_cache::{CachedGoal, PremiseSet};
 use crate::builder::{BuildCache, BuildEvent, BuildStatus, Builder};
 use crate::compilation;
@@ -21,7 +21,7 @@ use crate::module::{
     Module, ModuleHash, ModuleHasher, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL,
 };
 use crate::persistent_cache::{CachePolicy, PersistentCache};
-use crate::prover::Prover;
+use crate::prover::{Outcome, Prover};
 use crate::token::{Token, TokenType};
 
 // Per-module build state is separate from compatibility traversal callbacks.
@@ -32,6 +32,14 @@ struct ModuleVerification<'a> {
     hints_enabled: bool,
     goal_index: usize,
     goals: &'a [GoalContext],
+}
+
+// One final attempt; recoverable hint misses are accounted before returning this.
+struct GoalSearch {
+    prover: Prover,
+    outcome: Outcome,
+    elapsed: std::time::Duration,
+    hinted: bool,
 }
 
 // A synchronous build's actual proof counts and completed metadata. The cache is
@@ -731,7 +739,28 @@ impl Project {
             loop {
                 let keep_going = match self.reuse_verified_block(&node, &mut context, builder) {
                     Some(keep_going) => keep_going,
-                    None => self.verify_build_node(&prover, &mut node, &mut context, builder),
+                    None => {
+                        let guided = if context.hints_enabled {
+                            node.top_theorem_name()
+                                .and_then(|name| {
+                                    builder
+                                        .previous_cache()
+                                        .get(target)?
+                                        .theorem_premises()
+                                        .get(name)
+                                })
+                                .and_then(|premises| self.make_guided_prover(env, &node, premises))
+                        } else {
+                            None
+                        };
+                        self.verify_build_node(
+                            &prover,
+                            guided.as_ref(),
+                            &mut node,
+                            &mut context,
+                            builder,
+                        )
+                    }
                 };
                 if !keep_going {
                     break;
@@ -792,6 +821,7 @@ impl Project {
     fn verify_build_node(
         &self,
         prover: &Prover,
+        guided: Option<&Prover>,
         node: &mut NodeCursor,
         context: &mut ModuleVerification,
         builder: &mut Builder,
@@ -803,13 +833,17 @@ impl Project {
             return true;
         }
         let mut prover = prover.clone();
+        let mut guided = guided.cloned();
         if node.num_children() > 0 {
             node.descend(0);
             loop {
-                if !self.verify_build_node(&prover, node, context, builder) {
+                if !self.verify_build_node(&prover, guided.as_ref(), node, context, builder) {
                     return false;
                 }
                 prover.add_fact(node.get_fact());
+                if let Some(guided) = &mut guided {
+                    guided.add_fact(node.get_fact());
+                }
                 if !node.has_next() {
                     break;
                 }
@@ -843,12 +877,72 @@ impl Project {
                 builder.cached_goal_finished(&goal);
             } else {
                 prover.set_goal(&goal);
-                if !self.prove(prover, goal, theorem, builder) {
+                if let Some(guided) = &mut guided {
+                    guided.set_goal(&goal);
+                }
+                if !self.prove(prover, guided, goal, theorem, builder) {
                     return false;
                 }
             }
         }
         true
+    }
+
+    // Resolve advisory names against current facts only. Body sources are recognized
+    // as metadata here, then admitted in their ordinary lexical order by traversal.
+    // The public ImportFilter continues to affect imports only.
+    fn make_guided_prover(
+        &self,
+        env: &Environment,
+        node: &NodeCursor,
+        premises: &PremiseSet,
+    ) -> Option<Prover> {
+        let mut remaining = premises.clone();
+        let mut prover = Prover::new(self, false);
+        let selected = self
+            .all_dependencies(env.module_id)
+            .into_iter()
+            .filter_map(|id| self.get_env_by_id(id))
+            .flat_map(|dependency| dependency.nodes.iter())
+            .chain(env.nodes[..node.top_index()].iter());
+        for selected_node in selected {
+            let Some((id, name)) = selected_node.claim.source.qualified_name() else {
+                continue;
+            };
+            let module = &self.modules.get(id as usize)?.descriptor;
+            if premises
+                .get(module)
+                .is_some_and(|names| names.contains(&name))
+            {
+                if let Some(names) = remaining.get_mut(module) {
+                    names.remove(&name);
+                }
+                // Clone only selected values, including every fact sharing a source.
+                prover.add_fact(Fact::new(
+                    selected_node.claim.clone(),
+                    crate::proof_step::Truthiness::Factual,
+                ));
+            }
+        }
+        fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
+            if let Some(block) = &node.block {
+                for child in &block.env.nodes {
+                    if let Some((id, name)) = child.claim.source.qualified_name() {
+                        if let Some(module) = project.modules.get(id as usize) {
+                            if let Some(names) = remaining.get_mut(&module.descriptor) {
+                                names.remove(&name);
+                            }
+                        }
+                    }
+                    recognize_body(project, child, remaining);
+                }
+            }
+        }
+        recognize_body(self, &env.nodes[node.top_index()], &mut remaining);
+        remaining
+            .values()
+            .all(|names| names.is_empty())
+            .then_some(prover)
     }
 
     fn retain_theorem_premises(
@@ -995,34 +1089,95 @@ impl Project {
         true
     }
 
-    // Proves a single goal in the target, using the provided prover.
-    // Reports using the handler as appropriate.
-    // Returns true if we should keep building, false if we should stop.
-    fn prove(
+    // A short hinted attempt never mutates the full prover. Only bounded search
+    // misses retry; errors, cancellation, inconsistency and unusable successes
+    // remain terminal and are reported by the normal proof-acceptance path.
+    fn search_goal(
         &self,
         mut prover: Prover,
-        goal_context: GoalContext,
-        theorem: Option<&str>,
+        guided: Option<Prover>,
         builder: &mut Builder,
-    ) -> bool {
+    ) -> Option<GoalSearch> {
+        let mut fallback = false;
+        if !prover.has_immediate_outcome() {
+            if let Some(mut guided) = guided {
+                if builder.stop_if_requested(&self.build_stopped) {
+                    return None;
+                }
+                builder.hinted_searches += 1;
+                let start = std::time::Instant::now();
+                let outcome = guided.search_for_contradiction(500, 0.1, false);
+                let elapsed = start.elapsed();
+                if builder.stop_if_requested(&self.build_stopped) {
+                    builder.search_attempt_finished(&guided, elapsed);
+                    return None;
+                }
+                if matches!(
+                    outcome,
+                    Outcome::Exhausted | Outcome::Constrained | Outcome::Timeout
+                ) {
+                    builder.search_attempt_finished(&guided, elapsed);
+                    fallback = true;
+                } else {
+                    return Some(GoalSearch {
+                        prover: guided,
+                        outcome,
+                        elapsed,
+                        hinted: true,
+                    });
+                }
+            }
+        }
+        if builder.stop_if_requested(&self.build_stopped) {
+            return None;
+        }
+        if fallback {
+            builder.hint_fallbacks += 1;
+        }
         let start = std::time::Instant::now();
         let outcome = prover.verification_search();
         let elapsed = start.elapsed();
         if builder.stop_if_requested(&self.build_stopped) {
             builder.search_attempt_finished(&prover, elapsed);
-            return false;
+            return None;
         }
+        Some(GoalSearch {
+            prover,
+            outcome,
+            elapsed,
+            hinted: false,
+        })
+    }
 
-        let accepted = builder.finish_search(&prover, &goal_context, outcome, elapsed);
+    // Reports a goal exactly once, using the final attempt's accepted proof.
+    fn prove(
+        &self,
+        prover: Prover,
+        guided: Option<Prover>,
+        goal_context: GoalContext,
+        theorem: Option<&str>,
+        builder: &mut Builder,
+    ) -> bool {
+        let Some(search) = self.search_goal(prover, guided, builder) else {
+            return false;
+        };
+        let accepted = builder.finish_search(
+            &search.prover,
+            &goal_context,
+            search.outcome,
+            search.elapsed,
+        );
+        if accepted && search.hinted {
+            builder.hinted_successes += 1;
+        }
         if let Some(theorem) = theorem {
             let premises = if accepted {
-                self.collect_theorem_premises(&prover)
+                self.collect_theorem_premises(&search.prover)
             } else {
                 None
             };
             builder.record_theorem_premises(theorem, premises);
         }
-
         !builder.status.is_error()
     }
 
@@ -2010,3 +2165,6 @@ mod tests {
         // I could test more here. But do I need to?
     }
 }
+
+#[cfg(test)]
+mod theorem_hint_tests;

@@ -135,6 +135,12 @@ pub struct Builder<'a> {
     // Search work includes failed attempts and retries, but excludes cache hits.
     pub searches_total: i32,
 
+    // Actual advisory attempts, accepted hinted proofs and full-search retries.
+    // No counter increases for an attempt cancelled before it starts.
+    pub hinted_searches: i32,
+    pub hinted_successes: i32,
+    pub hint_fallbacks: i32,
+
     // Number of goals successfully proven by a fresh search.
     pub num_success: i32,
 
@@ -180,6 +186,9 @@ impl<'a> Builder<'a> {
             cache_ready: false,
             dataset: None,
             searches_total: 0,
+            hinted_searches: 0,
+            hinted_successes: 0,
+            hint_fallbacks: 0,
             num_success: 0,
             num_cached: 0,
             num_activated: 0,

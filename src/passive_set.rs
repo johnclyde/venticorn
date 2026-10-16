@@ -247,6 +247,11 @@ impl PassiveSet {
         self.push_batch(new_steps);
     }
 
+    // Read the contradiction already detected during insertion without copying steps.
+    pub(crate) fn has_contradiction(&self) -> bool {
+        self.contradiction.is_some()
+    }
+
     // If we don't have both of the clauses, we just return the ones we have.
     // This is wrong but I'm not sure if we'll ever run into it.
     pub fn get_contradiction(&self) -> Option<Vec<ProofStep>> {
