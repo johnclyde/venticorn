@@ -646,6 +646,11 @@ impl<'a> Builder<'a> {
             self.full_searches(),
             self.hinted_searches
         )?;
+        writeln!(
+            writer,
+            "{} filtered searches fell back to full search",
+            self.hint_fallbacks
+        )?;
         if self.searches_total == 0 {
             return Ok(());
         }
@@ -757,6 +762,7 @@ mod tests {
         builder.num_cached = 3;
         builder.searches_total = 2;
         builder.hinted_searches = 1;
+        builder.hint_fallbacks = 1;
         builder.num_activated = 6;
         builder.sum_square_activated = 20;
         builder.num_clauses = 14;
@@ -769,6 +775,7 @@ mod tests {
             "3 goals reused",
             "2 searches performed",
             "1 full searches, 1 filtered searches",
+            "1 filtered searches fell back to full search",
             "3.00 average activations",
             "10.0 mean square activations",
             "7.00 average clauses",
