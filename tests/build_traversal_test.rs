@@ -103,3 +103,27 @@ fn cancellation_from_last_reused_child_stops_before_its_parent() {
     drop(builder);
     assert_eq!(verified, vec![(1, 1)]);
 }
+
+#[test]
+fn cancellation_before_a_goal_free_tail_is_still_reported() {
+    let mut project = Project::new_mock();
+    let source = "theorem first { true }\naxiom tail { true }\n";
+    project.mock("/mock/main.ac", source);
+    let old = project.sync_build_report();
+    assert_eq!(old.status, BuildStatus::Good);
+    project
+        .update_file(PathBuf::from("/mock/main.ac"), &format!("{source}\n"), 1)
+        .unwrap();
+    let mut builder = Builder::with_cache(old.cache.unwrap(), |event| {
+        if event.verified.is_some() {
+            project.stop_build();
+        }
+    });
+    project.build(&mut builder);
+    assert_eq!(builder.status, BuildStatus::Error);
+    assert_eq!(
+        (builder.num_success, builder.num_cached, builder.goals_done),
+        (0, 1, 1)
+    );
+    assert!(builder.cache().is_none());
+}
