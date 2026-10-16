@@ -694,7 +694,7 @@ impl BindingMap {
             if let Some(instance) = instance {
                 let token = TokenType::Identifier.new_token(member);
                 if self
-                    .evaluate_instance_variable(&token, project, instance.clone(), member)
+                    .evaluate_instance_attribute(&token, project, instance.clone(), member)
                     .is_err()
                 {
                     continue;
@@ -1213,9 +1213,8 @@ impl BindingMap {
         Ok(value)
     }
 
-    // Evaluates a variable attached to an instance like foo.bar.
-    // The source identifies the expression responsible for a member lookup error.
-    fn evaluate_instance_variable(
+    // Resolve an instance attribute using the canonical data or class identity.
+    fn evaluate_instance_attribute(
         &self,
         source: &dyn ErrorSource,
         project: &Project,
@@ -1223,20 +1222,36 @@ impl BindingMap {
         name: &str,
     ) -> compilation::Result<AcornValue> {
         let base_type = instance.get_type();
-        if let AcornType::Data(module, type_name, _) = base_type {
-            let bindings = if module == self.module {
-                &self
-            } else {
-                project.get_bindings(module).unwrap()
-            };
-            let constant_name = format!("{}.{}", type_name, name);
-            let function = bindings.get_constant_value(&constant_name).ok_or_else(|| {
-                source.error(&format!("unknown instance variable '{}'", constant_name))
-            })?;
-            self.apply_potential(source, function, vec![instance], None)
+        let (module, type_name, bounded) = match base_type {
+            AcornType::Data(module, name, _) => (module, name, false),
+            AcornType::Variable(name, class) | AcornType::Arbitrary(name, class) => {
+                let class = class.ok_or_else(|| {
+                    source.error(&format!("unqualified type {} has no attributes", name))
+                })?;
+                (class.module_id, class.name, true)
+            }
+            _ => {
+                return Err(source.error(&format!(
+                    "objects of type {:?} have no attributes",
+                    base_type
+                )))
+            }
+        };
+        let bindings = if module == self.module {
+            self
         } else {
-            Err(source.error(&format!("objects of type {:?} have no members", base_type)))
+            project
+                .get_bindings(module)
+                .ok_or_else(|| source.error("could not load bindings for attribute module"))?
+        };
+        let constant_name = format!("{}.{}", type_name, name);
+        let function = bindings
+            .get_constant_value(&constant_name)
+            .ok_or_else(|| source.error(&format!("unknown attribute '{}'", constant_name)))?;
+        if bounded {
+            return Err(source.error("typeclass member specialization is not supported yet"));
         }
+        self.apply_potential(source, function, vec![instance], None)
     }
 
     // Evaluates a single name, which may be namespaced to another named entity.
@@ -1255,7 +1270,8 @@ impl BindingMap {
                 Err(name_token.error("cannot access members of unresolved types"))
             }
             Some(NamedEntity::Value(instance)) => {
-                let value = self.evaluate_instance_variable(name_token, project, instance, name)?;
+                let value =
+                    self.evaluate_instance_attribute(name_token, project, instance, name)?;
                 Ok(NamedEntity::Value(value))
             }
             Some(NamedEntity::Type(t)) => {
@@ -1449,7 +1465,7 @@ impl BindingMap {
         let right_value = self.evaluate_value_with_stack(stack, project, right, None)?;
 
         // Get the partial application to the left
-        let partial = self.evaluate_instance_variable(expression, project, left_value, name)?;
+        let partial = self.evaluate_instance_attribute(expression, project, left_value, name)?;
         let mut fa = match partial {
             AcornValue::Application(fa) => fa,
             _ => {
@@ -1723,7 +1739,7 @@ impl BindingMap {
                         token.error("unexpected unary operator in value expression")
                     })?;
                     let operand = self.evaluate_value_with_stack(stack, project, expr, None)?;
-                    let value = self.evaluate_instance_variable(token, project, operand, name)?;
+                    let value = self.evaluate_instance_attribute(token, project, operand, name)?;
                     check_type(token, expected_type, &value.get_type())?;
                     Ok(value)
                 }
