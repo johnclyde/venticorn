@@ -11,11 +11,8 @@ pub struct Score {
     // Contradictions are the most important thing
     contradiction: bool,
 
-    // Whether this step can be used during verification.
-    // Verification steps should always be activated before non-verification steps.
-    // Otherwise, we might discover a proof using non-verification steps, and then be
-    // unsure whether the proof is simple enough to pass verification or not.
-    usable_for_verification: bool,
+    // We specifically flag steps with a low depth, to check those first.
+    shallow: bool,
 
     // Higher scores are preferred.
     score: OrderedFloat<f32>,
@@ -27,15 +24,15 @@ impl Score {
         if features.is_contradiction {
             return Score {
                 contradiction: true,
-                usable_for_verification: true,
+                shallow: true,
                 score: OrderedFloat(0.0),
             };
         }
-        let usable_for_verification = features.depth < 2;
+        let shallow = features.depth < 2;
         let score = scorer.score(features).unwrap();
         Score {
             contradiction: false,
-            usable_for_verification,
+            shallow,
             score: OrderedFloat(score),
         }
     }
@@ -48,13 +45,18 @@ impl Score {
             .zip(floats.iter())
             .map(|(f, &s)| Score {
                 contradiction: f.is_contradiction,
-                usable_for_verification: f.depth < 2 || f.is_contradiction,
+                shallow: f.depth < 2 || f.is_contradiction,
                 score: OrderedFloat(s),
             })
             .collect()
     }
 
+    // Compatibility alias; production verification is not restricted to these steps.
     pub fn is_usable_for_verification(&self) -> bool {
-        self.usable_for_verification
+        self.is_shallow()
+    }
+
+    pub fn is_shallow(&self) -> bool {
+        self.shallow
     }
 }

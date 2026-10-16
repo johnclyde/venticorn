@@ -94,14 +94,25 @@ fn actual_verifier_proves_negation_and_rejects_a_false_negative_equation() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(output.status.success(), success, "{text}");
-        assert!(
-            text.contains(if success {
-                "1/1 OK"
-            } else {
-                "could not be verified"
-            }),
-            "{text}"
-        );
+        if success {
+            assert!(text.contains("1/1 OK"), "{text}");
+        } else {
+            assert_eq!(output.status.code(), Some(1), "{text}");
+            assert!(text.contains("Build completed with warnings."), "{text}");
+            assert!(text.contains("0/1 OK"), "{text}");
+            assert!(
+                [
+                    "could not be verified",
+                    "stopped after hitting constraints",
+                    "timed out after"
+                ]
+                .iter()
+                .any(|reason| text.contains(&format!("false_equation {reason}"))),
+                "{text}"
+            );
+            assert!(!text.contains("internal error"), "{text}");
+            assert!(!text.contains("panicked"), "{text}");
+        }
         assert!(!text.contains("error:"), "{text}");
     }
     fs::remove_dir_all(root).unwrap();

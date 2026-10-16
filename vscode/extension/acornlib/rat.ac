@@ -1201,3 +1201,345 @@ theorem lt_neg(p: Rat, q: Rat) {
     q + -p > Rat.0
     --q + -p > Rat.0
 }
+
+theorem lt_lte_trans(a: Rat, b: Rat, c: Rat) {
+    a < b and b <= c -> a < c
+} by {
+    if b = c {
+        a < c
+    } else {
+        b < c
+        a < c
+    }
+}
+
+theorem lte_lt_trans(a: Rat, b: Rat, c: Rat) {
+    a <= b and b < c -> a < c
+} by {
+    if a = b {
+        a < c
+    } else {
+        a < b
+        a < c
+    }
+}
+
+theorem lt_imp_rat_between(a: Rat, b: Rat) {
+    a < b -> exists(c: Rat) {
+        a < c and c < b
+    }
+} by {
+    a / Rat.2 < b / Rat.2    
+    a < (a + b) * Rat.2.reciprocal
+    (a + b) * Rat.2.reciprocal < b
+}
+
+theorem gt_imp_rat_between(a: Rat, b: Rat) {
+    a > b -> exists(c: Rat) {
+        a > c and c > b
+    }
+} by {
+    b < a
+    let c: Rat satisfy {
+        b < c and c < a
+    }
+    a > c
+    c > b 
+}
+
+theorem lt_cancel_pos_mul_right(a: Rat, b: Rat, c: Rat) {
+    c.is_positive and a * c < b * c -> a < b
+} by {
+    not b * c < a * c
+    b != a
+    b > a
+}
+
+theorem lt_cancel_pos_mul_left(a: Rat, b: Rat, c: Rat) {
+    c.is_positive and c * a < c * b -> a < b
+} by {
+    not c * b < c * a
+    b != a
+    b > a
+}
+
+theorem gt_cancel_pos_mul_right(a: Rat, b: Rat, c: Rat) {
+    c.is_positive and a * c > b * c -> a > b
+} by {
+    not b * c > a * c
+    b != a
+    b < a
+}
+
+theorem gt_cancel_pos_mul_left(a: Rat, b: Rat, c: Rat) {
+    c.is_positive and c * a > c * b -> a > b
+} by {
+    not c * b > c * a
+    b != a
+    b < a
+}
+
+theorem cancel_positivity_left(a: Rat, b: Rat) {
+    a.is_positive and (a * b).is_positive -> b.is_positive
+} by {
+    if b.is_negative {
+        (a * b).is_negative
+        false
+    }
+}
+
+theorem cancel_positivity_right(a: Rat, b: Rat) {
+    b.is_positive and (a * b).is_positive -> a.is_positive
+}
+
+theorem mul_cancels_div_left(a: Rat, b: Rat) {
+    b != Rat.0 -> b * (a / b) = a
+}
+
+theorem lte_trans(a: Rat, b: Rat, c: Rat) {
+    a <= b and b <= c -> a <= c
+} by {
+    if not a <= c {
+        not c < b
+        not a < c
+        not c > a
+        c != a
+        false
+    }
+}
+
+theorem neg_abs(a: Rat) {
+    (-a).abs = a.abs
+} by {
+    if a.is_negative {
+        a.abs = -a
+        (-a).abs = -a
+        (-a).abs = a.abs 
+    } else {
+        if a = Rat.0 {
+            (-a).abs = a.abs
+        } else {
+            a.is_positive
+            a.abs = a
+            (-a).is_negative
+            (-a).abs = a
+            (-a).abs = a.abs
+        }
+    }
+}
+
+theorem abs_non_pos(a: Rat) {
+    not a.is_positive -> a.abs = -a
+}
+
+theorem abs_non_neg(a: Rat) {
+    not a.is_negative -> a.abs = a
+}
+
+theorem abs_mul_abs(a: Rat, b: Rat) {
+    (a * b).abs = (a * b.abs).abs
+} by {
+    if b.is_positive {
+        b.abs = b
+        (a * b).abs = (a * b.abs).abs
+    } else {
+        b.abs = -b
+        (a * b.abs) = a * -b
+        (a * b.abs) = -(a * b)
+        (a * b.abs).abs = (a * b).abs
+    }
+}
+
+theorem mul_non_neg(a: Rat, b: Rat) {
+    not a.is_negative and not b.is_negative -> not (a * b).is_negative
+} by {
+    if a = Rat.0 {
+        not (a * b).is_negative
+    } else {
+        if b = Rat.0 {
+            not (a * b).is_negative
+        } else {
+            a.is_positive
+            b.is_positive
+            (a * b).is_positive
+            not (a * b).is_negative
+        }
+    }
+}
+
+theorem mul_two_abs(a: Rat, b: Rat) {
+    a.abs * b.abs = (a * b).abs
+} by {
+    (a * b).abs = (a.abs * b.abs).abs
+    not a.abs.is_negative
+    not b.abs.is_negative
+    not (a.abs * b.abs).is_negative
+    (a.abs * b.abs).abs = a.abs * b.abs
+}
+
+theorem abs_zero_imp_zero(a: Rat) {
+    a.abs = Rat.0 implies a = Rat.0
+} by {
+    if a != Rat.0 {
+        a.abs != a
+        a.is_negative
+        a.abs = -a
+        a + Rat.0 != Rat.0
+        a + a.abs != Rat.0
+        false
+    }
+}
+
+theorem zero_lte_abs(a: Rat) {
+    Rat.0 <= a.abs
+} by {
+    if a = Rat.0 {
+        a.abs = Rat.0
+        Rat.0 <= a.abs
+    } else {
+        a.abs != Rat.0
+        a.abs.is_positive
+        Rat.0 <= a.abs
+    }
+}
+
+theorem pos_inverses_lt(p: Rat, q: Rat, r: Rat) {
+    p.is_positive and q.is_positive and r.is_positive
+    and r / p < r / q
+    implies
+    q < p
+} by {
+    r / p * p < r / q * p
+    r / p * p = r
+    r < r / q * p
+    r * q < p * r / q * q
+    (p * r) / q * q = p * r
+    r * q < p * r
+    q * r < p * r
+}
+
+theorem inverses_eq(p: Rat, q: Rat, r: Rat) {
+    p != Rat.0 and q != Rat.0 and r != Rat.0
+    and r / p = r / q
+    implies
+    q = p
+} by {
+    r / p * p = r / q * p
+    r = r / q * p
+    r = p * r / q
+    r * q = p * r / q * q
+    r * q = p * r
+    q * r = p * r
+}
+
+theorem pos_inverses_lte(p: Rat, q: Rat, r: Rat) {
+    p.is_positive and q.is_positive and r.is_positive
+    and r / p <= r / q
+    implies
+    q <= p
+} by {
+    if r / p = r / q {
+        p != Rat.0
+        q != Rat.0
+        q = p
+        q <= p
+    } else {
+        q < p
+        q <= p
+    }
+}
+
+theorem pos_inverses_gt(p: Rat, q: Rat, r: Rat) {
+    p.is_positive and q.is_positive and r.is_positive
+    and r / p > r / q
+    implies
+    q > p
+}
+
+theorem pos_inverses_gte(p: Rat, q: Rat, r: Rat) {
+    p.is_positive and q.is_positive and r.is_positive
+    and r / p >= r / q
+    implies
+    q >= p
+}
+
+theorem lt_cancel_add_right(p: Rat, q: Rat, r: Rat) {
+    p + r < q + r implies p < q
+} by {
+    not q + r < p + r
+    q != p
+    q > p
+}
+
+theorem sub_distrib(p: Rat, q: Rat, r: Rat) {
+    p * (q - r) = p * q - p * r
+} by {
+    p * (q - r) = p * (q + -r)
+    p * (q - r) = p * q + p * -r
+    p * (q - r) = p * q - p * r
+}
+
+theorem half_lt_one {
+    Rat.2.reciprocal < Rat.1
+} by {
+    (Rat.1 / Rat.2).is_positive
+    Rat.2.reciprocal < Rat.2.reciprocal + Rat.1 / Rat.2
+    Rat.2.reciprocal < Rat.1 / Rat.2 + Rat.1 / Rat.2
+}
+
+theorem lower_squared(a: Rat) {
+    a.is_positive
+    implies
+    exists(eps: Rat) {
+        eps.is_positive and eps * eps < a
+    }
+} by {
+    if Rat.1 <= a {
+        let eps: Rat = Rat.2.reciprocal
+        eps.is_positive
+        eps < Rat.1
+        eps * eps < Rat.1
+        eps.is_positive and eps * eps < a
+    } else {
+        a < Rat.1
+        let eps: Rat = a * a
+        eps.is_positive
+        eps.is_positive and eps * eps < a
+    }
+}
+
+theorem square_lt_imp_lt(a: Rat, b: Rat) {
+    a.is_positive and b.is_positive and a * a < b * b
+    implies
+    a < b
+} by {
+    if a >= b {
+        false
+    }
+}
+
+theorem smaller_positive(a: Rat) {
+    a.is_positive implies
+    exists(r: Rat) {
+        r.is_positive and r < a
+    }
+}
+
+// theorem lt_both_pos(a: Rat, b: Rat) {
+//     a.is_positive and b.is_positive implies
+//     exists(r: Rat) {
+//         r.is_positive and r < a and r < b
+//     }
+// } by {
+//     if a < b {
+//         let r: Rat satisfy {
+//             r.is_positive and r < a
+//         }
+//         r.is_positive and r < a and r < b
+//     } else {
+//         let r: Rat satisfy {
+//             r.is_positive and r < b
+//         }
+//         r.is_positive and r < a and r < b
+//     }
+// }
