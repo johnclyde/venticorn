@@ -45,7 +45,7 @@ Install a missing Rust standard library explicitly with `rustup target add TARGE
 
 ### Windows x64 builds
 
-On Windows, run `python python/crossbuild.py x86_64-pc-windows-msvc` in an MSVC developer shell with the Windows SDK and `dumpbin` available. The Python entrypoint does not require Bash. ONNX builds also require an explicit `ORT_LIB_LOCATION` pointing to a static ONNX Runtime 1.19.2 build compatible with the pinned `ort` and `ort-sys` crates. Build that runtime with its `--enable_msvc_static_runtime` option and keep its dependency archives available; do not mix `/MD` runtime objects into a `/MT` build. See the [ONNX Runtime build instructions](https://onnxruntime.ai/docs/build/inferencing.html) and [Microsoft CRT library reference](https://learn.microsoft.com/en-us/cpp/c-runtime-library/crt-library-features).
+On Windows, run `python python/crossbuild.py x86_64-pc-windows-msvc` in an MSVC developer shell with the Windows SDK and `dumpbin` available. The Python entrypoint does not require Bash. ONNX builds also require an explicit `ORT_LIB_LOCATION` pointing to a static ONNX Runtime 1.20.0 build compatible with the pinned `ort` and `ort-sys` crates. Build that runtime with its `--enable_msvc_static_runtime` option and keep its dependency archives available; do not mix `/MD` runtime objects into a `/MT` build. See the [ONNX Runtime build instructions](https://onnxruntime.ai/docs/build/inferencing.html) and [Microsoft CRT library reference](https://learn.microsoft.com/en-us/cpp/c-runtime-library/crt-library-features).
 
 For example, in PowerShell after preparing that runtime:
 

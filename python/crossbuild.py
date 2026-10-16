@@ -86,7 +86,7 @@ def preflight(target, host, no_default_features=False):
         if not no_default_features:
             location = os.environ.get("ORT_LIB_LOCATION")
             if not location or not Path(location).expanduser().is_dir():
-                raise ValueError("Windows ONNX builds require ORT_LIB_LOCATION pointing to an ONNX Runtime 1.19.2 static build; use --no-default-features for the heuristic scorer")
+                raise ValueError("Windows ONNX builds require ORT_LIB_LOCATION pointing to an ONNX Runtime 1.20.0 static build; use --no-default-features for the heuristic scorer")
             if os.environ.get("ORT_PREFER_DYNAMIC_LINK", "0").lower() in ("1", "true"):
                 raise ValueError("Windows releases require a static ONNX Runtime; remove ORT_PREFER_DYNAMIC_LINK")
         if target == host:
