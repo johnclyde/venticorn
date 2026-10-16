@@ -497,6 +497,10 @@ impl Prover {
             proof
                 .all_steps
                 .iter()
+                // Local hypotheses are admitted by the block traversal, not advice.
+                // Simplification can mark a named factual assumption Counterfactual;
+                // its original source is still useful for finding the proof again.
+                .filter(|(_, step)| step.truthiness != Truthiness::Hypothetical)
                 .filter_map(|(_, step)| match &step.rule {
                     Rule::Assumption(info) => info.source.qualified_name(),
                     _ => None,
