@@ -72,7 +72,7 @@ class CrossbuildTest(unittest.TestCase):
     def test_windows_onnx_requires_an_explicit_static_runtime(self):
         target = "x86_64-pc-windows-msvc"
         with patch.dict(os.environ, {}, clear=True), patch.object(build, "require_tool"), patch.object(build, "windows_inspector"):
-            with self.assertRaisesRegex(ValueError, "ORT_LIB_LOCATION"):
+            with self.assertRaisesRegex(ValueError, r"ORT_LIB_LOCATION.*1\.20\.0"):
                 build.preflight(target, target)
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"ORT_LIB_LOCATION": folder, "ORT_PREFER_DYNAMIC_LINK": "true"}, clear=True), patch.object(build, "require_tool"), patch.object(build, "windows_inspector"):
             with self.assertRaisesRegex(ValueError, "static ONNX Runtime"):
