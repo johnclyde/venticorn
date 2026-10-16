@@ -78,6 +78,10 @@ impl Source {
     // Multiple facts can share a source; this is not a unique proof-step identifier.
     // Anonymous claims fall back to their one-based source line.
     pub fn name(&self) -> Option<String> {
+        self.fact_name()
+    }
+
+    pub fn fact_name(&self) -> Option<String> {
         match &self.source_type {
             SourceType::Axiom(name) | SourceType::Theorem(name) => Some(
                 name.clone()
@@ -93,7 +97,11 @@ impl Source {
     // Identity within this loaded project. Convert the module ID to its canonical
     // ModuleRef before retaining this identity across project reloads.
     pub fn qualified_name(&self) -> Option<(ModuleId, String)> {
-        self.name().map(|name| (self.module, name))
+        self.qualified_fact_name()
+    }
+
+    pub fn qualified_fact_name(&self) -> Option<(ModuleId, String)> {
+        self.fact_name().map(|name| (self.module, name))
     }
 
     pub fn is_axiom(&self) -> bool {

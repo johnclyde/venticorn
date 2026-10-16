@@ -56,8 +56,13 @@ pub struct CachedModule {
 }
 
 impl CachedModule {
-    // Advisory source selections retained from completed proofs.
+    // Compatibility accessor; named definition blocks are included too.
     pub fn theorem_premises(&self) -> &BTreeMap<String, PremiseSet> {
+        self.block_premises()
+    }
+
+    // Advisory source selections retained from completed named proof blocks.
+    pub fn block_premises(&self) -> &BTreeMap<String, PremiseSet> {
         &self.theorem_premises
     }
 

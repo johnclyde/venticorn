@@ -1,5 +1,6 @@
 // Modified for Venticorn.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -443,6 +444,19 @@ impl Node {
         }
     }
 
+    // All goals in one named declaration contribute to one advisory premise set.
+    pub(crate) fn block_name(&self) -> Option<Cow<'_, str>> {
+        if let Some(name) = self.theorem_name() {
+            return Some(Cow::Borrowed(name));
+        }
+        match &self.claim.source.source_type {
+            crate::proposition::SourceType::ConstantDefinition(_, name) => {
+                Some(Cow::Borrowed(name))
+            }
+            _ => None,
+        }
+    }
+
     // Goal traversal is postorder, so every subtree occupies a contiguous slice.
     pub(crate) fn num_goals(&self) -> usize {
         usize::from(self.has_goal())
@@ -515,6 +529,14 @@ impl<'a> NodeCursor<'a> {
     pub(crate) fn top_theorem_name(&self) -> Option<&str> {
         let (env, index) = self.annotated_path[0];
         env.nodes[index].theorem_name()
+    }
+
+    pub(crate) fn top_block_name(&self) -> Option<Cow<'_, str>> {
+        if let Some(name) = self.top_theorem_name() {
+            return Some(Cow::Borrowed(name));
+        }
+        let (env, index) = self.annotated_path[0];
+        env.nodes[index].block_name()
     }
 
     // Can use this as an identifier for the iterator, to compare two of them

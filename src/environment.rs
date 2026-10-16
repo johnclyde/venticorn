@@ -1857,7 +1857,7 @@ impl Environment {
                 !node
                     .claim
                     .source
-                    .name()
+                    .fact_name()
                     .is_some_and(|name| names.contains(&name))
             }) {
                 continue;
