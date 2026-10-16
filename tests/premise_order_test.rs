@@ -167,3 +167,45 @@ fn dependency_edits_reverify_with_current_premises_and_mock_versions() {
         .get(&ModuleRef::Name("main".into()))
         .is_none());
 }
+
+#[test]
+fn renamed_imported_premise_replaces_stale_advice_without_speculative_work() {
+    let mut project = project(MAIN);
+    assert_eq!(project.sync_build_report().status, BuildStatus::Good);
+    project.mock("/mock/nat.ac", &format!("// \n{NAT}"));
+    assert_eq!(project.sync_build_report().status, BuildStatus::Good);
+    project.mock(
+        "/mock/nat.ac",
+        &NAT.replace("nz_nonzero", "nz_nonzero_renamed"),
+    );
+    let mut builder = project.builder(|_| {});
+    project.build(&mut builder);
+    assert_eq!(builder.status, BuildStatus::Good);
+    assert_eq!(
+        (
+            builder.searches_total,
+            builder.num_success,
+            builder.num_cached,
+            builder.goals_done
+        ),
+        (5, 5, 0, 5)
+    );
+    // Missing source names bypass the speculative attempt and use full search.
+    assert_eq!(builder.hint_fallbacks, 0);
+    assert!(builder.full_searches() > 0);
+    let hints = builder
+        .cache()
+        .unwrap()
+        .get(&ModuleRef::Name("main".into()))
+        .unwrap()
+        .theorem_premises();
+    assert_eq!(hints.len(), 2);
+    assert!(hints["goal1"].is_empty());
+    assert_eq!(
+        hints["goal2"],
+        BTreeMap::from([(
+            ModuleRef::Name("nat".into()),
+            BTreeSet::from(["Nat.new".into(), "nz_nonzero_renamed".into()])
+        )])
+    );
+}
