@@ -19,6 +19,7 @@ use crate::goal::GoalContext;
 use crate::module::{
     Module, ModuleHash, ModuleHasher, ModuleId, ModuleRecord, ModuleRef, FIRST_NORMAL,
 };
+use crate::persistent_cache::{CachePolicy, PersistentCache};
 use crate::prover::Prover;
 use crate::token::{Token, TokenType};
 
@@ -70,6 +71,8 @@ pub struct Project {
     // Completed builds publish their staged entries atomically. Searches and callbacks
     // never run with this lock held.
     build_cache: Arc<Mutex<BuildCache>>,
+    cache_policy: CachePolicy,
+    persistent_cache: Option<PersistentCache>,
 
     // Used as a flag to stop a build in progress.
     pub build_stopped: Arc<AtomicBool>,
@@ -167,6 +170,8 @@ impl Project {
             module_map: HashMap::new(),
             targets: HashSet::new(),
             build_cache: Arc::new(Mutex::new(BuildCache::default())),
+            cache_policy: CachePolicy::MemoryOnly,
+            persistent_cache: None,
             build_stopped: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -386,9 +391,126 @@ impl Project {
         Ok(())
     }
 
+    // Set explicit persistence policy without changing library selection. Disabling
+    // caches also bypasses in-process reuse, including externally supplied builders.
+    pub fn set_cache_policy(&mut self, policy: CachePolicy) {
+        self.cache_policy = policy;
+        self.persistent_cache = if self.use_filesystem
+            && matches!(policy, CachePolicy::ReadOnly | CachePolicy::ReadWrite)
+        {
+            PersistentCache::new(&self.library_root, policy == CachePolicy::ReadWrite)
+        } else {
+            None
+        };
+    }
+
     // A read-only snapshot of successful entries from completed builds.
     pub fn cached_build(&self) -> BuildCache {
+        if self.cache_policy == CachePolicy::Disabled {
+            return BuildCache::default();
+        }
         self.build_cache.lock().unwrap().clone()
+    }
+
+    // Read all source bytes again before disk reuse/publication. An open editor
+    // snapshot or a dependency changed on disk must not become a saved success.
+    fn current_disk_hashes(&self) -> HashMap<ModuleId, ModuleHash> {
+        fn visit(
+            project: &Project,
+            id: ModuleId,
+            hashes: &mut HashMap<ModuleId, ModuleHash>,
+            visiting: &mut HashSet<ModuleId>,
+            stale: &mut HashSet<ModuleId>,
+            unsaved: &HashSet<PathBuf>,
+        ) -> Option<ModuleHash> {
+            if let Some(hash) = hashes.get(&id) {
+                return Some(hash.clone());
+            }
+            if stale.contains(&id) || !visiting.insert(id) {
+                return None;
+            }
+            let result = (|| {
+                let env = project.get_env_by_id(id)?;
+                let path = project.path_from_module_id(id)?.canonicalize().ok()?;
+                if unsaved.contains(&path) {
+                    return None;
+                }
+                let text = std::fs::read_to_string(path).ok()?;
+                let mut hash = ModuleHasher::new(&text);
+                for dependency in env.bindings.direct_dependencies() {
+                    let dependency_hash =
+                        visit(project, dependency, hashes, visiting, stale, unsaved)?;
+                    hash.add_dependency(
+                        &project.modules[dependency as usize].descriptor,
+                        dependency_hash.fingerprint(),
+                    );
+                }
+                let hash = hash.finish();
+                (project.get_module_hash(id) == Some(&hash)).then_some(hash)
+            })();
+            visiting.remove(&id);
+            if let Some(hash) = &result {
+                hashes.insert(id, hash.clone());
+            } else {
+                stale.insert(id);
+            }
+            result
+        }
+        let mut hashes = HashMap::new();
+        let mut visiting = HashSet::new();
+        let mut stale = HashSet::new();
+        if self.use_filesystem {
+            // Editor keys retain their original URI paths. An unsaved overlay
+            // reached through a symlink or lexical alias must also exclude the
+            // canonical named module and every importer from persistence.
+            let unsaved = self
+                .open_files
+                .iter()
+                .filter_map(|(path, (text, _))| {
+                    let canonical = path.canonicalize().ok()?;
+                    (std::fs::read_to_string(&canonical).ok().as_deref() != Some(text.as_str()))
+                        .then_some(canonical)
+                })
+                .collect::<HashSet<_>>();
+            for id in FIRST_NORMAL..self.modules.len() as ModuleId {
+                visit(self, id, &mut hashes, &mut visiting, &mut stale, &unsaved);
+            }
+        }
+        hashes
+    }
+
+    fn persist_completed(&self, completed: &BuildCache) {
+        let Some(storage) = &self.persistent_cache else {
+            return;
+        };
+        if self.cache_policy != CachePolicy::ReadWrite {
+            return;
+        }
+        for (id, hash) in self.current_disk_hashes() {
+            let module = &self.modules[id as usize].descriptor;
+            let Some(cached) = completed.get(module) else {
+                continue;
+            };
+            let env = self.get_env_by_id(id).unwrap();
+            let goals = env
+                .iter_goals()
+                .map(|node| node.goal_context().expect("parsed goal"))
+                .collect::<Vec<_>>();
+            let ranges = goals
+                .iter()
+                .map(|goal| (goal.first_line, goal.last_line))
+                .collect::<Vec<_>>();
+            if cached.module_hash() != &hash || cached.verified() != ranges {
+                continue;
+            }
+            if let Some(record) = storage.record(module, &hash, &goals, |id| {
+                self.modules
+                    .get(id as usize)
+                    .map(|module| module.descriptor.clone())
+            }) {
+                storage.save(&record);
+            }
+        }
     }
 
     // Create a single-build handler using the last completed cache snapshot.
@@ -468,8 +590,13 @@ impl Project {
                 .load(std::sync::atomic::Ordering::Relaxed)
                 && builder.goals_done == builder.goals_total,
         );
-        if let Some(completed) = builder.cache() {
-            self.build_cache.lock().unwrap().merge_completed(completed);
+        if self.cache_policy != CachePolicy::Disabled {
+            if let Some(completed) = builder.cache() {
+                self.build_cache.lock().unwrap().merge_completed(completed);
+                if builder.status.is_good() && builder.dataset.is_none() {
+                    self.persist_completed(completed);
+                }
+            }
         }
     }
 
@@ -509,7 +636,9 @@ impl Project {
         });
         // Reuse policy belongs with the parsed module graph. The builder only records
         // outcomes and retains compatible snapshots of completed evidence.
-        let reuse_enabled = builder.dataset.is_none() && dependencies_verified;
+        let reuse_enabled = self.cache_policy != CachePolicy::Disabled
+            && builder.dataset.is_none()
+            && dependencies_verified;
         if builder.stop_if_requested(&self.build_stopped) {
             builder.module_proving_complete(target);
             return;
