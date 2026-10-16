@@ -61,7 +61,7 @@ pub struct DefineStatement {
 pub struct TheoremStatement {
     pub axiomatic: bool,
     pub name: Option<String>,
-    pub type_params: Vec<Token>,
+    pub type_params: Vec<TypeParam>,
     pub args: Vec<Declaration>,
     pub claim: Expression,
     pub claim_right_brace: Token,
@@ -137,7 +137,7 @@ pub struct FunctionSatisfyStatement {
 pub struct StructureStatement {
     pub name: String,
     pub name_token: Token,
-    pub type_params: Vec<Token>,
+    pub type_params: Vec<TypeParam>,
 
     // Each field contains a field name-token and a type expression
     pub fields: Vec<(Token, Expression)>,
@@ -178,7 +178,7 @@ pub struct ImportStatement {
 pub struct ClassStatement {
     pub name: String,
     pub name_token: Token,
-    pub type_params: Vec<Token>,
+    pub type_params: Vec<TypeParam>,
 
     // The body of a class statement
     pub body: Body,
@@ -303,24 +303,6 @@ fn parse_block(tokens: &mut TokenIter) -> Result<(Vec<Statement>, Token)> {
     }
 }
 
-// Parse optional type parameters separately from value arguments.
-fn parse_params(tokens: &mut TokenIter) -> Result<Vec<Token>> {
-    if tokens.peek_type() != Some(TokenType::LessThan) {
-        return Ok(vec![]);
-    }
-    tokens.next();
-    let mut params = vec![];
-    loop {
-        params.push(tokens.expect_type(TokenType::Identifier)?);
-        let token = tokens.expect_token()?;
-        match token.token_type {
-            TokenType::GreaterThan => return Ok(params),
-            TokenType::Comma => {}
-            _ => return Err(token.error("expected '>' or ',' in type parameters")),
-        }
-    }
-}
-
 // Parse an optional parenthesized argument list, then consume the terminator.
 fn parse_args(tokens: &mut TokenIter, terminator: TokenType) -> Result<(Vec<Declaration>, Token)> {
     let token = tokens.expect_token()?;
@@ -379,7 +361,7 @@ fn parse_theorem_statement(
         Some(TokenType::LeftParen) | Some(TokenType::LeftBrace) | Some(TokenType::LessThan) => None,
         _ => Some(tokens.expect_variable_name(false)?.text().to_string()),
     };
-    let type_params = parse_params(tokens)?;
+    let type_params = TypeParam::parse_list(tokens)?;
     let (args, _) = parse_args(tokens, TokenType::LeftBrace)?;
     let (claim, claim_right_brace) =
         Expression::parse_value(tokens, Terminator::Is(TokenType::RightBrace))?;
@@ -612,7 +594,7 @@ fn parse_if_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statemen
 // Parses a structure statement where the "structure" keyword has already been found.
 fn parse_structure_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let name_token = tokens.expect_type_name()?;
-    let type_params = parse_params(tokens)?;
+    let type_params = TypeParam::parse_list(tokens)?;
     tokens.expect_type(TokenType::LeftBrace)?;
     let mut fields = Vec::new();
     while let Some(token) = tokens.peek() {
@@ -798,7 +780,7 @@ fn parse_from_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statem
 // Parses a class statement where the "class" keyword has already been found.
 fn parse_class_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
     let name_token = tokens.expect_type_name()?;
-    let type_params = parse_params(tokens)?;
+    let type_params = TypeParam::parse_list(tokens)?;
     let left_brace = tokens.expect_type(TokenType::LeftBrace)?;
     let (statements, right_brace) = parse_block(tokens)?;
     let body = Body {
@@ -975,7 +957,7 @@ fn write_args(f: &mut fmt::Formatter, args: &[Declaration]) -> fmt::Result {
 fn write_theorem(
     f: &mut fmt::Formatter,
     indentation: &str,
-    type_params: &[Token],
+    type_params: &[TypeParam],
     args: &[Declaration],
     claim: &Expression,
 ) -> fmt::Result {

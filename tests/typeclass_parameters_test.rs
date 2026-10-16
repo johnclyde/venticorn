@@ -66,3 +66,33 @@ fn malformed_bound_lists_are_rejected() {
         assert!(Statement::parse_str(source).is_err(), "{source}");
     }
 }
+
+#[test]
+fn all_declaration_parameter_lists_retain_bounds_without_accepting_them() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    for source in [
+        "theorem reflexive<T: Magma>(value: T) { value = value }",
+        "structure Box<T: Magma> {\n value: T\n}",
+        "class Pair<T: Magma> {\n define same(self) -> Bool { true }\n}",
+    ] {
+        let statement = Statement::parse_str(source).unwrap();
+        let code = statement.to_string();
+        assert!(code.contains("T: Magma"));
+        assert_eq!(Statement::parse_str(&code).unwrap().to_string(), code);
+        let mut env = Environment::new_test();
+        env.add("typeclass M: Magma {\n mul: (M, M) -> M\n}\nstructure Pair<U> {\n value: U\n}");
+        let error = env
+            .add_statement(&mut Project::new_mock(), &statement)
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("typeclass bounds are not supported yet"),
+            "{error}"
+        );
+        for name in ["T", "Box", "Box.new", "Pair.same", "reflexive"] {
+            assert!(!env.bindings.name_in_use(name), "{name}");
+        }
+    }
+}

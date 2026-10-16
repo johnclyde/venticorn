@@ -486,7 +486,7 @@ impl Environment {
         let (param_names, _, arg_types, unbound_value, value_type) =
             self.bindings.evaluate_scoped_value(
                 project,
-                &TypeParam::unconstrained_tokens(&ds.type_params)?,
+                &ds.type_params,
                 &ds.args,
                 Some(&ds.return_type),
                 &ds.return_value,
@@ -800,7 +800,7 @@ impl Environment {
 
         let mut param_names = vec![];
         let mut arbitrary_params = vec![];
-        for token in &ss.type_params {
+        for token in &TypeParam::unconstrained_tokens(&ss.type_params)? {
             if token.text() == ss.name || self.bindings.name_in_use(token.text()) {
                 return Err(token.error("type parameter already defined in this scope"));
             }
@@ -1700,7 +1700,7 @@ impl Environment {
                 }
                 let mut param_names = Vec::with_capacity(cs.type_params.len());
                 let mut actuals = Vec::with_capacity(cs.type_params.len());
-                for token in &cs.type_params {
+                for token in &TypeParam::unconstrained_tokens(&cs.type_params)? {
                     if self.bindings.name_in_use(token.text()) {
                         return Err(token.error("type parameter already defined in this scope"));
                     }
