@@ -436,6 +436,21 @@ impl Node {
         }
     }
 
+    pub(crate) fn theorem_name(&self) -> Option<&str> {
+        match &self.claim.source.source_type {
+            crate::proposition::SourceType::Theorem(name) => name.as_deref(),
+            _ => None,
+        }
+    }
+
+    // Goal traversal is postorder, so every subtree occupies a contiguous slice.
+    pub(crate) fn num_goals(&self) -> usize {
+        usize::from(self.has_goal())
+            + self.block.as_ref().map_or(0, |block| {
+                block.env.nodes.iter().map(Node::num_goals).sum::<usize>()
+            })
+    }
+
     // Whether this node corresponds to a goal that needs to be proved.
     pub fn has_goal(&self) -> bool {
         if self.structural {
@@ -495,10 +510,7 @@ impl<'a> NodeCursor<'a> {
     // All goals below a named top-level theorem contribute to one premise hint.
     pub(crate) fn top_theorem_name(&self) -> Option<&str> {
         let (env, index) = self.annotated_path[0];
-        match &env.nodes[index].claim.source.source_type {
-            crate::proposition::SourceType::Theorem(name) => name.as_deref(),
-            _ => None,
-        }
+        env.nodes[index].theorem_name()
     }
 
     // Can use this as an identifier for the iterator, to compare two of them

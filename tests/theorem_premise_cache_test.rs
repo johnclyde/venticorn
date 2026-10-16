@@ -54,7 +54,11 @@ fn completed_theorem_unions_reachable_sources_and_retains_them_on_reuse() {
             .count(),
         4
     );
-    let expanded = hints(&project, &named("main"));
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!((report.num_success, report.num_cached), (1, 3));
+    let cache = report.cache.unwrap();
+    let expanded = cache.get(&named("main")).unwrap().theorem_premises();
     assert_eq!(expanded["both"], original["both"]);
     assert_eq!(expanded["extra"], PremiseSet::new());
 }

@@ -31,6 +31,7 @@ struct ModuleVerification<'a> {
     reuse_enabled: bool,
     hints_enabled: bool,
     goal_index: usize,
+    goals: &'a [GoalContext],
 }
 
 // A synchronous build's actual proof counts and completed metadata. The cache is
@@ -700,11 +701,16 @@ impl Project {
             return;
         }
         if reuse_enabled && builder.previous_cache().matches(target, hash, &ranges) {
-            for (goal, node) in goals.iter().zip(env.iter_goals()) {
+            // Retain one complete hint per theorem, not one clone per nested goal.
+            for node in &env.nodes {
+                if node.num_goals() > 0 {
+                    self.retain_theorem_premises(target, node.theorem_name(), builder);
+                }
+            }
+            for goal in &goals {
                 if builder.stop_if_requested(&self.build_stopped) {
                     break;
                 }
-                self.retain_theorem_premises(target, node.top_theorem_name(), builder);
                 builder.cached_goal_finished(goal);
             }
         } else if !env.nodes.is_empty() {
@@ -715,6 +721,7 @@ impl Project {
                 hints_enabled: self.cache_policy != CachePolicy::Disabled
                     && builder.dataset.is_none(),
                 goal_index: 0,
+                goals: &goals,
             };
             let mut prover = Prover::new(self, false);
             for fact in self.imported_facts(env.module_id) {
@@ -722,7 +729,11 @@ impl Project {
             }
             let mut node = NodeCursor::new(env, 0);
             loop {
-                if !self.verify_build_node(&prover, &mut node, &mut context, builder) {
+                let keep_going = match self.reuse_verified_block(&node, &mut context, builder) {
+                    Some(keep_going) => keep_going,
+                    None => self.verify_build_node(&prover, &mut node, &mut context, builder),
+                };
+                if !keep_going {
                     break;
                 }
                 if !node.has_next() {
@@ -734,6 +745,46 @@ impl Project {
         }
 
         builder.module_proving_complete(target);
+    }
+
+    // Skip prover construction only if every current obligation in the block
+    // matches completed typed evidence, including its complete enclosing scope.
+    fn reuse_verified_block(
+        &self,
+        node: &NodeCursor,
+        context: &mut ModuleVerification,
+        builder: &mut Builder,
+    ) -> Option<bool> {
+        if builder.stop_if_requested(&self.build_stopped) {
+            return Some(false);
+        }
+        if !context.reuse_enabled {
+            return None;
+        }
+        let hash = context.hash?;
+        let end = context.goal_index + node.current().num_goals();
+        let goals = &context.goals[context.goal_index..end];
+        if !goals.iter().enumerate().all(|(offset, goal)| {
+            builder.previous_cache().matches_prefix(
+                context.target,
+                hash,
+                goal,
+                context.goal_index + offset,
+            )
+        }) {
+            return None;
+        }
+        if !goals.is_empty() {
+            self.retain_theorem_premises(context.target, node.top_theorem_name(), builder);
+        }
+        for goal in goals {
+            if builder.stop_if_requested(&self.build_stopped) {
+                return Some(false);
+            }
+            builder.cached_goal_finished(goal);
+            context.goal_index += 1;
+        }
+        Some(true)
     }
 
     // Children are checked before their containing goal. Only earlier siblings
