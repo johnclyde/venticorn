@@ -776,7 +776,7 @@ impl Project {
                 let keep_going = match self.reuse_verified_block(&node, &mut context, builder) {
                     Some(keep_going) => keep_going,
                     None => {
-                        let guided = if context.hints_enabled {
+                        let guided = if context.hints_enabled && node.current().num_goals() > 0 {
                             node.top_block_name()
                                 .and_then(|name| {
                                     builder
