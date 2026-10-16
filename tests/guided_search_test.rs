@@ -138,8 +138,8 @@ fn nested_body_sources_remain_usable_without_early_admission() {
     let cache = cold.cache.unwrap();
     let names = &cache.get(&main_ref()).unwrap().theorem_premises()["goal"][&main_ref()];
     assert!(
-        names.contains("8"),
-        "expected actual body source: {names:?}"
+        !names.contains("8"),
+        "local body hypotheses must not be stored as premise advice: {names:?}"
     );
     edit(
         &mut project,
