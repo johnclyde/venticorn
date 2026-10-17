@@ -41,7 +41,7 @@ fn reject_false(source: &str) {
 }
 
 #[test]
-fn generic_conditions_retain_the_bound_and_source_without_callable_names() {
+fn generic_conditions_retain_the_bound_source_and_callable_metadata() {
     let mut env = Environment::new_test();
     env.add(SINGLETON);
     let class = Typeclass {
@@ -97,11 +97,15 @@ fn generic_conditions_retain_the_bound_and_source_without_callable_names() {
     assert_eq!(env.nodes[0].claim.source.range, condition.range);
     assert!(env.iter_goals().next().is_none());
     assert!(!env.bindings.name_in_use("S"));
-    // Callable publication is the next independent checkpoint.
-    assert!(env
-        .bindings
-        .get_constant_value("Singleton.unique")
-        .is_none());
+    assert_eq!(
+        env.bindings.get_params("Singleton.unique"),
+        [info.instance_param.clone()]
+    );
+    assert_eq!(
+        env.bindings.get_definition("Singleton.unique"),
+        Some(&condition.definition)
+    );
+    assert!(env.bindings.is_theorem("Singleton.unique"));
 }
 
 #[test]
