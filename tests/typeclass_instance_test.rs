@@ -679,3 +679,19 @@ fn typechecking_captures_instance_relationships_853() {
             "#,
     );
 }
+
+#[test]
+#[ignore = "pending bounded type attribute support"]
+fn arbitrary_type_attributes_854() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass F: Flagged {
+                flag: Bool
+            }
+            theorem goal<F: Flagged> {
+                F.flag or not F.flag
+            }
+            "#,
+    );
+}
