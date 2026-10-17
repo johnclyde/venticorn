@@ -82,6 +82,7 @@ fn invalid_family_actuals_and_conflicting_reopenings_roll_back() {
             error.message().contains("bound")
                 || error.message().contains("parameters")
                 || error.message().contains("defined")
+                || error.message().contains("duplicate type parameter")
                 || error.message().contains("expected type"),
             "{error}"
         );

@@ -804,22 +804,25 @@ impl Environment {
             return Err(statement.error("type name already defined in this scope"));
         }
 
-        let mut param_names = vec![];
-        let mut arbitrary_params = vec![];
-        for param in &ss.type_params {
-            let token = &param.name;
-            if token.text() == ss.name || self.bindings.name_in_use(token.text()) {
-                return Err(token.error("type parameter already defined in this scope"));
-            }
-            let class = param
-                .typeclass
-                .as_ref()
-                .map(|bound| self.bindings.evaluate_typeclass(project, bound))
-                .transpose()?;
-            param_names.push(token.text().to_string());
+        let formals = self
+            .bindings
+            .evaluate_type_params(project, &ss.type_params)?;
+        if let Some(param) = ss
+            .type_params
+            .iter()
+            .find(|param| param.name.text() == ss.name)
+        {
+            return Err(param
+                .name
+                .error("type parameter already defined in this scope"));
+        }
+        let mut param_names = Vec::with_capacity(formals.len());
+        let mut arbitrary_params = Vec::with_capacity(formals.len());
+        for param in &formals {
+            param_names.push(param.name.clone());
             arbitrary_params.push(
                 self.bindings
-                    .add_arbitrary_type_with_class(token.text(), class.as_ref()),
+                    .add_arbitrary_type_with_class(&param.name, param.typeclass.as_ref()),
             );
         }
 
@@ -1456,16 +1459,14 @@ impl Environment {
                 cs.type_params.len()
             )));
         }
-        let mut param_names = Vec::with_capacity(cs.type_params.len());
-        let mut actuals = Vec::with_capacity(cs.type_params.len());
-        for (param, formal) in cs.type_params.iter().zip(declared) {
-            let token = &param.name;
-            if self.bindings.name_in_use(token.text()) {
-                return Err(token.error("type parameter already defined in this scope"));
-            }
-            if let Some(bound) = &param.typeclass {
-                let explicit = self.bindings.evaluate_typeclass(project, bound)?;
-                if formal.typeclass.as_ref() != Some(&explicit) {
+        let params = self
+            .bindings
+            .evaluate_type_params(project, &cs.type_params)?;
+        let mut param_names = Vec::with_capacity(params.len());
+        let mut actuals = Vec::with_capacity(params.len());
+        for ((param, expression), formal) in params.iter().zip(&cs.type_params).zip(declared) {
+            if let Some(bound) = &expression.typeclass {
+                if param.typeclass != formal.typeclass {
                     return Err(
                         bound.error("class parameter bound conflicts with the type declaration")
                     );
@@ -1473,9 +1474,9 @@ impl Environment {
             }
             actuals.push(
                 self.bindings
-                    .add_arbitrary_type_with_class(token.text(), formal.typeclass.as_ref()),
+                    .add_arbitrary_type_with_class(&param.name, formal.typeclass.as_ref()),
             );
-            param_names.push(token.text().to_string());
+            param_names.push(param.name.clone());
         }
         let class_type = potential.resolve(actuals, &cs.name_token)?;
         for substatement in &cs.body.statements {
