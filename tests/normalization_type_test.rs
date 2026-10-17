@@ -22,7 +22,7 @@ fn unresolved_type_metadata_is_rejected_for_variables_and_all_constants() {
         let error = Normalizer::new()
             .term_from_value(&value, false)
             .unwrap_err();
-        assert!(error.0.contains("must be instantiated"), "{error:?}");
+        assert!(error.contains("must be instantiated"), "{error:?}");
     }
 }
 
@@ -45,7 +45,7 @@ fn unsupported_function_shapes_return_errors_instead_of_type_map_panics() {
             let error = Normalizer::new()
                 .term_from_value(&constant(typ.clone(), params), false)
                 .unwrap_err();
-            assert!(error.0.contains(message), "{error:?}");
+            assert!(error.contains(message), "{error:?}");
         }
         let nested = AcornType::new_functional(vec![typ], AcornType::Bool);
         let value = constant(nested, vec![]);
@@ -66,5 +66,5 @@ fn unsupported_function_shapes_return_errors_instead_of_type_map_panics() {
     let error = Normalizer::new()
         .term_from_value(&application, false)
         .unwrap_err();
-    assert!(error.0.contains("must be instantiated"), "{error:?}");
+    assert!(error.contains("must be instantiated"), "{error:?}");
 }

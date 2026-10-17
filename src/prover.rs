@@ -17,7 +17,7 @@ use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
-use crate::normalizer::{NormalizationError, Normalizer};
+use crate::normalizer::Normalizer;
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
@@ -157,7 +157,7 @@ impl Prover {
     fn add_monomorphic_fact(&mut self, fact: Fact) {
         let mut steps = match self.normalizer.normalize_monomorphic_fact(fact) {
             Ok(steps) => steps,
-            Err(NormalizationError(error)) => {
+            Err(error) => {
                 self.error = Some(error);
                 return;
             }
@@ -209,7 +209,7 @@ impl Prover {
                 Ok(term) => {
                     self.goal = Some(NormalizedGoal::Solve(term));
                 }
-                Err(NormalizationError(s)) => {
+                Err(s) => {
                     self.error = Some(s);
                 }
             },

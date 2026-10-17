@@ -35,3 +35,27 @@ fn direct_normalization_reports_non_boolean_values_without_panicking() {
         result => panic!("non-Boolean value was normalized: {result:?}"),
     }
 }
+
+#[test]
+fn term_normalization_returns_the_original_diagnostic_as_a_string() {
+    let error: String = Normalizer::new()
+        .term_from_value(&AcornValue::Bool(false), false)
+        .unwrap_err();
+    assert_eq!(error, "Cannot convert false to term");
+}
+
+#[test]
+fn structured_skolem_names_keep_their_exact_rejection_diagnostic() {
+    use venticorn::constant_name::{GlobalConstantName, LocalConstantName};
+    use venticorn::module::SKOLEM;
+
+    let value = AcornValue::constant_named(
+        GlobalConstantName::new(SKOLEM, LocalConstantName::attribute("Type", "member")),
+        vec![],
+        AcornType::Bool,
+    );
+    let error: String = Normalizer::new()
+        .term_from_value(&value, false)
+        .unwrap_err();
+    assert_eq!(error, "invalid structured skolem name");
+}
