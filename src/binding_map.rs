@@ -531,7 +531,7 @@ impl BindingMap {
     // Availability checks deliberately cover every namespace. Dotted spelling
     // collisions must be rejected even when structured canonical identities differ.
     pub fn lowercase_name_in_use(&self, name: &str) -> bool {
-        self.constant_name_in_use(&LocalConstantName::Unqualified(name.to_string()))
+        self.constant_name_in_use(&LocalConstantName::unqualified(name))
     }
 
     pub fn constant_name_in_use(&self, name: &LocalConstantName) -> bool {

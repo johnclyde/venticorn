@@ -20,13 +20,13 @@ fn structured_availability_preserves_all_namespace_collisions() {
         assert!(bindings.typename_in_use(name), "{}", name);
         assert!(bindings.lowercase_name_in_use(name), "{}", name);
         assert!(
-            bindings.constant_name_in_use(&LocalConstantName::Unqualified(name.into())),
+            bindings.constant_name_in_use(&LocalConstantName::unqualified(name)),
             "{}",
             name
         );
     }
     assert!(!bindings.typename_in_use("unused"));
-    assert!(!bindings.constant_name_in_use(&LocalConstantName::Unqualified("unused".into())));
+    assert!(!bindings.constant_name_in_use(&LocalConstantName::unqualified("unused")));
     assert!(bindings.has_typename("Data"));
     assert!(!bindings.has_constant_name("Data"));
     assert!(bindings.has_constant_name("value"));
@@ -44,4 +44,24 @@ fn structured_availability_preserves_all_namespace_collisions() {
         Some(&AcornType::Data(FIRST_NORMAL, "Data".into(), vec![]))
     );
     assert!(bindings.get_type_for_typename("Data").is_some());
+}
+
+#[test]
+fn constructors_retain_complete_class_and_target_identity() {
+    let class = Typeclass {
+        module_id: FIRST_NORMAL + 1,
+        name: "Magma".into(),
+    };
+    assert_eq!(
+        LocalConstantName::unqualified("x"),
+        LocalConstantName::Unqualified("x".into())
+    );
+    assert_eq!(
+        LocalConstantName::attribute("State", "flag"),
+        LocalConstantName::Attribute("State".into(), "flag".into())
+    );
+    assert_eq!(
+        LocalConstantName::instance(&class, "combine", "State"),
+        LocalConstantName::Instance(class, "combine".into(), "State".into())
+    );
 }
