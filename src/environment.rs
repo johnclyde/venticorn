@@ -1637,17 +1637,12 @@ impl Environment {
                 }
                 _ => unreachable!(),
             }
-            let full_name = format!("{}.{}", scope_name, member_name);
-            let actual = self
-                .bindings
-                .get_constant_value(&full_name)
-                .and_then(|value| value.resolved());
-            if actual.as_ref().map(AcornValue::get_type).as_ref() != Some(&expected) {
-                return Err(member_token.error(&format!(
-                    "instance member '{}' must have type {}",
-                    member_name, expected
-                )));
-            }
+            self.bindings.typecheck_instance_attribute(
+                member_token,
+                &scope_name,
+                member_name,
+                &expected,
+            )?;
         }
         if let Some(missing) = required.keys().next() {
             return Err(instance.typeclass.error(&format!(
