@@ -12,6 +12,8 @@ use crate::literal::Literal;
 use crate::module::SKOLEM;
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_scope::ProofScope;
+use crate::proof_step::ProofStep;
+use crate::proposition::SourceType;
 use crate::term::{Term, TypeId};
 use crate::type_map::TypeMap;
 
@@ -444,8 +446,13 @@ impl Normalizer {
         self.normalize_cnf(value, local)
     }
 
-    // Converts a value to CNF.
+    // Compatibility facade for callers inspecting normalized values directly.
     pub fn normalize(&mut self, value: &AcornValue, local: bool) -> Normalization {
+        self.normalize_value(value, local)
+    }
+
+    // Converts a checked Boolean value to CNF.
+    pub fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Normalization {
         // Validate every value before transformations inspect application or match types.
         if let Err(error) = value.validate() {
             return Normalization::Error(format!(
@@ -473,6 +480,33 @@ impl Normalizer {
         }
 
         self.convert_then_normalize(value, local)
+    }
+
+    // A monomorphic fact retains its original source and truthiness on every emitted step.
+    pub fn normalize_monomorphic_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>> {
+        let local = fact.local();
+        let defined = match &fact.source.source_type {
+            SourceType::ConstantDefinition(value, _) => {
+                Some(self.term_from_value(value, local)?.get_head().clone())
+            }
+            _ => None,
+        };
+        let clauses = match self.normalize_value(&fact.value, local) {
+            Normalization::Clauses(clauses) => clauses,
+            Normalization::Impossible => {
+                return Ok(vec![ProofStep::assumption(
+                    Clause::impossible(),
+                    fact.truthiness,
+                    &fact.source,
+                    None,
+                )]);
+            }
+            Normalization::Error(error) => return Err(NormalizationError(error)),
+        };
+        Ok(clauses
+            .into_iter()
+            .map(|clause| ProofStep::assumption(clause, fact.truthiness, &fact.source, defined))
+            .collect())
     }
 
     // Variables are left unbound. Their types are accumulated.
@@ -989,6 +1023,80 @@ mod ownership_tests {
         for mut normalizer in [Normalizer::with_scope(denied), Normalizer::new()] {
             assert!(normalizer.monomorphize_fact(fact.clone()).is_empty());
             assert!(normalizer.monomorphize_for_value(&demand).is_empty());
+        }
+    }
+}
+
+#[cfg(test)]
+mod fact_step_tests {
+    use super::*;
+    use crate::proof_step::{Rule, Truthiness};
+    use crate::proposition::Source;
+
+    #[test]
+    fn normalized_fact_steps_retain_source_locality_and_defined_atom() {
+        for truthiness in [
+            Truthiness::Factual,
+            Truthiness::Hypothetical,
+            Truthiness::Counterfactual,
+        ] {
+            let value = AcornValue::constant(2, "flag".into(), vec![], AcornType::Bool);
+            let mut source = Source::mock();
+            source.module = 2;
+            source.range.start.line = 7;
+            source.range.end.line = 9;
+            source.source_type = SourceType::ConstantDefinition(value.clone(), "flag".into());
+            let mut normalizer = Normalizer::new();
+            let steps = normalizer
+                .normalize_monomorphic_fact(Fact {
+                    value: value.clone(),
+                    source: source.clone(),
+                    truthiness,
+                })
+                .unwrap();
+            assert_eq!(steps.len(), 1);
+            let step = &steps[0];
+            assert_eq!(step.truthiness, truthiness);
+            let Rule::Assumption(info) = &step.rule else {
+                panic!("expected original assumption")
+            };
+            assert_eq!(info.source, source);
+            assert!(
+                matches!(info.defined_atom, Some(Atom::GlobalConstant(_)))
+                    == (truthiness == Truthiness::Factual)
+            );
+            assert!(
+                matches!(info.defined_atom, Some(Atom::LocalConstant(_)))
+                    == (truthiness != Truthiness::Factual)
+            );
+            assert_eq!(normalizer.denormalize(&step.clause), value);
+        }
+    }
+
+    #[test]
+    fn false_fact_remains_one_impossible_assumption_with_original_provenance() {
+        let mut source = Source::mock();
+        source.range.start.line = 12;
+        for truthiness in [
+            Truthiness::Factual,
+            Truthiness::Hypothetical,
+            Truthiness::Counterfactual,
+        ] {
+            let steps = Normalizer::new()
+                .normalize_monomorphic_fact(Fact {
+                    value: AcornValue::Bool(false),
+                    source: source.clone(),
+                    truthiness,
+                })
+                .unwrap();
+            assert_eq!(steps.len(), 1);
+            assert!(steps[0].clause.is_impossible());
+            assert_eq!(steps[0].truthiness, truthiness);
+            let Rule::Assumption(info) = &steps[0].rule else {
+                panic!("expected original assumption")
+            };
+            assert_eq!(info.source, source);
+            assert_eq!(info.defined_atom, None);
         }
     }
 }
