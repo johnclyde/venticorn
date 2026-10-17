@@ -817,6 +817,30 @@ impl BindingMap {
         definition: Option<AcornValue>,
         constructor: Option<(AcornType, usize, usize)>,
     ) {
+        self.insert_constant_named(name, params, constant_type, definition, constructor);
+    }
+
+    // Return an independent value only when the caller needs the inserted declaration.
+    pub fn add_constant_value(
+        &mut self,
+        name: &LocalConstantName,
+        params: Vec<TypeParam>,
+        constant_type: AcornType,
+        definition: Option<AcornValue>,
+        constructor: Option<(AcornType, usize, usize)>,
+    ) -> PotentialValue {
+        self.insert_constant_named(name, params, constant_type, definition, constructor)
+            .clone()
+    }
+
+    fn insert_constant_named(
+        &mut self,
+        name: &LocalConstantName,
+        params: Vec<TypeParam>,
+        constant_type: AcornType,
+        definition: Option<AcornValue>,
+        constructor: Option<(AcornType, usize, usize)>,
+    ) -> &PotentialValue {
         let string_name = name.to_string();
         let name = string_name.as_str();
         if self.name_in_use(name) {
@@ -855,7 +879,7 @@ impl BindingMap {
             definition,
             constructor,
         };
-        self.constant_info.insert(name.to_string(), info);
+        &self.constant_info.entry(string_name).or_insert(info).value
     }
 
     // Adds a local alias for an already-existing constant.
@@ -3762,5 +3786,52 @@ mod alias_metadata_tests {
             )
             .unwrap();
         assert_eq!(unknown.get("State.Marked.alias"), Some(&AcornType::Bool));
+    }
+}
+
+#[cfg(test)]
+mod insertion_value_tests {
+    use super::*;
+
+    #[test]
+    fn inserted_values_are_complete_independent_and_do_not_grant_membership() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let formals = vec![TypeParam {
+            name: "Unused".into(),
+            typeclass: Some(class.clone()),
+        }];
+        let name = LocalConstantName::instance(&class, "flag", "Data");
+        let mut returned =
+            bindings.add_constant_value(&name, formals.clone(), AcornType::Bool, None, None);
+        assert_eq!(
+            returned,
+            bindings.get_constant_value(&name.to_string()).unwrap()
+        );
+        assert_eq!(returned.unresolved_params(), formals);
+        assert!(bindings.get_constant_value_named(&name).is_none());
+        if let PotentialValue::Unresolved(value) = &mut returned {
+            value.params.clear();
+        } else {
+            panic!("phantom parameters must remain pending");
+        }
+        assert_eq!(
+            bindings
+                .get_constant_value(&name.to_string())
+                .unwrap()
+                .unresolved_params(),
+            formals
+        );
+        let value = bindings.add_constant_value(
+            &LocalConstantName::unqualified("plain"),
+            vec![],
+            AcornType::Bool,
+            None,
+            None,
+        );
+        assert_eq!(value.resolved().unwrap().get_type(), AcornType::Bool);
     }
 }
