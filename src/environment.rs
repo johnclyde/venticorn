@@ -1631,6 +1631,79 @@ impl Environment {
         Ok(())
     }
 
+    // Privately lower already-validated generic law templates to the checked
+    // concrete implementations. Public bound resolution cannot be used here:
+    // this is the obligation that must justify the membership in the first place.
+    fn lower_instance_conditions(
+        &self,
+        source: &dyn ErrorSource,
+        class: &Typeclass,
+        target: &AcornType,
+        scope_name: &str,
+        info: &TypeclassInfo,
+    ) -> compilation::Result<Vec<AcornValue>> {
+        if info.instance_param.typeclass.as_ref() != Some(class) {
+            return Err(source.error("invalid typeclass condition metadata"));
+        }
+        let substitution = [(info.instance_param.name.clone(), target.clone())];
+        let mut implementations = HashMap::new();
+        for (member, template_type) in &info.attributes {
+            let value = self
+                .bindings
+                .get_constant_value(&format!("{}.{}", scope_name, member))
+                .and_then(PotentialValue::resolved)
+                .ok_or_else(|| source.error("invalid instance implementation metadata"))?;
+            if value.get_type() != template_type.instantiate(&substitution) {
+                return Err(
+                    source.error("instance implementation does not match its class signature")
+                );
+            }
+            value.validate().map_err(|error| source.error(&error))?;
+            implementations.insert(format!("{}.{}", class.name, member), value);
+        }
+        let mut conditions = Vec::with_capacity(info.conditions.len());
+        for condition in info.conditions.values() {
+            let specialized = condition.claim.instantiate(&substitution);
+            let mut references = vec![];
+            specialized.find_constants(
+                &|constant| {
+                    constant.module_id == class.module_id
+                        && implementations.contains_key(&constant.name)
+                        && constant.params.len() == 1
+                        && constant.params[0] == *target
+                },
+                &mut references,
+            );
+            for reference in references {
+                let implementation = &implementations[&reference.name];
+                if reference.instance_type != implementation.get_type() {
+                    return Err(source.error("invalid class member in instance condition"));
+                }
+            }
+            let lowered = specialized.replace_constants(0, &|constant, depth| {
+                if constant.module_id == class.module_id
+                    && constant.params.len() == 1
+                    && constant.params[0] == *target
+                {
+                    implementations
+                        .get(&constant.name)
+                        .map(|value| value.clone().insert_stack(0, depth))
+                } else {
+                    None
+                }
+            });
+            if lowered.get_type() != AcornType::Bool
+                || lowered.is_generic()
+                || lowered.has_arbitrary()
+            {
+                return Err(source.error("instance condition must be a concrete Boolean claim"));
+            }
+            lowered.validate().map_err(|error| source.error(&error))?;
+            conditions.push(lowered);
+        }
+        Ok(conditions)
+    }
+
     fn add_instance_statement(
         &mut self,
         project: &mut Project,
@@ -1686,16 +1759,14 @@ impl Environment {
                     .error("could not load bindings for typeclass module")
             })?
         };
-        let info = class_bindings.get_typeclass_info(&class).ok_or_else(|| {
-            instance
-                .typeclass
-                .error("invalid typeclass member metadata")
-        })?;
-        if !info.conditions.is_empty() {
-            return Err(instance.typeclass.error(
-                "instances with typeclass conditions require proof obligations, which are not supported yet",
-            ));
-        }
+        let info = class_bindings
+            .get_typeclass_info(&class)
+            .cloned()
+            .ok_or_else(|| {
+                instance
+                    .typeclass
+                    .error("invalid typeclass member metadata")
+            })?;
         let mut required = class_bindings
             .instance_member_types(&class, &target)
             .ok_or_else(|| {
@@ -1746,6 +1817,58 @@ impl Environment {
                 missing
             )));
         }
+        let conditions = self.lower_instance_conditions(
+            &instance.typeclass,
+            &class,
+            &target,
+            &scope_name,
+            &info,
+        )?;
+        if !conditions.is_empty() || instance.proof.is_some() {
+            let goal = if conditions.is_empty() {
+                // An optional law-free proof body is still checked in full.
+                AcornValue::Bool(true)
+            } else {
+                AcornValue::reduce(BinaryOp::And, conditions)
+            };
+            let mut proof_env = self.child(statement.first_line(), instance.proof.is_none());
+            // Permit the concrete implementation namespace in the proof body,
+            // while denying every generic use of this provisional membership.
+            // Block::new must capture this denied scope before any body children.
+            proof_env
+                .bindings
+                .add_instance_scope(name, class.clone(), scope_name.clone());
+            proof_env
+                .bindings
+                .deny_instance(self.module_id, name, &class);
+            let range = Range {
+                start: statement.first_token.start_pos(),
+                end: instance.body.right_brace.end_pos(),
+            };
+            let block = Block::new(
+                project,
+                &proof_env,
+                vec![],
+                vec![],
+                BlockParams::Instance(goal, range),
+                statement.first_line(),
+                statement.last_line(),
+                instance.proof.as_ref(),
+            )?;
+            // Export only a vacuous marker from the obligation. Its lowered law
+            // is not a premise inside the block, nor an unconditional new axiom.
+            let proposition = Proposition::type_member_definition(
+                AcornValue::Bool(true),
+                self.module_id,
+                statement.range(),
+                name.to_string(),
+                format!("instance.{}", class.name),
+            );
+            let index = self.add_node(project, false, proposition, Some(block));
+            self.add_node_lines(index, &statement.range());
+        }
+        // Later goals may use this declaration conditionally on the whole module
+        // verifying; a failed obligation prevents completed module publication.
         self.bindings.add_instance_scope(name, class, scope_name);
         self.add_other_lines(statement);
         Ok(())

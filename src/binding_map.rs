@@ -743,6 +743,10 @@ impl BindingMap {
         &self.proof_scope
     }
 
+    pub(crate) fn deny_instance(&mut self, module: ModuleId, name: &str, class: &Typeclass) {
+        self.proof_scope.deny_instance(module, name, class);
+    }
+
     pub(crate) fn add_instance_scope(&mut self, target: &str, class: Typeclass, scope: String) {
         self.proof_scope
             .record_instance(self.module, target, &class);

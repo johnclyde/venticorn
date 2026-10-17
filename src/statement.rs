@@ -224,7 +224,10 @@ pub struct TypeclassStatement {
 pub struct InstanceStatement {
     pub type_name: Token,
     pub typeclass: Expression,
+    // Implementations of the members required by the typeclass.
     pub body: Body,
+    // Optional proof of the instance's laws, separate from its member definitions.
+    pub proof: Option<Body>,
 }
 
 // Acorn is a statement-based language. There are several types.
@@ -942,13 +945,15 @@ fn parse_instance_statement(keyword: Token, tokens: &mut TokenIter) -> Result<St
         statements,
         right_brace: right_brace.clone(),
     };
+    let (proof, last_token) = parse_by_block(right_brace, tokens)?;
     Ok(Statement {
         first_token: keyword,
-        last_token: right_brace,
+        last_token,
         statement: StatementInfo::Instance(InstanceStatement {
             type_name,
             typeclass,
             body,
+            proof,
         }),
     })
 }
@@ -1183,7 +1188,12 @@ impl Statement {
 
             StatementInfo::Instance(instance) => {
                 write!(f, "instance {}: {}", instance.type_name, instance.typeclass)?;
-                write_block(f, &instance.body.statements, indentation)
+                write_block(f, &instance.body.statements, indentation)?;
+                if let Some(proof) = &instance.proof {
+                    write!(f, " by")?;
+                    write_block(f, &proof.statements, indentation)?;
+                }
+                Ok(())
             }
 
             StatementInfo::Match(ms) => {

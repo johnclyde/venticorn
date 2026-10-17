@@ -85,6 +85,12 @@ pub enum BlockParams<'a> {
     // The range is of the constraint portion of the statement.
     Constraint(AcornValue, Range),
 
+    // A concrete instance must establish every lowered class condition. The
+    // caller has already denied the instance's own membership in the parent
+    // environment, before this block and any of its children are constructed.
+    // The goal itself is never introduced as a premise or identity definition.
+    Instance(AcornValue, Range),
+
     // No special params needed
     ForAll,
     Problem,
@@ -231,8 +237,9 @@ impl Block {
                 );
                 None
             }
-            BlockParams::Constraint(constraint, range) => {
-                // We don't add any other given theorems.
+            BlockParams::Constraint(constraint, range)
+            | BlockParams::Instance(constraint, range) => {
+                // The condition is a goal only, never an assumed theorem.
                 Some(Goal::Prove(Proposition::anonymous(
                     constraint,
                     env.module_id,

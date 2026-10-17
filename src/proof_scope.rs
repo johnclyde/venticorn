@@ -45,6 +45,15 @@ impl ProofScope {
         });
     }
 
+    pub(crate) fn deny_instance(&mut self, module: ModuleId, name: &str, class: &Typeclass) {
+        Arc::make_mut(&mut self.denied_memberships).insert(MembershipKey {
+            data_module: module,
+            data_name: name.to_string(),
+            class_module: class.module_id,
+            class_name: class.name.clone(),
+        });
+    }
+
     pub(crate) fn import(&mut self, module: ModuleId) {
         if !self.imports.contains(&module) {
             Arc::make_mut(&mut self.imports).push(module);
