@@ -459,3 +459,34 @@ fn instance_member_signatures_match_the_class() {
     assert_eq!(env.nodes.len(), nodes);
     assert!(!env.bindings.name_in_use("State.Magma.mul"));
 }
+
+#[test]
+fn concrete_instance_members_are_accessible() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+
+            inductive State {
+                clean
+                dirty
+            }
+
+            instance State: Magma {
+                define mul(self, other: State) -> State {
+                    if self = State.clean and other = State.clean {
+                        State.clean
+                    } else {
+                        State.dirty
+                    }
+                }
+            }
+
+            theorem commutative(a: State, b: State) {
+                State.Magma.mul(a, b) = State.Magma.mul(b, a)
+            }
+            "#,
+    );
+}

@@ -86,6 +86,9 @@ pub struct BindingMap {
     // name and canonical class. This records declarations, not bound membership.
     instance_scopes: HashMap<(String, Typeclass), String>,
 
+    // Formatting metadata only; evaluation always consults the canonical owner.
+    imported_instance_members: HashMap<(ModuleId, String), Typeclass>,
+
     // Maps an identifier name to its type.
     // Has entries for both defined constants and aliases. Pending generic aliases
     // retain the signature in declaration parameters, before actuals are supplied.
@@ -271,6 +274,7 @@ enum NamedEntity {
     Type(AcornType),
     Module(ModuleId),
     Typeclass(Typeclass),
+    Instance(ModuleId, String),
     Unresolved(UnresolvedConstant),
     UnresolvedType(UnresolvedType),
 }
@@ -312,6 +316,7 @@ impl NamedEntity {
             NamedEntity::Typeclass(_) => {
                 Err(source.error("name refers to a typeclass but we expected a value"))
             }
+            NamedEntity::Instance(..) => Err(source.error("instance namespace is not a value")),
         }
     }
 
@@ -336,6 +341,7 @@ impl NamedEntity {
             NamedEntity::Typeclass(_) => {
                 Err(source.error("name refers to a typeclass but we expected a type"))
             }
+            NamedEntity::Instance(..) => Err(source.error("instance namespace is not a type")),
         }
     }
 }
@@ -352,6 +358,7 @@ impl BindingMap {
             typeclass_definitions: HashMap::new(),
             typeclass_to_name: HashMap::new(),
             instance_scopes: HashMap::new(),
+            imported_instance_members: HashMap::new(),
             identifier_to_type: BTreeMap::new(),
             constant_info: BTreeMap::new(),
             aliases: HashMap::new(),
@@ -751,6 +758,18 @@ impl BindingMap {
         self.module_to_name.insert(module, name.to_string());
     }
 
+    pub(crate) fn import_instance_members(&mut self, owner: &BindingMap) {
+        for ((_, class), scope) in &owner.instance_scopes {
+            if owner.get_constant_value(scope).is_some() {
+                continue;
+            }
+            for name in keys_with_prefix(&owner.constant_info, &format!("{}.", scope)) {
+                self.imported_instance_members
+                    .insert((owner.module, name.clone()), class.clone());
+            }
+        }
+    }
+
     pub fn is_module(&self, name: &str) -> bool {
         self.name_to_module.contains_key(name)
     }
@@ -888,6 +907,8 @@ impl BindingMap {
                 );
             }
             return match entity? {
+                NamedEntity::Instance(module, scope) => self
+                    .get_named_member_completions(project, module, &scope, partial, None, visible),
                 NamedEntity::Typeclass(class) => self.get_named_member_completions(
                     project,
                     class.module_id,
@@ -1434,7 +1455,32 @@ impl BindingMap {
                         )?;
                         return Ok(NamedEntity::Value(value));
                     }
-                    match self.evaluate_type_attribute(project, module, &type_name, name) {
+                    let attribute = self.evaluate_type_attribute(project, module, &type_name, name);
+                    let owner = if module == self.module {
+                        Some(self)
+                    } else {
+                        project.get_bindings(module)
+                    };
+                    let scope = owner.and_then(|bindings| {
+                        bindings
+                            .instance_scopes
+                            .iter()
+                            .find(|((target, class), _)| target == &type_name && class.name == name)
+                            .map(|(_, scope)| scope)
+                    });
+                    if let Some(scope) = scope {
+                        if attribute.is_some() {
+                            return Err(
+                                name_token.error("ambiguous type attribute and instance namespace")
+                            );
+                        }
+                        if !actuals.is_empty() {
+                            return Err(name_token
+                                .error("concrete instance namespace cannot have type parameters"));
+                        }
+                        return Ok(NamedEntity::Instance(module, scope.clone()));
+                    }
+                    match attribute {
                         Some(PotentialValue::Resolved(value)) => {
                             if !actuals.is_empty() {
                                 return Err(
@@ -1468,6 +1514,15 @@ impl BindingMap {
                 .map(PotentialValue::to_named_entity)
                 .ok_or_else(|| {
                     name_token.error(&format!("{} has no attribute named '{}'", class.name, name))
+                }),
+            Some(NamedEntity::Instance(module, scope)) => self
+                .evaluate_type_attribute(project, module, &scope, name)
+                .map(PotentialValue::to_named_entity)
+                .ok_or_else(|| {
+                    name_token.error(&format!(
+                        "instance {} has no member named '{}'",
+                        scope, name
+                    ))
                 }),
             Some(NamedEntity::Module(module)) => {
                 if let Some(bindings) = project.get_bindings(module) {
@@ -1682,6 +1737,11 @@ impl BindingMap {
                 Ok(())
             }
             NamedEntity::Type(acorn_type) => {
+                if let AcornType::Data(owner, _, _) = &acorn_type {
+                    if let Some(bindings) = project.get_bindings(*owner) {
+                        self.import_instance_members(bindings);
+                    }
+                }
                 self.add_type_alias(&name_token.text(), acorn_type);
                 Ok(())
             }
@@ -1697,6 +1757,9 @@ impl BindingMap {
             NamedEntity::UnresolvedType(t) => {
                 self.add_potential_type_alias(name_token.text(), PotentialType::Unresolved(t));
                 Ok(())
+            }
+            NamedEntity::Instance(..) => {
+                Err(name_token.error("cannot import instance namespaces indirectly"))
             }
             NamedEntity::Module(_) => Err(name_token.error("cannot import modules indirectly")),
             NamedEntity::Typeclass(_) => {
@@ -2547,7 +2610,36 @@ impl BindingMap {
         }
 
         if parts.len() > 2 {
-            return Err(CodeGenError::UnhandledValue("unexpected dots".to_string()));
+            let scope = parts[..2].join(".");
+            let registered = parts.len() == 3
+                && if module == self.module {
+                    self.instance_scope_in_use(&scope)
+                        && self.get_constant_value(&scope).is_none()
+                        && self.get_constant_value(name).is_some()
+                } else {
+                    self.imported_instance_members
+                        .contains_key(&(module, name.to_string()))
+                };
+            if !registered {
+                return Err(CodeGenError::UnhandledValue(
+                    "unregistered instance namespace".to_string(),
+                ));
+            }
+            if module == self.module {
+                return Ok(Expression::generate_identifier_chain(&parts));
+            }
+            let data_type = AcornType::Data(module, parts[0].to_string(), vec![]);
+            if let Some(alias) = self.type_to_typename.get(&data_type) {
+                return Ok(Expression::generate_identifier_chain(&[
+                    alias, parts[1], parts[2],
+                ]));
+            }
+            let module_name = self
+                .module_to_name
+                .get(&module)
+                .ok_or_else(|| CodeGenError::UnimportedModule(module, name.to_string()))?;
+            parts.insert(0, module_name);
+            return Ok(Expression::generate_identifier_chain(&parts));
         }
 
         // Handle local constants

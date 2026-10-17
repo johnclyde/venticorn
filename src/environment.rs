@@ -1910,6 +1910,8 @@ impl Environment {
                     ));
                 }
                 self.bindings.import_module(local_name, module_id);
+                self.bindings
+                    .import_instance_members(project.get_bindings(module_id).unwrap());
                 self.definition_ranges
                     .insert(local_name.clone(), statement.range());
 
