@@ -180,14 +180,19 @@ impl Environment {
     // Adds a proposition, or multiple propositions, to represent the definition of the provided
     // constant.
     pub fn add_identity_props(&mut self, project: &Project, name: &str) {
-        let definition = if let Some(d) = self.bindings.get_definition(name) {
+        self.add_identity_props_named(project, &LocalConstantName::unqualified(name));
+    }
+
+    pub fn add_identity_props_named(&mut self, project: &Project, name: &LocalConstantName) {
+        let name = name.to_string();
+        let definition = if let Some(d) = self.bindings.get_definition(&name) {
             d.clone()
         } else {
             return;
         };
 
-        let constant_type = self.bindings.get_type_for_constant_name(name).unwrap();
-        let param_names = self.bindings.unresolved_params(name);
+        let constant_type = self.bindings.get_type_for_constant_name(&name).unwrap();
+        let param_names = self.bindings.unresolved_params(&name);
 
         let params = param_names.into_iter().map(AcornType::Variable).collect();
         let constant =
@@ -211,7 +216,7 @@ impl Environment {
         } else {
             AcornValue::equals(constant.clone(), definition)
         };
-        let range = self.definition_ranges.get(name).unwrap().clone();
+        let range = self.definition_ranges.get(&name).unwrap().clone();
 
         self.add_node(
             project,
@@ -411,7 +416,7 @@ impl Environment {
                 None,
             );
             self.definition_ranges.insert(name.clone(), range);
-            self.add_identity_props(project, &name);
+            self.add_identity_props_named(project, &constant_name);
             return Ok(());
         }
         if let Some(value) = &value {
@@ -431,7 +436,7 @@ impl Environment {
         self.bindings
             .add_constant_named(&constant_name, vec![], acorn_type, value, None);
         self.definition_ranges.insert(name.clone(), range);
-        self.add_identity_props(project, &name);
+        self.add_identity_props_named(project, &constant_name);
         Ok(())
     }
 
@@ -555,7 +560,7 @@ impl Environment {
         );
 
         self.definition_ranges.insert(name.clone(), range);
-        self.add_identity_props(project, &name);
+        self.add_identity_props_named(project, &constant_name);
         Ok(())
     }
 
