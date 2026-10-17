@@ -6,6 +6,7 @@ use crate::acorn_type::AcornType;
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::constant_map::ConstantKey;
+use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::ModuleId;
 use crate::token::TokenType;
 
@@ -450,9 +451,21 @@ impl AcornValue {
         params: Vec<AcornType>,
         instance_type: AcornType,
     ) -> AcornValue {
+        Self::constant_named(
+            GlobalConstantName::new(module_id, LocalConstantName::from_legacy(&name)),
+            params,
+            instance_type,
+        )
+    }
+
+    pub fn constant_named(
+        name: GlobalConstantName,
+        params: Vec<AcornType>,
+        instance_type: AcornType,
+    ) -> AcornValue {
         AcornValue::Constant(ConstantInstance {
-            module_id,
-            name,
+            module_id: name.module_id,
+            name: name.local_name.to_string(),
             params,
             instance_type,
         })

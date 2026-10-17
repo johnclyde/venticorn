@@ -1,6 +1,7 @@
 use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
+use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::ModuleId;
 use crate::unresolved_constant::UnresolvedConstant;
 
@@ -18,17 +19,23 @@ impl PotentialValue {
         constant_type: AcornType,
         params: Vec<TypeParam>,
     ) -> Self {
+        Self::constant_named(
+            GlobalConstantName::new(module_id, LocalConstantName::from_legacy(name)),
+            constant_type,
+            params,
+        )
+    }
+
+    pub fn constant_named(
+        name: GlobalConstantName,
+        constant_type: AcornType,
+        params: Vec<TypeParam>,
+    ) -> Self {
         if params.is_empty() {
-            Self::Resolved(AcornValue::constant(
-                module_id,
-                name.to_string(),
-                vec![],
-                constant_type,
-            ))
+            Self::Resolved(AcornValue::constant_named(name, vec![], constant_type))
         } else {
             Self::Unresolved(UnresolvedConstant {
-                module_id,
-                name: name.to_string(),
+                name,
                 params,
                 generic_type: constant_type,
             })
@@ -72,7 +79,7 @@ impl PotentialValue {
             PotentialValue::Resolved(value) => Ok(value),
             PotentialValue::Unresolved(unresolved) => Err(source.error(&format!(
                 "value {} requires type arguments",
-                unresolved.name
+                unresolved.name.local_name
             ))),
         }
     }
@@ -158,5 +165,46 @@ mod tests {
             PotentialValue::Resolved(resolved.clone()).to_generic_value(),
             resolved
         );
+    }
+
+    #[test]
+    fn pending_names_keep_canonical_classes_and_bounded_legacy_compatibility() {
+        let params = vec![TypeParam::unconstrained("Phantom")];
+        let old = PotentialValue::constant(3, "Pair.new", AcornType::Bool, params.clone());
+        let typed = PotentialValue::constant_named(
+            GlobalConstantName::new(3, LocalConstantName::attribute("Pair", "new")),
+            AcornType::Bool,
+            params.clone(),
+        );
+        assert_eq!(old, typed);
+        let first = Typeclass {
+            module_id: 7,
+            name: "Marked".into(),
+        };
+        let other = Typeclass {
+            module_id: 8,
+            name: "Marked".into(),
+        };
+        let make = |class: &Typeclass| {
+            PotentialValue::constant_named(
+                GlobalConstantName::new(3, LocalConstantName::instance(class, "flag", "State")),
+                AcornType::Bool,
+                params.clone(),
+            )
+        };
+        let left = make(&first);
+        let right = make(&other);
+        let opaque = PotentialValue::constant(3, "State.Marked.flag", AcornType::Bool, params);
+        assert_ne!(left, right);
+        assert_ne!(left, opaque);
+        assert_ne!(right, opaque);
+        let PotentialValue::Unresolved(declaration) = left else {
+            panic!("expected pending")
+        };
+        assert_eq!(
+            declaration.name,
+            GlobalConstantName::new(3, LocalConstantName::instance(&first, "flag", "State"))
+        );
+        assert_eq!(declaration.params, [TypeParam::unconstrained("Phantom")]);
     }
 }
