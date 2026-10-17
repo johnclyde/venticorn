@@ -284,3 +284,26 @@ fn bounded_family_constraints_keep_scope_and_require_existence() {
         assert!(!env.bindings.name_in_use("T"));
     }
 }
+
+#[test]
+fn bounded_structure_and_explicit_member_scope_are_admitted() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            
+            structure MagmaPair<T: Magma> {
+                first: T
+                second: T
+            }
+
+            class MagmaPair<T: Magma> {
+                define prod(self) -> T {
+                    self.first.mul(self.second)
+                }
+            }
+            "#,
+    );
+}
