@@ -8,10 +8,8 @@ use crate::clause::Clause;
 use crate::literal::Literal;
 use crate::term::Term;
 
-pub type TypeId = u16;
-
-pub const EMPTY: TypeId = 0;
-pub const BOOL: TypeId = 1;
+// Compatibility exports; the term representation owns these identifiers.
+pub use crate::term::{TypeId, BOOL, EMPTY};
 
 // The Acorn language allows a rich variety of types, where each value has an AcornType, and where
 // functions can be polymorphic.
