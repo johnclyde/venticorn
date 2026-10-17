@@ -99,8 +99,8 @@ fn member_validation_is_selective_and_transactional() {
             "cannot capture an outer arbitrary type",
         ),
         (
-            "typeclass M: Magma {\n mul: (M, M) -> M\n law(a: M) { false }\n}",
-            "conditions are not supported",
+            "typeclass M: Magma {\n mul: (M, M) -> M\n law(a: M) { a }\n}",
+            "expected type Bool",
         ),
     ] {
         let mut env = Environment::new_test();
@@ -168,7 +168,7 @@ fn admitted_members_keep_instance_parameters_and_scope_cleanup() {
 }
 
 #[test]
-fn failed_members_allow_safe_name_reuse_and_conditions_create_no_axioms() {
+fn failed_members_allow_safe_name_reuse_and_erased_conditions_create_no_axioms() {
     let mut env = Environment::new_test();
     env.add("let keep: Bool = true");
     let nodes = env.nodes.len();
