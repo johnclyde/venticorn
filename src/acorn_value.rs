@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::acorn_type::AcornType;
 use crate::atom::AtomId;
+use crate::compilation::{self, ErrorSource};
 use crate::constant_map::ConstantKey;
 use crate::module::ModuleId;
 use crate::token::TokenType;
@@ -303,6 +304,17 @@ impl fmt::Display for AcornValue {
 }
 
 impl AcornValue {
+    pub fn check_type(
+        &self,
+        source: &dyn ErrorSource,
+        expected: Option<&AcornType>,
+    ) -> compilation::Result<()> {
+        match expected {
+            Some(expected) => self.get_type().check_eq(source, Some(expected)),
+            None => Ok(()),
+        }
+    }
+
     pub fn get_type(&self) -> AcornType {
         match self {
             AcornValue::Variable(_, t) => t.clone(),

@@ -215,6 +215,22 @@ pub enum AcornType {
 }
 
 impl AcornType {
+    // Exact equality only: generic substitution and bound checking happen separately.
+    pub fn check_eq(
+        &self,
+        source: &dyn ErrorSource,
+        expected: Option<&AcornType>,
+    ) -> compilation::Result<()> {
+        if let Some(expected) = expected {
+            if expected != self {
+                return Err(
+                    source.error(&format!("expected type {}, but this is {}", expected, self))
+                );
+            }
+        }
+        Ok(())
+    }
+
     // Create the type, in non-curried form, for a function with the given arguments and return type.
     // arg_types can be empty.
     pub fn new_functional(arg_types: Vec<AcornType>, return_type: AcornType) -> AcornType {

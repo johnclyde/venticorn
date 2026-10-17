@@ -26,12 +26,14 @@ pub mod literal;
 pub mod live_document;
 pub mod module;
 pub mod monomorphizer;
+pub(crate) mod named_entity;
 pub mod normalizer;
 #[cfg(feature = "onnx")]
 pub mod ort_model;
 pub mod passive_set;
 pub mod pattern_tree;
 pub mod persistent_cache;
+pub mod potential_value;
 pub mod project;
 pub mod proof;
 pub mod proof_scope;
