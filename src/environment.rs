@@ -1564,21 +1564,26 @@ impl Environment {
                 .error("instance declarations are only supported at the top level"));
         }
         let name = instance.type_name.text();
-        let target = match self.bindings.get_potential_type_for_name(name) {
-            Some(PotentialType::Resolved(AcornType::Data(module, canonical, actuals)))
-                if *module == self.module_id && canonical == name && actuals.is_empty() =>
+        let potential = self
+            .bindings
+            .get_potential_type_for_name(name)
+            .cloned()
+            .ok_or_else(|| {
+                instance
+                    .type_name
+                    .error(&format!("undefined type name '{}'", name))
+            })?;
+        self.check_canonical_classname(&instance.type_name, &potential)?;
+        let target = match potential {
+            PotentialType::Resolved(AcornType::Data(module, canonical, actuals))
+                if actuals.is_empty() =>
             {
-                AcornType::Data(*module, canonical.clone(), vec![])
+                AcornType::Data(module, canonical, actuals)
             }
-            Some(_) => {
+            _ => {
                 return Err(instance.type_name.error(
                     "instance target must be a canonical nongeneric data type in this module",
                 ))
-            }
-            None => {
-                return Err(instance
-                    .type_name
-                    .error(&format!("undefined type name '{}'", name)))
             }
         };
         let class = self
