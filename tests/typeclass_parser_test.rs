@@ -237,3 +237,20 @@ fn nested_theorem_truncations_never_panic() {
         let _ = Statement::parse(&mut tokens, false);
     }
 }
+
+#[test]
+fn instance_keyword_preserves_identifier_boundaries_and_completion_order() {
+    use tower_lsp::lsp_types::SemanticTokenType;
+    assert_eq!(keyword_map().get("instance"), Some(&TokenType::Instance));
+    assert_eq!(
+        keywords_with_prefix("in").collect::<Vec<_>>(),
+        ["inductive", "instance"]
+    );
+    let tokens = Token::scan("instance instance_name instances");
+    assert_eq!(tokens[0].token_type, TokenType::Instance);
+    assert_eq!(tokens[0].to_string(), "instance");
+    assert_eq!(tokens[0].lsp_type(), Some(SemanticTokenType::KEYWORD));
+    assert_eq!(tokens[1].token_type, TokenType::Identifier);
+    assert_eq!(tokens[2].token_type, TokenType::Identifier);
+    assert_eq!(TokenType::Instance.generate().text(), "instance");
+}
