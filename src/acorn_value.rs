@@ -88,8 +88,7 @@ impl fmt::Display for BinaryOp {
 // An instance of a constant. Could be generic or not.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct ConstantInstance {
-    pub module_id: ModuleId,
-    pub name: String,
+    pub name: GlobalConstantName,
 
     // Actual type arguments in declaration order. Empty for ordinary constants.
     pub params: Vec<AcornType>,
@@ -100,7 +99,7 @@ pub struct ConstantInstance {
 
 impl fmt::Display for ConstantInstance {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name)?;
+        write!(f, "{}", self.name.local_name)?;
         if !self.params.is_empty() {
             let types: Vec<_> = self.type_arguments().map(ToString::to_string).collect();
             write!(f, "<{}>", types.join(", "))?;
@@ -114,7 +113,6 @@ impl ConstantInstance {
     // belong to a separate namespace from the actual arguments of a polymorphic instance.
     pub fn instantiate(&self, substitutions: &[(String, AcornType)]) -> Self {
         Self {
-            module_id: self.module_id,
             name: self.name.clone(),
             params: self
                 .params
@@ -139,7 +137,6 @@ impl ConstantInstance {
 
     pub fn to_generic(&self) -> Self {
         Self {
-            module_id: self.module_id,
             name: self.name.clone(),
             params: self.params.iter().map(AcornType::to_generic).collect(),
             instance_type: self.instance_type.to_generic(),
@@ -148,8 +145,8 @@ impl ConstantInstance {
 
     pub fn key(&self) -> ConstantKey {
         ConstantKey {
-            module: self.module_id,
-            name: self.name.clone(),
+            module: self.name.module_id,
+            name: self.name.local_name.clone(),
         }
     }
 
@@ -464,8 +461,7 @@ impl AcornValue {
         instance_type: AcornType,
     ) -> AcornValue {
         AcornValue::Constant(ConstantInstance {
-            module_id: name.module_id,
-            name: name.local_name.to_string(),
+            name,
             params,
             instance_type,
         })
@@ -1778,7 +1774,6 @@ impl AcornValue {
                     .map(|t| t.parametrize(module, type_names))
                     .collect();
                 AcornValue::Constant(ConstantInstance {
-                    module_id: c.module_id,
                     name: c.name.clone(),
                     params: out_params,
                     instance_type: c.instance_type.parametrize(module, type_names),
@@ -1942,7 +1937,6 @@ impl AcornValue {
             AcornValue::Constant(c) => {
                 let output_params = c.params.iter().map(AcornType::to_arbitrary).collect();
                 AcornValue::Constant(ConstantInstance {
-                    module_id: c.module_id,
                     name: c.name.clone(),
                     params: output_params,
                     instance_type: c.instance_type.to_arbitrary(),
@@ -2036,42 +2030,54 @@ impl AcornValue {
     pub fn is_member(&self, class: &AcornType) -> Option<String> {
         match &self {
             AcornValue::Constant(c) => {
-                let parts = c.name.split('.').collect::<Vec<_>>();
-                if parts.len() != 2 {
-                    return None;
-                }
-                let type_name = parts[0];
-                let member_name = parts[1];
-                if matches!(class, AcornType::Data(module, name, _) if *module == c.module_id && name == type_name)
+                if let (
+                    AcornType::Data(module, name, _),
+                    LocalConstantName::Attribute(owner, member),
+                ) = (class, &c.name.local_name)
                 {
-                    Some(member_name.to_string())
-                } else {
-                    None
+                    if *module == c.name.module_id && name == owner {
+                        return Some(member.clone());
+                    }
                 }
+                None
             }
             _ => None,
         }
     }
 
-    pub fn as_name(&self) -> Option<(ModuleId, &str)> {
+    pub(crate) fn constant_name(&self) -> Option<&GlobalConstantName> {
         match self {
-            AcornValue::Constant(c) => Some((c.module_id, &c.name)),
+            Self::Constant(c) => Some(&c.name),
             _ => None,
         }
     }
 
-    pub fn is_named_function_call(&self) -> Option<(ModuleId, &str)> {
+    pub(crate) fn simple_constant_name(&self) -> Option<&GlobalConstantName> {
+        match self {
+            Self::Constant(c) if c.params.is_empty() => Some(&c.name),
+            _ => None,
+        }
+    }
+
+    pub fn as_name(&self) -> Option<(ModuleId, String)> {
+        match self {
+            AcornValue::Constant(c) => Some((c.name.module_id, c.name.local_name.to_string())),
+            _ => None,
+        }
+    }
+
+    pub fn is_named_function_call(&self) -> Option<(ModuleId, String)> {
         match self {
             AcornValue::Application(app) => app.function.as_name(),
             _ => None,
         }
     }
 
-    pub fn as_simple_constant(&self) -> Option<(ModuleId, &str)> {
+    pub fn as_simple_constant(&self) -> Option<(ModuleId, String)> {
         match self {
             AcornValue::Constant(c) => {
                 if c.params.is_empty() {
-                    Some((c.module_id, &c.name))
+                    Some((c.name.module_id, c.name.local_name.to_string()))
                 } else {
                     None
                 }

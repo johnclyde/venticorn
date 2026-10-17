@@ -98,7 +98,7 @@ fn generic_callbacks_use_their_declared_types_without_reinference() {
 fn resolved_simple_constants_keep_their_plain_normalized_identity() {
     use venticorn::normalizer::Normalizer;
     let resolved = AcornValue::new_constant(10, "p".into(), vec![], AcornType::Bool);
-    assert_eq!(resolved.as_simple_constant(), Some((10, "p")));
+    assert_eq!(resolved.as_simple_constant(), Some((10, "p".to_string())));
     assert!(!Normalizer::new()
         .normalize(&resolved, true)
         .expect_clauses()
@@ -140,7 +140,7 @@ fn pending_generic_names_cannot_create_alias_facts() {
         .unwrap()
         .resolved()
         .unwrap();
-    assert_eq!(value.as_name(), Some((env.module_id, "known")));
+    assert_eq!(value.as_name(), Some((env.module_id, "known".to_string())));
     value.validate().unwrap();
 }
 

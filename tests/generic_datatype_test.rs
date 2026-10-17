@@ -146,8 +146,10 @@ fn arbitrary_type_detection_visits_effective_and_binder_metadata() {
     });
     let wrapped = data("Wrap", vec![arbitrary.clone()]);
     let constant = AcornValue::Constant(ConstantInstance {
-        module_id: 10,
-        name: "hidden".into(),
+        name: venticorn::constant_name::GlobalConstantName::new(
+            10,
+            venticorn::constant_name::LocalConstantName::unqualified("hidden"),
+        ),
         params: vec![],
         instance_type: wrapped.clone(),
     });

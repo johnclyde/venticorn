@@ -12,7 +12,10 @@ fn generic(name: &str) -> AcornValue {
 fn names(value: &AcornValue, generic_only: bool) -> Vec<String> {
     let mut found = vec![];
     value.find_constants(&|c| !generic_only || c.is_generic(), &mut found);
-    found.into_iter().map(|c| c.name).collect()
+    found
+        .into_iter()
+        .map(|c| c.name.local_name.to_string())
+        .collect()
 }
 
 #[test]
@@ -57,7 +60,7 @@ fn collection_visits_function_arguments_binders_conditions_and_match_branches() 
     let mut found = vec![];
     generic("identity").find_constants(&|_| true, &mut found);
     assert_eq!(found[0].key().module, 10);
-    assert_eq!(found[0].key().name, "identity");
+    assert_eq!(found[0].key().name.to_string(), "identity");
     assert_eq!(AcornValue::Constant(found.remove(0)), generic("identity"));
 }
 

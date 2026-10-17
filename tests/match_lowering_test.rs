@@ -57,8 +57,10 @@ fn evaluate(value: &AcornValue, stack: &[Value]) -> Value {
     match value {
         AcornValue::Variable(index, _) => stack[*index as usize].clone(),
         AcornValue::Bool(value) => Value::Bool(*value),
-        AcornValue::Constant(c) if c.name == "Item.empty" => Value::Item(None),
-        AcornValue::Constant(c) => Value::Function(c.name.clone()),
+        AcornValue::Constant(c) if c.name.local_name.to_string() == "Item.empty" => {
+            Value::Item(None)
+        }
+        AcornValue::Constant(c) => Value::Function(c.name.local_name.to_string()),
         AcornValue::Lambda(vars, body) => {
             Value::Closure(vars.clone(), body.clone(), stack.to_vec())
         }

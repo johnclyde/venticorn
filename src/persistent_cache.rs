@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::build_cache::PremiseSet;
+use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::goal::{Goal, GoalContext};
 use crate::module::{ModuleHash, ModuleId, ModuleRef, FIRST_NORMAL};
 use crate::proof_scope::{MembershipKey, ProofScope};
@@ -381,6 +382,28 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
         self.module_key_value(identity);
         Some(())
     }
+    fn constant_name(&mut self, name: &GlobalConstantName) -> Option<()> {
+        self.module(name.module_id)?;
+        match &name.local_name {
+            LocalConstantName::Unqualified(name) => {
+                self.tag(0);
+                self.text(name);
+            }
+            LocalConstantName::Attribute(owner, member) => {
+                self.tag(1);
+                self.text(owner);
+                self.text(member);
+            }
+            LocalConstantName::Instance(class, member, target) => {
+                self.tag(2);
+                self.module(class.module_id)?;
+                self.text(&class.name);
+                self.text(member);
+                self.text(target);
+            }
+        }
+        Some(())
+    }
     fn memberships(&mut self, memberships: &BTreeSet<MembershipKey>) -> Option<()> {
         let canonical = memberships
             .iter()
@@ -506,8 +529,7 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
             }
             AcornValue::Constant(constant) => {
                 self.tag(7);
-                self.module(constant.module_id)?;
-                self.text(&constant.name);
+                self.constant_name(&constant.name)?;
                 self.types(&constant.params)?;
                 self.ty(&constant.instance_type)?;
             }
@@ -544,7 +566,7 @@ pub(crate) fn goal_policy(
         hash: Sha256::new(),
         resolve,
     };
-    state.text("venticorn:goal-policy:v2");
+    state.text("venticorn:goal-policy:v3");
     state.number(goals.len() as u64);
     for goal in goals {
         state.tag(u8::from(matches!(goal.goal, Goal::Prove(_))));
@@ -605,8 +627,10 @@ mod tests {
             }),
         });
         let constant = AcornValue::Constant(ConstantInstance {
-            module_id: id,
-            name: "Box.choose".into(),
+            name: GlobalConstantName {
+                module_id: id,
+                local_name: LocalConstantName::attribute("Box", "choose"),
+            },
             params: vec![ty.clone(), arbitrary.clone()],
             instance_type: AcornType::new_functional(vec![arbitrary.clone()], ty.clone()),
         });
@@ -920,5 +944,112 @@ mod tests {
             1
         );
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod constant_identity_tests {
+    use super::*;
+    use crate::acorn_type::Typeclass;
+    use crate::acorn_value::ConstantInstance;
+
+    fn instance(owner: ModuleId, class_owner: ModuleId) -> AcornValue {
+        AcornValue::Constant(ConstantInstance {
+            name: GlobalConstantName {
+                module_id: owner,
+                local_name: LocalConstantName::instance(
+                    &Typeclass {
+                        module_id: class_owner,
+                        name: "Marked".into(),
+                    },
+                    "flag",
+                    "Item",
+                ),
+            },
+            params: vec![],
+            instance_type: AcornType::Bool,
+        })
+    }
+
+    fn digest(
+        value: &AcornValue,
+        resolve: &impl Fn(ModuleId) -> Option<ModuleRef>,
+    ) -> Option<[u8; 32]> {
+        let mut state = PolicyHasher {
+            hash: Sha256::new(),
+            resolve,
+        };
+        state.value(value)?;
+        Some(state.hash.finalize().into())
+    }
+
+    #[test]
+    fn embedded_class_identity_is_canonical_and_never_derived_from_display() {
+        let resolve = |id| match id {
+            10 | 90 => Some(ModuleRef::Name("data".into())),
+            20 | 70 => Some(ModuleRef::Name("classes.left".into())),
+            30 => Some(ModuleRef::Name("classes.right".into())),
+            _ => None,
+        };
+        let original = instance(10, 20);
+        let reordered = instance(90, 70);
+        let foreign = instance(10, 30);
+        assert_eq!(original.to_string(), foreign.to_string());
+        let expected = digest(&original, &resolve).unwrap();
+        assert_eq!(Some(expected), digest(&reordered, &resolve));
+        assert_ne!(Some(expected), digest(&foreign, &resolve));
+        assert_eq!(digest(&instance(10, 40), &resolve), None);
+        assert_eq!(digest(&instance(40, 20), &resolve), None);
+    }
+
+    #[test]
+    fn local_name_variants_actual_order_and_effective_type_are_framed_separately() {
+        let resolve = |id| (id == 10 || id == 20).then(|| ModuleRef::Name(format!("module{id}")));
+        let original = instance(10, 20);
+        let AcornValue::Constant(mut opaque) = original.clone() else {
+            unreachable!()
+        };
+        opaque.name.local_name =
+            LocalConstantName::unqualified(&opaque.name.local_name.to_string());
+        assert_ne!(
+            digest(&original, &resolve),
+            digest(&AcornValue::Constant(opaque), &resolve)
+        );
+        let AcornValue::Constant(mut specialized) = original.clone() else {
+            unreachable!()
+        };
+        specialized.params = vec![AcornType::Bool, AcornType::Data(10, "Item".into(), vec![])];
+        let first = AcornValue::Constant(specialized.clone());
+        specialized.params.reverse();
+        assert_ne!(
+            digest(&first, &resolve),
+            digest(&AcornValue::Constant(specialized.clone()), &resolve)
+        );
+        specialized.params.clear();
+        specialized.instance_type = AcornType::Data(10, "Item".into(), vec![]);
+        assert_ne!(
+            digest(&original, &resolve),
+            digest(&AcornValue::Constant(specialized), &resolve)
+        );
+        let attribute = |local_name| {
+            AcornValue::Constant(ConstantInstance {
+                name: GlobalConstantName {
+                    module_id: 10,
+                    local_name,
+                },
+                params: vec![],
+                instance_type: AcornType::Bool,
+            })
+        };
+        assert_ne!(
+            digest(
+                &attribute(LocalConstantName::attribute("Item", "flag")),
+                &resolve
+            ),
+            digest(
+                &attribute(LocalConstantName::unqualified("Item.flag")),
+                &resolve
+            )
+        );
     }
 }

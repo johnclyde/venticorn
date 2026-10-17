@@ -252,11 +252,20 @@ impl Normalizer {
                 }
                 if c.params.is_empty() {
                     let type_id = self.type_map.add_type(&c.instance_type);
-                    let constant_atom = if c.module_id == SKOLEM {
+                    let constant_atom = if c.name.module_id == SKOLEM {
                         // Hacky. Turn the s-name back to an int
-                        Atom::Skolem(c.name[1..].parse().unwrap())
+                        match &c.name.local_name {
+                            LocalConstantName::Unqualified(name) => {
+                                Atom::Skolem(name[1..].parse().unwrap())
+                            }
+                            _ => {
+                                return Err(NormalizationError(
+                                    "invalid structured skolem name".into(),
+                                ))
+                            }
+                        }
                     } else {
-                        self.constant_map.add_constant(c.module_id, &c.name, local)
+                        self.constant_map.add_constant_key(c.key(), local)
                     };
                     Ok(Term::new(type_id, type_id, constant_atom, vec![]))
                 } else {
@@ -417,21 +426,16 @@ impl Normalizer {
         }
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             // Check for defining one constant to equal another constant.
-            if let Some((left_module, left_name)) = left.as_simple_constant() {
-                if let Some((right_module, right_name)) = right.as_simple_constant() {
-                    if self.constant_map.has_constant(right_module, &right_name)
-                        && !self.constant_map.has_constant(left_module, &left_name)
-                    {
-                        // Yep, this is defining one constant to be another one.
-                        // We can handle this in the constant map.
-                        self.constant_map.add_alias(
-                            left_module,
-                            &left_name,
-                            right_module,
-                            &right_name,
-                        );
-                        return Normalization::Clauses(vec![]);
-                    }
+            if let (AcornValue::Constant(left), AcornValue::Constant(right)) =
+                (left.as_ref(), right.as_ref())
+            {
+                if left.params.is_empty()
+                    && right.params.is_empty()
+                    && self.constant_map.has_key(&right.key())
+                    && !self.constant_map.has_key(&left.key())
+                {
+                    self.constant_map.add_alias_keys(left.key(), &right.key());
+                    return Normalization::Clauses(vec![]);
                 }
             }
 
@@ -461,12 +465,12 @@ impl Normalizer {
         match atom {
             Atom::True => AcornValue::Bool(true),
             Atom::GlobalConstant(i) => {
-                let (module, name) = self.constant_map.get_global_info(*i);
-                AcornValue::constant(module, name.to_string(), vec![], acorn_type)
+                let name = self.constant_map.global_name(*i);
+                AcornValue::constant_named(name, vec![], acorn_type)
             }
             Atom::LocalConstant(i) => {
-                let (module, name) = self.constant_map.get_local_info(*i);
-                AcornValue::constant(module, name.to_string(), vec![], acorn_type)
+                let name = self.constant_map.local_name(*i);
+                AcornValue::constant_named(name, vec![], acorn_type)
             }
             Atom::Monomorph(i) => AcornValue::Constant(self.type_map.get_monomorph(*i).clone()),
             Atom::Variable(i) => {

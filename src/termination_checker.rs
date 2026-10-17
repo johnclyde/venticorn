@@ -1,14 +1,14 @@
 // Modified for Venticorn: reject recursive escapes and inspect every supplied argument.
 use crate::acorn_value::AcornValue;
 use crate::atom::AtomId;
+use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::ModuleId;
 
 /// Proves termination when one original argument strictly decreases at every recursive use.
 /// This is intentionally conservative: decreasing different arguments in different branches
 /// does not prove termination, and passing the recursive function as a value is rejected.
 pub struct TerminationChecker {
-    module: ModuleId,
-    function_name: String,
+    function_name: GlobalConstantName,
     // Each stack variable maps to its original argument ancestor, if known.
     substructure_map: Vec<Option<AtomId>>,
     always_strict_sub: Vec<bool>,
@@ -17,8 +17,22 @@ pub struct TerminationChecker {
 
 impl TerminationChecker {
     pub fn new(module: ModuleId, function_name: String, num_args: usize) -> Self {
+        let ambiguous = function_name.matches('.').count() > 1;
+        let mut checker = Self::new_named(
+            GlobalConstantName::new(module, LocalConstantName::from_legacy(&function_name)),
+            num_args,
+        );
+        // A raw multi-part spelling cannot identify its canonical instance class.
+        // Compatibility callers must use the typed constructor for that case.
+        if ambiguous {
+            checker.recursive = true;
+            checker.always_strict_sub.fill(false);
+        }
+        checker
+    }
+
+    pub(crate) fn new_named(function_name: GlobalConstantName, num_args: usize) -> Self {
         Self {
-            module,
             function_name,
             substructure_map: (0..num_args).map(|i| Some(i as AtomId)).collect(),
             always_strict_sub: vec![true; num_args],
@@ -30,8 +44,7 @@ impl TerminationChecker {
         match value {
             AcornValue::Variable(..) | AcornValue::Bool(..) => {}
             AcornValue::Constant(_) => {
-                let (module, name) = value.as_name().unwrap();
-                if module == self.module && name == self.function_name {
+                if value.constant_name() == Some(&self.function_name) {
                     self.recursive = true;
                     self.always_strict_sub.fill(false);
                 }
@@ -65,7 +78,7 @@ impl TerminationChecker {
                 }
                 let args: Vec<_> = layers.into_iter().rev().flatten().collect();
 
-                if function.as_name() == Some((self.module, self.function_name.as_str())) {
+                if function.constant_name() == Some(&self.function_name) {
                     self.recursive = true;
                     for (i, decreasing) in self.always_strict_sub.iter_mut().enumerate() {
                         let strict = match args.get(i) {
@@ -111,5 +124,36 @@ impl TerminationChecker {
 
     pub fn is_recursive(&self) -> bool {
         self.recursive
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use crate::acorn_type::{AcornType, Typeclass};
+
+    #[test]
+    fn raw_instance_spelling_cannot_bypass_canonical_recursive_identity() {
+        let class = Typeclass {
+            module_id: 11,
+            name: "Marked".into(),
+        };
+        let name =
+            GlobalConstantName::new(10, LocalConstantName::instance(&class, "flag", "State"));
+        let value = AcornValue::constant_named(name.clone(), vec![], AcornType::Bool);
+        assert!(!TerminationChecker::new(10, "State.Marked.flag".into(), 0).check(&value));
+        assert!(!TerminationChecker::new_named(name.clone(), 0).check(&value));
+        let foreign = GlobalConstantName::new(
+            10,
+            LocalConstantName::instance(
+                &Typeclass {
+                    module_id: 12,
+                    name: "Marked".into(),
+                },
+                "flag",
+                "State",
+            ),
+        );
+        assert!(TerminationChecker::new_named(foreign, 0).check(&value));
     }
 }

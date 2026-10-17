@@ -101,8 +101,8 @@ fn zero_argument_condition_callables_preserve_phantom_actuals_and_class_ownershi
     let AcornValue::Constant(constant) = &value else {
         panic!()
     };
-    assert_eq!(constant.module_id, left);
-    assert_eq!(constant.name, "Flagged.enabled");
+    assert_eq!(constant.name.module_id, left);
+    assert_eq!(constant.name.local_name.to_string(), "Flagged.enabled");
     assert_eq!(constant.params, [actual.clone()]);
     assert_eq!(constant.instance_type, AcornType::Bool);
     let owner = &project.get_env_by_id(left).unwrap().bindings;
@@ -193,14 +193,16 @@ fn later_conditions_expand_earlier_callable_laws_without_erasing_the_class_bound
     assert!(condition.claim.has_type_variable(&info.instance_param.name));
     assert!(!condition.claim.has_arbitrary());
     let mut expanded_calls = vec![];
-    condition
-        .claim
-        .find_constants(&|c| c.name == "Singleton.unique", &mut expanded_calls);
+    condition.claim.find_constants(
+        &|c| c.name.local_name.to_string() == "Singleton.unique",
+        &mut expanded_calls,
+    );
     assert!(expanded_calls.is_empty());
     let mut members = vec![];
-    condition
-        .claim
-        .find_constants(&|c| c.name == "Singleton.value", &mut members);
+    condition.claim.find_constants(
+        &|c| c.name.local_name.to_string() == "Singleton.value",
+        &mut members,
+    );
     assert!(!members.is_empty());
     for member in members {
         assert_eq!(

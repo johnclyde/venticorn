@@ -880,11 +880,11 @@ fn explicit_instance_constant_arguments_are_admitted() {
     let goal = env.get_node_by_name("goal");
     let mut members = vec![];
     goal.current().claim.value.find_constants(
-        &|constant| constant.name == "PointedSet.basepoint",
+        &|constant| constant.name.local_name.to_string() == "PointedSet.basepoint",
         &mut members,
     );
     assert_eq!(members.len(), 1);
-    assert_eq!(members[0].module_id, env.module_id);
+    assert_eq!(members[0].name.module_id, env.module_id);
     assert_eq!(members[0].params, [target.clone()]);
     assert_eq!(members[0].instance_type, *target);
 }

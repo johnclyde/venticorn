@@ -93,7 +93,10 @@ fn implicit_laws_and_explicit_proofs_create_real_scoped_obligations() {
         assert!(!goal.has_arbitrary());
         let mut generic_members = vec![];
         goal.find_constants(
-            &|constant| constant.module_id == id && constant.name == "Singleton.value",
+            &|constant| {
+                constant.name.module_id == id
+                    && constant.name.local_name.to_string() == "Singleton.value"
+            },
             &mut generic_members,
         );
         assert!(generic_members.is_empty());
@@ -242,15 +245,19 @@ fn lowering_preserves_legitimate_prior_membership_actuals() {
     assert_eq!(env.iter_goals().count(), 2);
     let goal = env.iter_goals().last().unwrap().goal_context().unwrap();
     let mut lowered = vec![];
-    goal.goal
-        .value()
-        .find_constants(&|c| c.name == "Second.Marked.flag", &mut lowered);
+    goal.goal.value().find_constants(
+        &|c| c.name.local_name.to_string() == "Second.Marked.flag",
+        &mut lowered,
+    );
     assert_eq!(lowered.len(), 1);
     let mut members = vec![];
     env.bindings
         .get_definition("Second.Marked.flag")
         .unwrap()
-        .find_constants(&|c| c.name == "Marked.flag", &mut members);
+        .find_constants(
+            &|c| c.name.local_name.to_string() == "Marked.flag",
+            &mut members,
+        );
     assert_eq!(members.len(), 1);
     assert_eq!(
         members[0].params,

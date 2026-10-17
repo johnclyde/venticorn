@@ -24,7 +24,10 @@ fn lookup_distinguishes_pending_generics_and_canonical_aliases() {
         .unwrap()
         .value(&source)
         .unwrap();
-    assert_eq!(alias.as_name(), Some((env.module_id, "original")));
+    assert_eq!(
+        alias.as_name(),
+        Some((env.module_id, "original".to_string()))
+    );
     assert_eq!(alias.get_type(), AcornType::Bool);
     alias.validate().unwrap();
     assert!(env.bindings.get_constant_value("missing").is_none());

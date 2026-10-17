@@ -68,12 +68,12 @@ fn canonical_method_bridges_keep_the_owner_actual_and_signature() {
         assert!(bridge.block.is_none());
         let mut references = vec![];
         bridge.claim.value.find_constants(
-            &|constant| constant.name == "Painted.is_red",
+            &|constant| constant.name.local_name.to_string() == "Painted.is_red",
             &mut references,
         );
         assert_eq!(references.len(), 1);
         let generic = &references[0];
-        assert_eq!(generic.module_id, class_module);
+        assert_eq!(generic.name.module_id, class_module);
         assert_eq!(generic.params, [target.clone()]);
         let AcornType::Function(signature) = &generic.instance_type else {
             panic!("member must keep its functional signature")
