@@ -824,3 +824,32 @@ fn typeclasses_can_have_conditions_862() {
         "#,
     );
 }
+
+#[test]
+#[ignore = "pending checked instance proof obligations"]
+fn instance_statement_accepts_by_block_865() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        typeclass S: Singleton {
+            value: S
+
+            unique(x: S) {
+                x = S.value
+            }
+        }
+
+        inductive Z1 {
+            zero
+        }
+
+        instance Z1: Singleton {
+            let value: Z1 = Z1.zero
+        } by {
+            forall(x: Z1) {
+                x = Z1.zero
+            }
+        }
+        "#,
+    );
+}
