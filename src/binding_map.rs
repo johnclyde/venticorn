@@ -656,18 +656,19 @@ impl BindingMap {
 
     // Adds a new type name that's an alias for an existing type
     pub fn add_type_alias(&mut self, name: &str, acorn_type: AcornType) {
-        if self.name_in_use(name) {
-            panic!("type alias {} already bound", name);
-        }
-        if let AcornType::Data(module, type_name, actuals) = &acorn_type {
-            // A specialized type alias must not rename the entire generic family.
-            if actuals.is_empty() {
-                self.canonical_to_alias
-                    .entry((*module, type_name.clone()))
-                    .or_insert(name.to_string());
+        let canonical = match &acorn_type {
+            AcornType::Data(module, type_name, actuals) if actuals.is_empty() => {
+                Some((*module, type_name.clone()))
             }
-        }
+            _ => None,
+        };
+        // Complete the checked forward insertion before updating preferred aliases.
         self.insert_type_name(name.to_string(), PotentialType::Resolved(acorn_type));
+        if let Some(canonical) = canonical {
+            self.canonical_to_alias
+                .entry(canonical)
+                .or_insert_with(|| name.to_string());
+        }
     }
 
     // Add a name for a complete type or an unspecialized generic family.
@@ -705,12 +706,25 @@ impl BindingMap {
     }
 
     pub fn add_typeclass(&mut self, name: &str, typeclass: Typeclass) {
-        assert!(!self.name_in_use(name), "name {} already bound", name);
+        assert!(
+            !self.typename_to_type.contains_key(name)
+                && !self.constant_name_to_type.contains_key(name)
+                && !self.name_to_module.contains_key(name),
+            "name {} already bound",
+            name
+        );
+        match self.name_to_typeclass.entry(name.to_string()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(typeclass.clone());
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                panic!("typeclass name {} already bound", entry.key());
+            }
+        }
         self.record_name(name);
         self.typeclass_to_name
-            .entry(typeclass.clone())
+            .entry(typeclass)
             .or_insert_with(|| name.to_string());
-        self.name_to_typeclass.insert(name.to_string(), typeclass);
     }
 
     pub(crate) fn add_typeclass_info(&mut self, class: Typeclass, info: TypeclassInfo) {
@@ -1461,11 +1475,7 @@ impl BindingMap {
                 }
             }
             let (name, acorn_type) = self.evaluate_declaration(project, declaration)?;
-            if self.name_in_use(&name) {
-                return Err(declaration
-                    .token()
-                    .error("cannot redeclare a name in an argument list"));
-            }
+            self.check_unqualified_name_available(declaration.token(), &name)?;
             if names.contains(&name) {
                 return Err(declaration
                     .token()
@@ -3562,21 +3572,47 @@ mod name_insertion_tests {
     use super::*;
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
-    fn reject_without_type_name_mutation(
-        bindings: &mut BindingMap,
-        add: impl FnOnce(&mut BindingMap),
-    ) {
+    fn reject_without_name_mutation(bindings: &mut BindingMap, add: impl FnOnce(&mut BindingMap)) {
         let types = bindings.typename_to_type.clone();
         let reverse = bindings.type_to_typename.clone();
         let aliases = bindings.canonical_to_alias.clone();
         let positions = bindings.name_positions.clone();
         let position = bindings.position;
+        let constants = bindings.constant_name_to_type.clone();
+        let class_names = bindings.name_to_typeclass.clone();
+        let class_reverse = bindings.typeclass_to_name.clone();
+        let modules = bindings.name_to_module.clone();
+        let module_reverse = bindings.module_to_name.clone();
+        let value_aliases = bindings.aliases.clone();
+        let scope = bindings.proof_scope.clone();
+        let records = |b: &BindingMap| {
+            b.constant_info
+                .iter()
+                .map(|(name, info)| {
+                    (
+                        name.clone(),
+                        info.params.clone(),
+                        info.definition.clone(),
+                        info.constructor.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let constant_info = records(bindings);
         assert!(catch_unwind(AssertUnwindSafe(|| add(bindings))).is_err());
         assert_eq!(bindings.typename_to_type, types);
         assert_eq!(bindings.type_to_typename, reverse);
         assert_eq!(bindings.canonical_to_alias, aliases);
         assert_eq!(bindings.name_positions, positions);
         assert_eq!(bindings.position, position);
+        assert_eq!(bindings.constant_name_to_type, constants);
+        assert_eq!(bindings.name_to_typeclass, class_names);
+        assert_eq!(bindings.typeclass_to_name, class_reverse);
+        assert_eq!(bindings.name_to_module, modules);
+        assert_eq!(bindings.module_to_name, module_reverse);
+        assert_eq!(bindings.aliases, value_aliases);
+        assert_eq!(bindings.proof_scope, scope);
+        assert_eq!(records(bindings), constant_info);
     }
 
     #[test]
@@ -3593,13 +3629,13 @@ mod name_insertion_tests {
         );
         bindings.import_module("dependency", FIRST_NORMAL + 1);
         for name in ["Data", "value", "Class", "dependency"] {
-            reject_without_type_name_mutation(&mut bindings, |b| {
+            reject_without_name_mutation(&mut bindings, |b| {
                 b.add_data_type(name);
             });
-            reject_without_type_name_mutation(&mut bindings, |b| {
+            reject_without_name_mutation(&mut bindings, |b| {
                 b.add_arbitrary_type(name);
             });
-            reject_without_type_name_mutation(&mut bindings, |b| {
+            reject_without_name_mutation(&mut bindings, |b| {
                 b.add_potential_type(name, 1);
             });
         }
@@ -3610,5 +3646,56 @@ mod name_insertion_tests {
                 .map(String::as_str),
             Some("Data")
         );
+    }
+
+    #[test]
+    fn rejected_declaration_insertions_preserve_all_name_metadata() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_data_type("Data");
+        bindings.add_constant("value", vec![], AcornType::Bool, None, None);
+        bindings.add_typeclass(
+            "Class",
+            Typeclass {
+                module_id: FIRST_NORMAL,
+                name: "Class".into(),
+            },
+        );
+        bindings.import_module("dependency", FIRST_NORMAL + 1);
+        for name in ["Data", "value", "Class", "dependency"] {
+            reject_without_name_mutation(&mut bindings, |b| {
+                b.add_type_alias(
+                    name,
+                    AcornType::Data(FIRST_NORMAL + 1, "Foreign".into(), vec![]),
+                )
+            });
+            reject_without_name_mutation(&mut bindings, |b| {
+                b.add_typeclass(
+                    name,
+                    Typeclass {
+                        module_id: FIRST_NORMAL + 1,
+                        name: "Foreign".into(),
+                    },
+                )
+            });
+            reject_without_name_mutation(&mut bindings, |b| {
+                b.add_constant(name, vec![], AcornType::Bool, None, None)
+            });
+            reject_without_name_mutation(&mut bindings, |b| {
+                b.add_alias(
+                    name,
+                    FIRST_NORMAL + 1,
+                    "external".into(),
+                    PotentialValue::Resolved(AcornValue::new_constant(
+                        FIRST_NORMAL + 1,
+                        "external".into(),
+                        vec![],
+                        AcornType::Bool,
+                    )),
+                )
+            });
+            reject_without_name_mutation(&mut bindings, |b| {
+                b.import_module(name, FIRST_NORMAL + 2)
+            });
+        }
     }
 }
