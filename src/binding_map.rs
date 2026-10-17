@@ -103,11 +103,6 @@ pub struct BindingMap {
     // Formatting metadata only; evaluation always consults the canonical owner.
     imported_instance_members: HashMap<(ModuleId, String), Typeclass>,
 
-    // Maps an identifier name to its type.
-    // Has entries for both defined constants and aliases. Pending generic aliases
-    // retain the signature in declaration parameters, before actuals are supplied.
-    constant_name_to_type: BTreeMap<String, AcornType>,
-
     // Maps the name of a constant defined in this scope to information about it.
     // Doesn't handle variables defined on the stack, only ones that will be in scope for the
     // entirety of this environment.
@@ -208,7 +203,6 @@ impl BindingMap {
             instance_scopes: HashMap::new(),
             proof_scope: ProofScope::default(),
             imported_instance_members: HashMap::new(),
-            constant_name_to_type: BTreeMap::new(),
             constant_info: BTreeMap::new(),
             canonical_to_alias: HashMap::new(),
             name_to_module: BTreeMap::new(),
@@ -250,9 +244,6 @@ impl BindingMap {
             .retain(|name, _| visible.contains_key(name));
         result
             .name_to_typeclass
-            .retain(|name, _| visible.contains_key(name));
-        result
-            .constant_name_to_type
             .retain(|name, _| visible.contains_key(name));
         result
             .constant_info
@@ -857,8 +848,6 @@ impl BindingMap {
         }
         let value = PotentialValue::constant(self.module, name, constant_type.clone(), params);
         self.record_name(name);
-        self.constant_name_to_type
-            .insert(name.to_string(), constant_type);
 
         let info = ConstantInfo {
             value,
@@ -881,8 +870,6 @@ impl BindingMap {
             panic!("cannot alias name {} because it is already bound", name);
         }
         self.record_name(name);
-        self.constant_name_to_type
-            .insert(name.to_string(), value.get_type());
         let canonical = (canonical_module, canonical_name);
         if canonical_module != self.module {
             // Prefer this alias locally to using the qualified, canonical name
@@ -1013,7 +1000,7 @@ impl BindingMap {
         };
         let full_prefix = format!("{}.{}", type_name, prefix);
         let mut items = vec![];
-        for name in keys_with_prefix(&bindings.constant_name_to_type, &full_prefix) {
+        for name in keys_with_prefix(&bindings.constant_info, &full_prefix) {
             if module == self.module && !visible(name) {
                 continue;
             }
@@ -1138,7 +1125,7 @@ impl BindingMap {
                 });
             }
         }
-        for name in keys_with_prefix(&self.constant_name_to_type, prefix) {
+        for name in keys_with_prefix(&self.constant_info, prefix) {
             if !visible(name) {
                 continue;
             }
@@ -2953,8 +2940,10 @@ impl BindingMap {
             else {
                 return false;
             };
-            let Some(signature) = self.constant_name_to_type.get(&constant.name) else {
-                return false;
+            let signature = match &info.value {
+                PotentialValue::Unresolved(declaration) => &declaration.generic_type,
+                PotentialValue::Resolved(AcornValue::Constant(value)) => &value.instance_type,
+                _ => return false,
             };
             (info.value.unresolved_params(), signature)
         } else {
@@ -3475,7 +3464,6 @@ mod name_insertion_tests {
         let aliases = bindings.canonical_to_alias.clone();
         let positions = bindings.name_positions.clone();
         let position = bindings.position;
-        let constants = bindings.constant_name_to_type.clone();
         let class_names = bindings.name_to_typeclass.clone();
         let class_reverse = bindings.typeclass_to_name.clone();
         let modules = bindings.name_to_module.clone();
@@ -3502,7 +3490,6 @@ mod name_insertion_tests {
         assert_eq!(bindings.canonical_to_alias, aliases);
         assert_eq!(bindings.name_positions, positions);
         assert_eq!(bindings.position, position);
-        assert_eq!(bindings.constant_name_to_type, constants);
         assert_eq!(bindings.name_to_typeclass, class_names);
         assert_eq!(bindings.typeclass_to_name, class_reverse);
         assert_eq!(bindings.name_to_module, modules);
