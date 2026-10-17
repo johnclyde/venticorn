@@ -217,7 +217,14 @@ fn instance_preparation_rolls_back_members_facts_and_declaration_identity() {
 fn instance_targets_are_local_canonical_nongeneric_types() {
     use venticorn::project::Project;
     use venticorn::statement::Statement;
-    for target in ["Bool", "Alias", "Box"] {
+    for (target, expected) in [
+        ("Bool", "we can only bind members to data types"),
+        ("Alias", "we cannot bind members to type aliases"),
+        (
+            "Box",
+            "instance target must be a canonical nongeneric data type in this module",
+        ),
+    ] {
         let mut env = Environment::new_test();
         env.add("typeclass T: Empty {\n flag: Bool\n}\ninductive State {\n clean\n}\ntype Alias: State\nstructure Box<T> {\n value: T\n}");
         let nodes = env.nodes.len();
@@ -227,10 +234,7 @@ fn instance_targets_are_local_canonical_nongeneric_types() {
                 &Statement::parse_str(&format!("instance {target}: Empty {{}}")).unwrap(),
             )
             .unwrap_err();
-        assert_eq!(
-            error.message(),
-            "instance target must be a canonical nongeneric data type in this module"
-        );
+        assert_eq!(error.message(), expected);
         assert_eq!(env.nodes.len(), nodes);
         env.add("instance State: Empty {\n let flag: Bool = true\n}");
         env.bad("instance State: Empty {\n let flag: Bool = true\n}");
@@ -241,10 +245,9 @@ fn instance_targets_are_local_canonical_nongeneric_types() {
         "/mock/main.ac",
         "from foreign import State\ntypeclass T: Empty {\n flag: Bool\n}\ninstance State: Empty {}",
     );
-    assert!(project
-        .errors()
-        .iter()
-        .any(|(_, error)| error.message().contains("canonical nongeneric")));
+    assert!(project.errors().iter().any(|(_, error)| error
+        .message()
+        .contains("we can only bind members to types in the current module")));
     let mut parent = Environment::new_test();
     parent.add("typeclass T: Empty {\n flag: Bool\n}\ninductive State {\n clean\n}");
     let mut child = parent.child(0, false);
