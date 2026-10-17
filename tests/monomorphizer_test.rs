@@ -272,3 +272,36 @@ fn generic_no_demand_facts_are_not_emitted_from_nested_binders() {
         "fixed scoped types remain usable"
     );
 }
+
+#[test]
+fn concrete_scope_checks_whole_fact_bounds_before_phantom_erasure() {
+    use venticorn::acorn_type::TypeParam;
+    use venticorn::project::Project;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", "typeclass T: Marked {\n flag: Bool\n}\ntype Item: axiom\ninstance Item: Marked {\n let flag: Bool = true\n}");
+    let id = project.expect_ok("main");
+    let bindings = &project.get_env_by_id(id).unwrap().bindings;
+    let bound = AcornType::Variable(TypeParam {
+        name: "T".into(),
+        typeclass: Some(bindings.get_typeclass_for_name("Marked").unwrap().clone()),
+    });
+    let constant = |name: &str, actual: AcornType| {
+        AcornValue::new_constant(id, name.into(), vec![actual], AcornType::Bool)
+    };
+    let generic = AcornValue::new_and(constant("loose", variable("T")), constant("bound", bound));
+    let mut mono = Monomorphizer::with_scope(bindings.proof_scope().clone());
+    mono.add_fact(fact(generic.clone(), Truthiness::Factual));
+    for actual in [
+        AcornType::Bool,
+        AcornType::Data(id + 1, "Item".into(), vec![]),
+        AcornType::Data(id, "Item".into(), vec![AcornType::Bool]),
+    ] {
+        mono.add_monomorphs(&constant("loose", actual));
+        assert!(mono.take_facts().is_empty());
+    }
+    let valid = AcornType::Data(id, "Item".into(), vec![]);
+    mono.add_monomorphs(&constant("loose", valid.clone()));
+    let output = mono.take_facts();
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].value, generic.instantiate(&[("T".into(), valid)]));
+}

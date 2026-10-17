@@ -33,6 +33,8 @@ impl Goal {
 
 // A goal along with some information related to it.
 pub struct GoalContext {
+    // Immutable interpretation of process-local IDs, never a memoized goal digest.
+    pub(crate) cache_modules: Option<std::sync::Arc<Vec<crate::module::ModuleRef>>>,
     pub proof_scope: crate::proof_scope::ProofScope,
     pub module_id: ModuleId,
 
@@ -63,6 +65,13 @@ pub struct GoalContext {
 }
 
 impl GoalContext {
+    pub(crate) fn canonical_cache_policy(&self) -> Option<[u8; 32]> {
+        let modules = self.cache_modules.as_ref()?;
+        crate::persistent_cache::goal_policy(std::slice::from_ref(self), &|id| {
+            modules.get(id as usize).cloned()
+        })
+    }
+
     // Human-readable text is separate from the stable source identifier used by fact selection.
     pub fn description(&self) -> &str {
         &self.name
@@ -92,6 +101,7 @@ impl GoalContext {
                 .unwrap_or_else(|_| format!("solve at line {}", range.start.line + 1)),
         };
         GoalContext {
+            cache_modules: None,
             proof_scope: env.bindings.proof_scope().clone(),
             module_id: env.module_id,
             name,

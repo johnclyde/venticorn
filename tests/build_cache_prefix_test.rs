@@ -107,17 +107,26 @@ fn later_import_changes_invalidate_earlier_proof_context() {
         "import base\naxiom connection { base.a = base.b }",
     );
     project.mock("/mock/empty.ac", "");
-    let original = "import base\ntheorem earlier { base.a = base.b }\nimport bridge\n";
-    project.mock("/mock/main.ac", original);
+    let visible = "import base\nimport bridge\ntheorem earlier { base.a = base.b }\n";
+    project.mock("/mock/main.ac", visible);
     good(&project.sync_build_report(), 1, 0);
-    update(&mut project, &original.replace("bridge", "empty"), 1);
-    let failed = project.sync_build_report();
-    assert_eq!(failed.status, BuildStatus::Warning);
-    assert_eq!(failed.num_cached, 0);
-    assert!(failed
-        .events
-        .iter()
-        .any(|event| event.module == ModuleRef::Name("main".into()) && event.diagnostic.is_some()));
+    good(&project.sync_build_report(), 0, 1);
+    // Moving the import after the theorem cannot retain its earlier authority.
+    let later = "import base\ntheorem earlier { base.a = base.b }\nimport bridge\n";
+    for (version, text) in [later.to_owned(), later.replace("bridge", "empty")]
+        .into_iter()
+        .enumerate()
+    {
+        update(&mut project, &text, version as i32 + 1);
+        let failed = project.sync_build_report();
+        assert_eq!(failed.status, BuildStatus::Warning);
+        assert_eq!((failed.num_success, failed.num_cached), (0, 0));
+        assert!(failed
+            .events
+            .iter()
+            .any(|event| event.module == ModuleRef::Name("main".into())
+                && event.diagnostic.is_some()));
+    }
 }
 
 #[test]

@@ -305,12 +305,16 @@ fn instance_class_lookup_is_canonical_and_display_collisions_are_rejected() {
 }
 
 #[test]
-fn admitted_implementations_do_not_grant_unchecked_concrete_bounds() {
+fn concrete_bounds_require_a_preceding_matching_instance() {
     let mut env = Environment::new_test();
-    env.add("typeclass T: Marked {\n flag: Bool\n}\ninductive State {\n clean\n}\ninstance State: Marked {\n let flag: Bool = true\n}");
-    env.bad("let invalid: Bool = Marked.flag<State>");
+    env.add("typeclass T: Marked {\n flag: Bool\n}\ninductive State {\n clean\n}");
     env.add("define generic<T: Marked>(value: T) -> Bool { Marked.flag<T> }");
+    env.bad("let invalid: Bool = Marked.flag<State>");
     env.bad("let invalid: Bool = generic(State.clean)");
+    env.add("instance State: Marked {\n let flag: Bool = true\n}");
+    env.add("let explicit: Bool = Marked.flag<State>");
+    env.add("let inferred: Bool = generic(State.clean)");
+    env.bad("let invalid: Bool = generic(true)");
 }
 
 #[test]
@@ -495,7 +499,6 @@ fn concrete_instance_members_are_accessible() {
 }
 
 #[test]
-#[ignore = "pending checked concrete bound membership"]
 fn declared_concrete_instances_support_generic_class_members() {
     let mut env = Environment::new_test();
     env.add(

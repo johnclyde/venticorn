@@ -1564,7 +1564,18 @@ impl AcornValue {
     }
 
     pub fn accepts_substitution(&self, substitutions: &HashMap<String, AcornType>) -> bool {
-        self.all_types(&|ty| ty.accepts_substitution(substitutions))
+        self.accepts_substitution_in_scope(
+            substitutions,
+            &crate::proof_scope::ProofScope::default(),
+        )
+    }
+
+    pub fn accepts_substitution_in_scope(
+        &self,
+        substitutions: &HashMap<String, AcornType>,
+        scope: &crate::proof_scope::ProofScope,
+    ) -> bool {
+        self.all_types(&|ty| ty.accepts_substitution_in_scope(substitutions, scope))
     }
 
     // Replace some parametric types with other types.

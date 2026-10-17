@@ -55,6 +55,7 @@ impl ConstantParams {
 // Tracks the generic constants used by each fact and the concrete instances needed by proofs.
 #[derive(Clone)]
 pub struct Monomorphizer {
+    scope: crate::proof_scope::ProofScope,
     // Generic facts retain their own independent type-variable namespaces.
     generic_facts: Vec<Fact>,
 
@@ -79,7 +80,12 @@ pub struct Monomorphizer {
 
 impl Monomorphizer {
     pub fn new() -> Monomorphizer {
+        Self::with_scope(crate::proof_scope::ProofScope::default())
+    }
+
+    pub fn with_scope(scope: crate::proof_scope::ProofScope) -> Self {
         Monomorphizer {
+            scope,
             generic_facts: vec![],
             output_facts: vec![],
             instantiations_for_fact: vec![],
@@ -188,7 +194,8 @@ impl Monomorphizer {
             .iter()
             .zip(monomorph_params.params.iter())
         {
-            if !instance_type.match_instance(monomorph_type, &mut fact_params) {
+            if !instance_type.match_instance_in_scope(monomorph_type, &mut fact_params, &self.scope)
+            {
                 return;
             }
         }
@@ -196,7 +203,7 @@ impl Monomorphizer {
         // The selected constant may not expose every bound elsewhere in the same fact.
         if !self.generic_facts[fact_id]
             .value
-            .accepts_substitution(&fact_params)
+            .accepts_substitution_in_scope(&fact_params, &self.scope)
         {
             return;
         }

@@ -12,7 +12,8 @@ pub type PremiseSet = BTreeMap<ModuleRef, BTreeSet<String>>;
 use tower_lsp::lsp_types::Range;
 
 // The obligation and policy are checked in addition to source identity. Module
-// IDs inside values are deliberately compared conservatively for partial reuse.
+// IDs are canonicalized when the Project supplies their immutable interpretation.
+// Compatibility callers without a resolver retain conservative raw comparisons.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CachedGoal {
     prove: bool,
@@ -22,6 +23,8 @@ pub(crate) struct CachedGoal {
     context_end: u32,
     inconsistency_okay: bool,
     proof_scope: ProofScope,
+    canonical_context: bool,
+    canonical_policy: Option<[u8; 32]>,
 }
 
 impl CachedGoal {
@@ -34,10 +37,18 @@ impl CachedGoal {
             context_end: goal.cache_last_line,
             inconsistency_okay: goal.inconsistency_okay,
             proof_scope: goal.proof_scope.clone(),
+            canonical_context: goal.cache_modules.is_some(),
+            canonical_policy: goal.canonical_cache_policy(),
         }
     }
 
     fn matches(&self, goal: &GoalContext) -> bool {
+        if self.canonical_context || goal.cache_modules.is_some() {
+            return self.canonical_context
+                && goal.cache_modules.is_some()
+                && self.canonical_policy.is_some()
+                && self.canonical_policy == goal.canonical_cache_policy();
+        }
         self.prove == matches!(goal.goal, Goal::Prove(_))
             && &self.value == goal.goal.value()
             && self.range == goal.goal.range()
@@ -223,7 +234,7 @@ mod tests {
         let cache = project.sync_build_report().cache.unwrap();
         let module = ModuleRef::Name("main".into());
         let env = project.get_env_by_ref(&module).unwrap();
-        let mut goal = env.iter_goals().next().unwrap().goal_context().unwrap();
+        let mut goal = project.cache_goal_context(&env.iter_goals().next().unwrap());
         let hash = project.get_module_hash(env.module_id).unwrap();
         assert!(cache.matches_prefix(&module, hash, &goal, 0));
         goal.inconsistency_okay = !goal.inconsistency_okay;
@@ -246,13 +257,18 @@ mod tests {
         let cache = project.sync_build_report().cache.unwrap();
         let module = ModuleRef::Name("main".into());
         let env = project.get_env_by_ref(&module).unwrap();
-        let current_goal = || env.iter_goals().next().unwrap().goal_context().unwrap();
+        let current_goal = || project.cache_goal_context(&env.iter_goals().next().unwrap());
         let hash = project.get_module_hash(env.module_id).unwrap();
         let cached = cache.get(&module).unwrap();
         let goal = current_goal();
         assert!(cached.matches_goals(std::slice::from_ref(&goal)));
         assert!(cache.matches(&module, Some(hash), std::slice::from_ref(&goal)));
         assert!(cache.matches_prefix(&module, hash, &goal, 0));
+        let raw = env.iter_goals().next().unwrap().goal_context().unwrap();
+        assert!(!cached.matches_goals(std::slice::from_ref(&raw)));
+        let mut unresolved = current_goal();
+        Arc::make_mut(&mut unresolved.proof_scope.imports).push(999);
+        assert!(!cached.matches_goals(std::slice::from_ref(&unresolved)));
         let membership = MembershipKey {
             data_module: env.module_id,
             data_name: "Item".into(),

@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt};
 
 use crate::compilation::{self, ErrorSource};
 use crate::module::ModuleId;
+use crate::proof_scope::ProofScope;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct UnresolvedType {
@@ -22,12 +23,21 @@ impl PotentialType {
         params: Vec<AcornType>,
         source: &dyn ErrorSource,
     ) -> compilation::Result<AcornType> {
+        self.resolve_in_scope(params, source, &ProofScope::default())
+    }
+
+    pub fn resolve_in_scope(
+        self,
+        params: Vec<AcornType>,
+        source: &dyn ErrorSource,
+        scope: &ProofScope,
+    ) -> compilation::Result<AcornType> {
         match self {
             Self::Resolved(t) if params.is_empty() => Ok(t),
             Self::Resolved(_) => Err(source.error("resolved type cannot take parameters")),
             Self::Unresolved(t) if params.len() == t.params.len() => {
                 for (formal, actual) in t.params.iter().zip(&params) {
-                    if !formal.accepts(actual) {
+                    if !formal.accepts_in_scope(actual, scope) {
                         return Err(source.error(&format!(
                             "type argument {} does not satisfy the class bound on {}",
                             actual, formal.name
@@ -142,11 +152,18 @@ impl TypeParam {
     }
 
     pub fn accepts(&self, actual: &AcornType) -> bool {
+        self.accepts_in_scope(actual, &ProofScope::default())
+    }
+
+    pub fn accepts_in_scope(&self, actual: &AcornType, scope: &ProofScope) -> bool {
         match &self.typeclass {
             None => true,
             Some(class) => match actual {
                 AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                     param.typeclass.as_ref() == Some(class)
+                }
+                AcornType::Data(module, name, actuals) if actuals.is_empty() => {
+                    scope.has_membership(*module, name, class)
                 }
                 _ => false,
             },
@@ -389,6 +406,15 @@ impl AcornType {
         specialized: &AcornType,
         mapping: &mut HashMap<String, AcornType>,
     ) -> bool {
+        self.match_instance_in_scope(specialized, mapping, &ProofScope::default())
+    }
+
+    pub fn match_instance_in_scope(
+        &self,
+        specialized: &AcornType,
+        mapping: &mut HashMap<String, AcornType>,
+        scope: &ProofScope,
+    ) -> bool {
         match (self, specialized) {
             (
                 AcornType::Data(module, name, actuals),
@@ -400,10 +426,10 @@ impl AcornType {
                     && actuals
                         .iter()
                         .zip(other_actuals)
-                        .all(|(a, b)| a.match_instance(b, mapping))
+                        .all(|(a, b)| a.match_instance_in_scope(b, mapping, scope))
             }
             (AcornType::Variable(param), _) => {
-                if !param.accepts(specialized) {
+                if !param.accepts_in_scope(specialized, scope) {
                     return false;
                 }
                 if let Some(t) = mapping.get(&param.name) {
@@ -417,11 +443,14 @@ impl AcornType {
                 if f.arg_types.len() != g.arg_types.len() {
                     return false;
                 }
-                if !f.return_type.match_instance(&g.return_type, mapping) {
+                if !f
+                    .return_type
+                    .match_instance_in_scope(&g.return_type, mapping, scope)
+                {
                     return false;
                 }
                 for (f_arg_type, g_arg_type) in f.arg_types.iter().zip(&g.arg_types) {
-                    if !f_arg_type.match_instance(g_arg_type, mapping) {
+                    if !f_arg_type.match_instance_in_scope(g_arg_type, mapping, scope) {
                         return false;
                     }
                 }
@@ -484,19 +513,29 @@ impl AcornType {
 
     // Check before substitution can erase the original class requirements.
     pub fn accepts_substitution(&self, substitutions: &HashMap<String, AcornType>) -> bool {
+        self.accepts_substitution_in_scope(substitutions, &ProofScope::default())
+    }
+
+    pub fn accepts_substitution_in_scope(
+        &self,
+        substitutions: &HashMap<String, AcornType>,
+        scope: &ProofScope,
+    ) -> bool {
         match self {
             Self::Variable(param) => substitutions
                 .get(&param.name)
-                .is_none_or(|actual| param.accepts(actual)),
+                .is_none_or(|actual| param.accepts_in_scope(actual, scope)),
             Self::Data(_, _, actuals) => actuals
                 .iter()
-                .all(|t| t.accepts_substitution(substitutions)),
+                .all(|t| t.accepts_substitution_in_scope(substitutions, scope)),
             Self::Function(function) => {
                 function
                     .arg_types
                     .iter()
-                    .all(|t| t.accepts_substitution(substitutions))
-                    && function.return_type.accepts_substitution(substitutions)
+                    .all(|t| t.accepts_substitution_in_scope(substitutions, scope))
+                    && function
+                        .return_type
+                        .accepts_substitution_in_scope(substitutions, scope)
             }
             _ => true,
         }

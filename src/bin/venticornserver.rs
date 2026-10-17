@@ -196,6 +196,8 @@ impl SearchTask {
             }
         };
 
+        let node = NodeCursor::from_path(env, &self.path);
+        let bindings = node.bindings_for_codegen();
         log(&format!("running search task for {}", self.goal_name));
 
         loop {
@@ -206,9 +208,9 @@ impl SearchTask {
             let status = match outcome {
                 Outcome::Success => {
                     let proof = prover.get_proof().unwrap();
-                    let steps = prover.to_proof_info(&project, &env.bindings, &proof);
+                    let steps = prover.to_proof_info(&project, &bindings, &proof);
 
-                    let (code, error) = match proof.to_code(&env.bindings) {
+                    let (code, error) = match proof.to_code(&bindings) {
                         Ok(code) => (Some(code), None),
                         Err(e) => (None, Some(e.to_string())),
                     };
@@ -592,10 +594,7 @@ impl Backend {
             Err(s) => return self.search_fail(params, &s),
         };
         let superseded = Arc::new(AtomicBool::new(false));
-        let mut prover = Prover::new(&project, false);
-        for fact in node.usable_facts(&project) {
-            prover.add_fact(fact);
-        }
+        let mut prover = project.prover_for_node(&node, false);
         prover.set_goal(&goal_context);
         prover.stop_flags.push(superseded.clone());
         let status = SearchStatus::pending(&prover);
