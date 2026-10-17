@@ -119,8 +119,8 @@ pub struct BindingMap {
 
     // Whenever a name from some other scope has a local alias in this one,
     // if we're generating code, we prefer to use the local name.
-    // Thus, preferred_names maps the canonical identifier to a local alias.
-    canonical_to_alias: HashMap<(ModuleId, String), String>,
+    // Type names use an Unqualified surrogate; constants retain their full identity.
+    canonical_to_alias: HashMap<GlobalConstantName, String>,
 
     // Names that refer to other modules.
     // For example after "import foo", "foo" refers to a module.
@@ -325,7 +325,10 @@ impl BindingMap {
                             if actuals.is_empty() {
                                 result
                                     .canonical_to_alias
-                                    .entry((*module, family.clone()))
+                                    .entry(GlobalConstantName::new(
+                                        *module,
+                                        LocalConstantName::unqualified(family),
+                                    ))
                                     .or_insert_with(|| name.clone());
                             }
                         }
@@ -337,7 +340,10 @@ impl BindingMap {
                             .or_insert_with(|| name.clone());
                         result
                             .canonical_to_alias
-                            .entry((ty.module_id, ty.name.clone()))
+                            .entry(GlobalConstantName::new(
+                                ty.module_id,
+                                LocalConstantName::unqualified(&ty.name),
+                            ))
                             .or_insert_with(|| name.clone());
                     }
                 }
@@ -354,18 +360,14 @@ impl BindingMap {
             {
                 let alias = &info.value;
                 let canonical = match alias {
-                    PotentialValue::Unresolved(c) => {
-                        Some((c.name.module_id, c.name.local_name.to_string()))
-                    }
-                    PotentialValue::Resolved(v) => v
-                        .simple_constant_name()
-                        .map(|name| (name.module_id, name.local_name.to_string())),
+                    PotentialValue::Unresolved(c) => Some(&c.name),
+                    PotentialValue::Resolved(v) => v.simple_constant_name(),
                 };
-                if let Some((module, canonical)) = canonical {
-                    if module != result.module {
+                if let Some(canonical) = canonical {
+                    if canonical.module_id != result.module {
                         result
                             .canonical_to_alias
-                            .entry((module, canonical))
+                            .entry(canonical.clone())
                             .or_insert_with(|| name.clone());
                     }
                 }
@@ -527,9 +529,9 @@ impl BindingMap {
     // Adds a new type name that's an alias for an existing type
     pub fn add_type_alias(&mut self, name: &str, acorn_type: AcornType) {
         let canonical = match &acorn_type {
-            AcornType::Data(module, type_name, actuals) if actuals.is_empty() => {
-                Some((*module, type_name.clone()))
-            }
+            AcornType::Data(module, type_name, actuals) if actuals.is_empty() => Some(
+                GlobalConstantName::new(*module, LocalConstantName::unqualified(type_name)),
+            ),
             _ => None,
         };
         // Complete the checked forward insertion before updating preferred aliases.
@@ -552,7 +554,10 @@ impl BindingMap {
                     .entry((t.module_id, t.name.clone(), t.params.len()))
                     .or_insert_with(|| name.to_string());
                 self.canonical_to_alias
-                    .entry((t.module_id, t.name.clone()))
+                    .entry(GlobalConstantName::new(
+                        t.module_id,
+                        LocalConstantName::unqualified(&t.name),
+                    ))
                     .or_insert_with(|| name.to_string());
                 self.typename_to_type
                     .insert(name.to_string(), PotentialType::Unresolved(t));
@@ -1017,7 +1022,7 @@ impl BindingMap {
             &LocalConstantName::from_legacy(name),
             GlobalConstantName::new(
                 canonical_module,
-                LocalConstantName::unqualified(&canonical_name),
+                LocalConstantName::from_legacy(&canonical_name),
             ),
             value,
         );
@@ -1035,14 +1040,10 @@ impl BindingMap {
             panic!("cannot alias name {} because it is already bound", name);
         }
         self.record_constant_name(local_name, &name);
-        let canonical = (
-            canonical_name.module_id,
-            canonical_name.local_name.to_string(),
-        );
         if canonical_name.module_id != self.module {
             // Prefer this alias locally to using the qualified, canonical name
             self.canonical_to_alias
-                .entry(canonical.clone())
+                .entry(canonical_name.clone())
                 .or_insert(name.to_string());
         }
         self.constant_info.insert(
@@ -3066,7 +3067,7 @@ impl BindingMap {
         if module == self.module {
             return Ok(Expression::generate_identifier_chain(&parts));
         }
-        if let Some(alias) = self.canonical_to_alias.get(&(module, spelling.clone())) {
+        if let Some(alias) = self.canonical_to_alias.get(name) {
             if let Some(info) = self.constant_info_by_spelling(alias) {
                 if Self::value_name(&info.value) != Some(name) {
                     return Err(CodeGenError::UnhandledValue(
@@ -3088,7 +3089,10 @@ impl BindingMap {
                 }
             }
             LocalConstantName::Attribute(owner, member) => {
-                if let Some(alias) = self.canonical_to_alias.get(&(module, owner.clone())) {
+                if let Some(alias) = self.canonical_to_alias.get(&GlobalConstantName::new(
+                    module,
+                    LocalConstantName::unqualified(owner),
+                )) {
                     return Ok(Expression::generate_identifier_chain(&[alias, member]));
                 }
                 let data_type = AcornType::Data(module, owner.clone(), vec![]);
@@ -3165,10 +3169,7 @@ impl BindingMap {
             };
             (info.value.unresolved_params(), signature)
         } else {
-            let Some(alias) = self.canonical_to_alias.get(&(
-                constant.name.module_id,
-                constant.name.local_name.to_string(),
-            )) else {
+            let Some(alias) = self.canonical_to_alias.get(&constant.name) else {
                 return false;
             };
             let Some(info) = self
@@ -4452,5 +4453,81 @@ mod typed_storage_tests {
         let current = bindings.for_codegen_at(bindings.codegen_position(), bindings.proof_scope());
         check_indexes(&current);
         assert_eq!(current.get_constant_value_named(&member), Some(value));
+    }
+}
+
+#[cfg(test)]
+mod canonical_alias_inventory_tests {
+    use super::*;
+
+    #[test]
+    fn preferred_aliases_distinguish_class_owners_and_rebuild_at_the_selected_position() {
+        let mut bindings = BindingMap::new(20);
+        let name = |owner| {
+            GlobalConstantName::new(
+                10,
+                LocalConstantName::instance(
+                    &Typeclass {
+                        module_id: owner,
+                        name: "Marked".into(),
+                    },
+                    "flag",
+                    "State",
+                ),
+            )
+        };
+        let left = name(11);
+        let right = name(12);
+        assert_eq!(left.local_name.to_string(), right.local_name.to_string());
+        for (alias, canonical) in [("left", left.clone()), ("right", right.clone())] {
+            bindings.add_alias_named(
+                &LocalConstantName::unqualified(alias),
+                canonical.clone(),
+                PotentialValue::constant_named(canonical, AcornType::Bool, vec![]),
+            );
+        }
+        assert_eq!(
+            bindings.canonical_to_alias.get(&left).map(String::as_str),
+            Some("left")
+        );
+        assert_eq!(
+            bindings.canonical_to_alias.get(&right).map(String::as_str),
+            Some("right")
+        );
+        let position = bindings.name_positions["left"];
+        let earlier = bindings.for_codegen_at(position, &ProofScope::default());
+        assert_eq!(
+            earlier.canonical_to_alias.get(&left).map(String::as_str),
+            Some("left")
+        );
+        assert!(!earlier.canonical_to_alias.contains_key(&right));
+        let full = bindings.for_codegen_at(bindings.codegen_position(), &ProofScope::default());
+        assert_eq!(full.canonical_to_alias, bindings.canonical_to_alias);
+        let opaque =
+            GlobalConstantName::new(10, LocalConstantName::unqualified("State.Marked.flag"));
+        assert!(!bindings.canonical_to_alias.contains_key(&opaque));
+        assert!(bindings
+            .get_constant_value_named(&left.local_name)
+            .is_none());
+    }
+
+    #[test]
+    fn type_alias_surrogates_retain_the_first_visible_name() {
+        let mut bindings = BindingMap::new(20);
+        let ty = AcornType::Data(10, "Shape".into(), vec![]);
+        bindings.add_type_alias("First", ty.clone());
+        let first = bindings.codegen_position();
+        bindings.add_type_alias("Later", ty);
+        let key = GlobalConstantName::new(10, LocalConstantName::unqualified("Shape"));
+        assert_eq!(
+            bindings.canonical_to_alias.get(&key).map(String::as_str),
+            Some("First")
+        );
+        let earlier = bindings.for_codegen_at(first, &ProofScope::default());
+        assert_eq!(
+            earlier.canonical_to_alias.get(&key).map(String::as_str),
+            Some("First")
+        );
+        assert!(!earlier.has_typename("Later"));
     }
 }
