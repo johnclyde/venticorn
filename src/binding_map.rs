@@ -78,6 +78,8 @@ pub struct BindingMap {
 
     // Class names have their own kind, while sharing the declaration namespace.
     typeclass_names: BTreeMap<String, Typeclass>,
+    // Definitions owned by this module; imported aliases do not create new owners.
+    typeclass_definitions: HashMap<Typeclass, TypeclassInfo>,
     reverse_typeclass_names: HashMap<Typeclass, String>,
 
     // Successfully admitted concrete implementations, keyed by canonical local data
@@ -121,6 +123,13 @@ pub struct BindingMap {
     // Inside the block containing the proof of a theorem, the name is not considered to
     // be a theorem.
     theorems: HashSet<String>,
+}
+
+// A class definition retains its complete bound and declared member signatures.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TypeclassInfo {
+    pub instance_param: TypeParam,
+    pub attributes: BTreeMap<String, AcornType>,
 }
 
 // A generic declaration whose type arguments have not been inferred yet.
@@ -340,6 +349,7 @@ impl BindingMap {
             reverse_type_names: HashMap::new(),
             generic_type_aliases: HashMap::new(),
             typeclass_names: BTreeMap::new(),
+            typeclass_definitions: HashMap::new(),
             reverse_typeclass_names: HashMap::new(),
             instance_scopes: HashMap::new(),
             identifier_types: BTreeMap::new(),
@@ -501,6 +511,16 @@ impl BindingMap {
             .entry(typeclass.clone())
             .or_insert_with(|| name.to_string());
         self.typeclass_names.insert(name.to_string(), typeclass);
+    }
+
+    pub(crate) fn add_typeclass_info(&mut self, class: Typeclass, info: TypeclassInfo) {
+        assert_eq!(class.module_id, self.module);
+        assert_eq!(info.instance_param.typeclass.as_ref(), Some(&class));
+        assert!(self.typeclass_definitions.insert(class, info).is_none());
+    }
+
+    pub fn get_typeclass_info(&self, class: &Typeclass) -> Option<&TypeclassInfo> {
+        self.typeclass_definitions.get(class)
     }
 
     pub fn get_typeclass_for_name(&self, name: &str) -> Option<&Typeclass> {
