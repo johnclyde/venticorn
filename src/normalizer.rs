@@ -25,12 +25,8 @@ type Result<T> = std::result::Result<T, NormalizationError>;
 pub enum Normalization {
     // A successfully normalized value turns into a bunch of clauses.
     // Logically, this is an "and of ors". Each Clause is an "or" of its literals.
-    // An empty list indicates a proposition that is always trivially satisfied.
+    // True is an empty list; false is one empty clause.
     Clauses(Vec<Clause>),
-
-    // Sometimes as we normalize we discover a proposition that is impossible to satisfy.
-    // This can't be trivially represented in CNF, so it gets its own variant.
-    Impossible,
 
     // A user-visible error.
     Error(String),
@@ -81,16 +77,24 @@ impl Normalization {
 
     fn and(self, other: Normalization) -> Normalization {
         match self {
-            Normalization::Clauses(mut clauses) => match other {
-                Normalization::Clauses(mut other_clauses) => {
-                    clauses.append(&mut other_clauses);
-                    Normalization::Clauses(clauses)
+            Normalization::Clauses(mut clauses) => {
+                // Preserve the existing eager terminal policy: an already-false left
+                // branch absorbs the later branch, including any later conversion error.
+                if clauses.iter().any(Clause::is_impossible) {
+                    return Normalization::Clauses(vec![Clause::impossible()]);
                 }
-                Normalization::Impossible => Normalization::Impossible,
-                Normalization::Error(s) => Normalization::Error(s),
-            },
-            Normalization::Impossible => Normalization::Impossible,
-            Normalization::Error(s) => Normalization::Error(s),
+                match other {
+                    Normalization::Clauses(mut other_clauses) => {
+                        if other_clauses.iter().any(Clause::is_impossible) {
+                            return Normalization::Clauses(vec![Clause::impossible()]);
+                        }
+                        clauses.append(&mut other_clauses);
+                        Normalization::Clauses(clauses)
+                    }
+                    Normalization::Error(error) => Normalization::Error(error),
+                }
+            }
+            Normalization::Error(error) => Normalization::Error(error),
         }
     }
 
@@ -403,7 +407,7 @@ impl Normalizer {
         let value = value.remove_forall(&mut universal);
         match self.into_literal_lists(&value, local) {
             Ok(Some(lists)) => self.normalize_literal_lists(lists),
-            Ok(None) => Normalization::Impossible,
+            Ok(None) => Normalization::Clauses(vec![Clause::impossible()]),
             Err(NormalizationError(s)) => {
                 // value is essentially a subvalue with the universal quantifiers removed,
                 // so reconstruct it to display it nicely.
@@ -493,19 +497,19 @@ impl Normalizer {
         };
         let clauses = match self.normalize_value(&fact.value, local) {
             Normalization::Clauses(clauses) => clauses,
-            Normalization::Impossible => {
-                return Ok(vec![ProofStep::assumption(
-                    Clause::impossible(),
-                    fact.truthiness,
-                    &fact.source,
-                    None,
-                )]);
-            }
             Normalization::Error(error) => return Err(NormalizationError(error)),
         };
         Ok(clauses
             .into_iter()
-            .map(|clause| ProofStep::assumption(clause, fact.truthiness, &fact.source, defined))
+            .map(|clause| {
+                // A false definition supplies no defined-atom shortcut, as before.
+                let defined = if clause.is_impossible() {
+                    None
+                } else {
+                    defined
+                };
+                ProofStep::assumption(clause, fact.truthiness, &fact.source, defined)
+            })
             .collect())
     }
 
@@ -583,6 +587,9 @@ impl Normalizer {
     // Converts backwards, from a clause to a value.
     // This will panic on a skolem.
     pub fn denormalize(&self, clause: &Clause) -> AcornValue {
+        if clause.is_impossible() {
+            return AcornValue::Bool(false);
+        }
         let mut var_types = vec![];
         let mut denormalized_literals = vec![];
         for literal in &clause.literals {
@@ -701,7 +708,6 @@ mod tests {
                 Normalization::Clauses(clauses) => clauses
                     .iter()
                     .all(|clause| evaluate_boolean(&normalizer.denormalize(clause), assignment)),
-                Normalization::Impossible => false,
                 Normalization::Error(error) => panic!("normalizing {}: {}", value, error),
             };
             assert_eq!(
@@ -1098,5 +1104,74 @@ mod fact_step_tests {
             assert_eq!(info.source, source);
             assert_eq!(info.defined_atom, None);
         }
+    }
+}
+
+#[cfg(test)]
+mod empty_clause_tests {
+    use super::*;
+    use crate::proof_step::{Rule, Truthiness};
+    use crate::proposition::Source;
+
+    #[test]
+    fn true_and_false_have_distinct_clause_representations() {
+        let mut normalizer = Normalizer::new();
+        assert!(normalizer
+            .normalize(&AcornValue::Bool(true), false)
+            .expect_clauses()
+            .is_empty());
+        let clauses = normalizer
+            .normalize(&AcornValue::Bool(false), false)
+            .expect_clauses();
+        assert_eq!(clauses.len(), 1);
+        assert!(clauses[0].is_impossible());
+        assert_eq!(normalizer.denormalize(&clauses[0]), AcornValue::Bool(false));
+    }
+
+    #[test]
+    fn conjunction_preserves_terminal_false_and_error_order() {
+        let impossible = || Normalization::Clauses(vec![Clause::impossible()]);
+        let truth = || Normalization::Clauses(vec![]);
+        for result in [
+            impossible().and(Normalization::Error("later".into())),
+            truth().and(impossible()),
+            impossible().and(truth()),
+        ] {
+            let clauses = result.expect_clauses();
+            assert_eq!(clauses.len(), 1);
+            assert!(clauses[0].is_impossible());
+        }
+        for result in [
+            Normalization::Error("first".into()).and(impossible()),
+            truth().and(Normalization::Error("first".into())),
+        ] {
+            match result {
+                Normalization::Error(error) => assert_eq!(error, "first"),
+                result => panic!("error precedence changed: {result:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_false_definition_does_not_acquire_a_defined_atom_shortcut() {
+        let mut source = Source::mock();
+        source.source_type = SourceType::ConstantDefinition(
+            AcornValue::constant(2, "flag".into(), vec![], AcornType::Bool),
+            "flag".into(),
+        );
+        let steps = Normalizer::new()
+            .normalize_monomorphic_fact(Fact {
+                value: AcornValue::Bool(false),
+                source: source.clone(),
+                truthiness: Truthiness::Factual,
+            })
+            .unwrap();
+        assert_eq!(steps.len(), 1);
+        assert!(steps[0].clause.is_impossible());
+        let Rule::Assumption(info) = &steps[0].rule else {
+            panic!("expected original definition")
+        };
+        assert_eq!(info.source, source);
+        assert_eq!(info.defined_atom, None);
     }
 }
