@@ -1084,14 +1084,12 @@ impl BindingMap {
         } else {
             project.get_bindings(module)?
         };
-        let full_prefix = format!("{}.{}", type_name, prefix);
         let mut items = vec![];
-        for name in keys_with_prefix(&bindings.constant_info, &full_prefix) {
-            if module == self.module && !visible(name) {
-                continue;
-            }
-            let member = name.strip_prefix(&format!("{}.", type_name))?;
-            if member.contains('.') {
+        let Some(members) = bindings.member_names.get(type_name) else {
+            return Some(items);
+        };
+        for member in keys_with_prefix(members, prefix) {
+            if module == self.module && !visible(&format!("{}.{}", type_name, member)) {
                 continue;
             }
             if let Some(instance) = instance {
