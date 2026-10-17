@@ -165,6 +165,9 @@ struct ConstantInfo {
     // These type parameters can be used in the definition.
     params: Vec<TypeParam>,
 
+    // The canonical constant value, retaining complete unresolved formal parameters.
+    value: PotentialValue,
+
     // The definition of this constant, if it has one.
     definition: Option<AcornValue>,
 
@@ -695,15 +698,7 @@ impl BindingMap {
             return Some(value.clone());
         }
 
-        // Constants defined here
-        let constant_type = self.constant_name_to_type.get(name)?.clone();
-        let params = self.constant_info.get(name)?.params.clone();
-        Some(PotentialValue::constant(
-            self.module,
-            name,
-            constant_type,
-            params,
-        ))
+        self.constant_info.get(name).map(|info| info.value.clone())
     }
 
     // Structured instance names are looked up through their canonical owner.
@@ -858,12 +853,15 @@ impl BindingMap {
                 "generic definition cannot capture arbitrary types"
             );
         }
+        let value =
+            PotentialValue::constant(self.module, name, constant_type.clone(), params.clone());
         self.record_name(name);
         self.constant_name_to_type
             .insert(name.to_string(), constant_type);
 
         let info = ConstantInfo {
             params,
+            value,
             definition,
             constructor,
         };
