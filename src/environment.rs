@@ -569,12 +569,8 @@ impl Environment {
         ts: &crate::statement::TheoremStatement,
     ) -> compilation::Result<()> {
         if let Some(name) = &ts.name {
-            if self.bindings.name_in_use(name) {
-                return Err(statement.first_token.error(&format!(
-                    "theorem name '{}' already defined in this scope",
-                    name
-                )));
-            }
+            self.bindings
+                .check_unqualified_name_available(&statement.first_token, name)?;
         }
         if ts.axiomatic && ts.body.is_some() {
             return Err(statement.error("axioms cannot have proof blocks"));
@@ -709,12 +705,8 @@ impl Environment {
                 fss.name
             )));
         }
-        if self.bindings.name_in_use(&fss.name) {
-            return Err(statement.error(&format!(
-                "function name '{}' already defined in this scope",
-                fss.name
-            )));
-        }
+        self.bindings
+            .check_unqualified_name_available(statement, &fss.name)?;
 
         // Figure out the range for this function definition.
         // It's smaller than the whole function statement because it doesn't
@@ -803,7 +795,7 @@ impl Environment {
         statement: &Statement,
         ss: &crate::statement::StructureStatement,
     ) -> compilation::Result<()> {
-        if self.bindings.name_in_use(&ss.name) {
+        if self.bindings.typename_in_use(&ss.name) {
             return Err(statement.error("type name already defined in this scope"));
         }
 
@@ -1075,7 +1067,7 @@ impl Environment {
         statement: &Statement,
         is: &crate::statement::InductiveStatement,
     ) -> compilation::Result<()> {
-        if self.bindings.name_in_use(&is.name) {
+        if self.bindings.typename_in_use(&is.name) {
             return Err(statement.error("type name already defined in this scope"));
         }
         self.add_other_lines(statement);
@@ -1352,7 +1344,7 @@ impl Environment {
 
     fn typeclass_scope(&self, ts: &TypeclassStatement) -> compilation::Result<BindingMap> {
         for name in [&ts.instance_name, &ts.typeclass_name] {
-            if self.bindings.name_in_use(name.text()) {
+            if self.bindings.typename_in_use(name.text()) {
                 return Err(name.error(&format!("{} already defined in this scope", name)));
             }
         }
@@ -2169,12 +2161,8 @@ impl Environment {
 
                 // Give a local name to the imported module
                 let local_name = is.components.last().unwrap();
-                if self.bindings.lowercase_name_in_use(local_name) {
-                    return Err(statement.error(&format!(
-                        "imported name '{}' already defined in this scope",
-                        local_name
-                    )));
-                }
+                self.bindings
+                    .check_unqualified_name_available(statement, local_name)?;
                 let full_name = is.components.join(".");
                 let module_id = match project.load_module_by_name(&full_name) {
                     Ok(module_id) => module_id,

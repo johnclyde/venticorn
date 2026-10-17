@@ -534,6 +534,18 @@ impl BindingMap {
         self.constant_name_in_use(&LocalConstantName::unqualified(name))
     }
 
+    pub fn check_unqualified_name_available(
+        &self,
+        source: &dyn ErrorSource,
+        name: &str,
+    ) -> compilation::Result<()> {
+        let name = LocalConstantName::unqualified(name);
+        if self.constant_name_in_use(&name) {
+            return Err(source.error(&format!("name {} is already in use", name)));
+        }
+        Ok(())
+    }
+
     pub fn constant_name_in_use(&self, name: &LocalConstantName) -> bool {
         self.name_in_use(&name.to_string())
     }
