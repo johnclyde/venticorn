@@ -803,7 +803,6 @@ fn typechecking_captures_instance_relationships_860() {
 }
 
 #[test]
-#[ignore = "pending callable typeclass conditions"]
 fn typeclasses_can_have_conditions_862() {
     let mut env = Environment::new_test();
     env.add(

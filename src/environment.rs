@@ -1582,6 +1582,13 @@ impl Environment {
             definition
                 .validate()
                 .map_err(|error| condition.claim.error(&error))?;
+            staged.bindings.add_constant(
+                &full_name,
+                params.clone(),
+                definition.get_type(),
+                Some(definition.clone()),
+                None,
+            );
             let node = Node::new(
                 project,
                 &staged,
@@ -1597,6 +1604,7 @@ impl Environment {
                     .name
                     .error("bounded typeclass condition must occur in the exported proposition"));
             }
+            staged.bindings.mark_as_theorem(&full_name);
             info.conditions.insert(
                 name.to_string(),
                 TypeclassCondition {
