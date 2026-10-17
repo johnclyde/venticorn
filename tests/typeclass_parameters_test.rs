@@ -214,7 +214,7 @@ fn evaluated_parameter_lists_keep_order_canonical_bounds_and_locations() {
         ),
         (
             "define bad<T, occupied>(x: T) -> T { x }",
-            "name occupied is already in use",
+            "typename occupied is already in use",
             false,
         ),
         (

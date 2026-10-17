@@ -40,15 +40,15 @@ fn datatype_declarations_reject_reserved_class_names_without_mutation() {
     for (source, expected) in [
         (
             "structure Magma {\n value: Bool\n}",
-            "name Magma is already in use",
+            "typename Magma is already in use",
         ),
         (
             "structure Wrapper<Magma> {\n value: Magma\n}",
-            "name Magma is already in use",
+            "typename Magma is already in use",
         ),
         (
             "inductive Magma {\n unit\n}",
-            "name Magma is already in use",
+            "typename Magma is already in use",
         ),
     ] {
         let mut env = Environment::new_test();

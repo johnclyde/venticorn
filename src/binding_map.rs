@@ -534,16 +534,23 @@ impl BindingMap {
         self.constant_name_in_use(&LocalConstantName::unqualified(name))
     }
 
+    pub fn check_constant_name_available(
+        &self,
+        source: &dyn ErrorSource,
+        name: &LocalConstantName,
+    ) -> compilation::Result<()> {
+        if self.constant_name_in_use(name) {
+            return Err(source.error(&format!("constant name {} is already in use", name)));
+        }
+        Ok(())
+    }
+
     pub fn check_unqualified_name_available(
         &self,
         source: &dyn ErrorSource,
         name: &str,
     ) -> compilation::Result<()> {
-        let name = LocalConstantName::unqualified(name);
-        if self.constant_name_in_use(&name) {
-            return Err(source.error(&format!("name {} is already in use", name)));
-        }
-        Ok(())
+        self.check_constant_name_available(source, &LocalConstantName::unqualified(name))
     }
 
     pub fn constant_name_in_use(&self, name: &LocalConstantName) -> bool {
@@ -560,7 +567,7 @@ impl BindingMap {
         name: &str,
     ) -> compilation::Result<()> {
         if self.typename_in_use(name) {
-            return Err(source.error(&format!("name {} is already in use", name)));
+            return Err(source.error(&format!("typename {} is already in use", name)));
         }
         Ok(())
     }

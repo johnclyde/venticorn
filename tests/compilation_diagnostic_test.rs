@@ -185,7 +185,7 @@ fn conflicting_type_definitions_cover_the_full_statement() {
     assert_diagnostic(
         "type Thing: axiom\ntype Thing: Bool",
         "type Thing: Bool",
-        "name Thing is already in use",
+        "typename Thing is already in use",
     );
 }
 
