@@ -10,6 +10,7 @@ use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, PotentialValue, Stack, TypeclassCondition, TypeclassInfo};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
+use crate::constant_name::LocalConstantName;
 use crate::fact::Fact;
 use crate::module::ModuleId;
 use crate::project::{LoadError, Project};
@@ -347,20 +348,17 @@ impl Environment {
     fn add_let_statement(
         &mut self,
         project: &Project,
-        class_info: Option<(&str, &[String])>,
+        constant_name: LocalConstantName,
+        class_params: &[String],
         ls: &LetStatement,
         range: Range,
     ) -> compilation::Result<()> {
-        let (class, class_params) = match class_info {
-            Some((name, params)) => (Some(name), params),
-            None => (None, &[][..]),
-        };
         if !class_params.is_empty() && ls.name_token.token_type == TokenType::Numeral {
             return Err(ls
                 .name_token
                 .error("numeric literals cannot have type parameters"));
         }
-        if class.is_none() && ls.name_token.token_type == TokenType::Numeral {
+        if !constant_name.is_qualified() && ls.name_token.token_type == TokenType::Numeral {
             return Err(ls
                 .name_token
                 .error("numeric literals may not be defined outside of a class"));
@@ -368,18 +366,16 @@ impl Environment {
         if ls.name == "self"
             || ls.name == "new"
             || ls.name == "read"
-            || (class.is_some() && TokenType::from_magic_method_name(&ls.name).is_some())
+            || (constant_name.is_qualified()
+                && TokenType::from_magic_method_name(&ls.name).is_some())
         {
             return Err(ls.name_token.error(&format!(
                 "'{}' is a reserved word. use a different name",
                 ls.name
             )));
         }
-        let name = match class {
-            Some(c) => format!("{}.{}", c, ls.name),
-            None => ls.name.clone(),
-        };
-        if self.bindings.name_in_use(&name) {
+        let name = constant_name.to_string();
+        if self.bindings.constant_name_in_use(&constant_name) {
             return Err(ls.name_token.error(&format!(
                 "constant name '{}' already defined in this scope",
                 name
@@ -387,7 +383,11 @@ impl Environment {
         }
         let acorn_type = self.bindings.evaluate_type(project, &ls.type_expr)?;
         if ls.name_token.token_type == TokenType::Numeral {
-            if acorn_type != AcornType::Data(self.module_id, class.unwrap().to_string(), vec![]) {
+            let (class_name, _) = constant_name.as_attribute().ok_or_else(|| {
+                ls.name_token
+                    .error("numeric literals must be class members")
+            })?;
+            if acorn_type != AcornType::Data(self.module_id, class_name.to_string(), vec![]) {
                 return Err(ls
                     .type_expr
                     .error("numeric class variables must be the class type"));
@@ -1485,7 +1485,8 @@ impl Environment {
                 StatementInfo::Let(ls) => {
                     self.add_let_statement(
                         project,
-                        Some((&cs.name, &param_names)),
+                        LocalConstantName::attribute(&cs.name, &ls.name),
+                        &param_names,
                         ls,
                         substatement.range(),
                     )?;
@@ -1841,7 +1842,13 @@ impl Environment {
                 .ok_or_else(|| member_token.error("unknown or duplicate instance member"))?;
             match &member.statement {
                 StatementInfo::Let(ls) => {
-                    self.add_let_statement(project, Some((&scope_name, &[])), ls, member.range())?;
+                    self.add_let_statement(
+                        project,
+                        LocalConstantName::instance(&class, &ls.name, name),
+                        &[],
+                        ls,
+                        member.range(),
+                    )?;
                 }
                 StatementInfo::Define(ds) => {
                     if !ds.type_params.is_empty() {
@@ -2027,7 +2034,13 @@ impl Environment {
 
             StatementInfo::Let(ls) => {
                 self.add_other_lines(statement);
-                self.add_let_statement(project, None, ls, statement.range())
+                self.add_let_statement(
+                    project,
+                    LocalConstantName::unqualified(&ls.name),
+                    &[],
+                    ls,
+                    statement.range(),
+                )
             }
 
             StatementInfo::Define(ds) => {
