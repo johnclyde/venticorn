@@ -536,7 +536,7 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
     }
 }
 
-fn goal_policy(
+pub(crate) fn goal_policy(
     goals: &[GoalContext],
     resolve: &impl Fn(ModuleId) -> Option<ModuleRef>,
 ) -> Option<[u8; 32]> {

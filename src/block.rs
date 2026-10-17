@@ -384,6 +384,7 @@ impl Block {
 // 2. Plain claims, that we need to prove
 // 3. Nodes with blocks, where we need to recurse into the block and prove those nodes.
 pub struct Node {
+    codegen_position: usize,
     // Captured before the declaration enters the enclosing scope.
     proof_scope: crate::proof_scope::ProofScope,
     // Whether this proposition has already been proved structurally.
@@ -449,6 +450,7 @@ impl Node {
         });
         let claim = proposition.with_value(value);
         Node {
+            codegen_position: env.bindings.codegen_position(),
             proof_scope: env.bindings.proof_scope().clone(),
             structural,
             claim,
@@ -543,8 +545,9 @@ impl<'a> NodeCursor<'a> {
         &env.nodes[*index]
     }
 
-    pub(crate) fn top_index(&self) -> usize {
-        self.annotated_path[0].1
+    pub(crate) fn root_node(&self) -> &Node {
+        let (env, index) = self.annotated_path[0];
+        &env.nodes[index]
     }
 
     // All goals below a named top-level theorem contribute to one premise hint.
@@ -626,24 +629,75 @@ impl<'a> NodeCursor<'a> {
         project: &Project,
         filter: Option<&ImportFilter>,
     ) -> Vec<Fact> {
-        let mut facts = project.imported_facts_filtered(self.env().module_id, filter);
-        for (env, i) in &self.annotated_path {
-            for prop in &env.nodes[0..*i] {
-                let truthiness = if env.top_level {
-                    Truthiness::Factual
-                } else {
-                    Truthiness::Hypothetical
-                };
-                facts.push(Fact::new(prop.claim.clone(), truthiness));
+        self.facts_in_scope(project, self.goal_scope(), filter, true)
+    }
+
+    pub(crate) fn entry_scope(&self) -> &crate::proof_scope::ProofScope {
+        self.current()
+            .block
+            .as_ref()
+            .map_or(self.current().proof_scope(), |b| b.entry_scope())
+    }
+
+    pub fn bindings_for_codegen(&self) -> crate::binding_map::BindingMap {
+        match &self.current().block {
+            Some(block) => block
+                .env
+                .bindings
+                .for_codegen_at(block.env.bindings.codegen_position(), self.goal_scope()),
+            None => self
+                .env()
+                .bindings
+                .for_codegen_at(self.current().codegen_position, self.goal_scope()),
+        }
+    }
+
+    pub fn goal_scope(&self) -> &crate::proof_scope::ProofScope {
+        self.current()
+            .block
+            .as_ref()
+            .map_or(self.current().proof_scope(), |b| {
+                b.env.bindings.proof_scope()
+            })
+    }
+
+    pub(crate) fn local_nodes(&self, include_children: bool) -> Vec<(&Node, Truthiness)> {
+        let mut nodes = vec![];
+        for (env, index) in &self.annotated_path {
+            let truthiness = if env.top_level {
+                Truthiness::Factual
+            } else {
+                Truthiness::Hypothetical
+            };
+            nodes.extend(env.nodes[..*index].iter().map(|n| (n, truthiness)));
+        }
+        if include_children {
+            if let Some(block) = &self.current().block {
+                nodes.extend(
+                    block
+                        .env
+                        .nodes
+                        .iter()
+                        .map(|n| (n, Truthiness::Hypothetical)),
+                );
             }
         }
+        nodes
+    }
 
-        if let Some(block) = &self.current().block {
-            for p in &block.env.nodes {
-                facts.push(Fact::new(p.claim.clone(), Truthiness::Hypothetical));
-            }
-        }
-
+    pub(crate) fn facts_in_scope(
+        &self,
+        project: &Project,
+        scope: &crate::proof_scope::ProofScope,
+        filter: Option<&ImportFilter>,
+        include_children: bool,
+    ) -> Vec<Fact> {
+        let mut facts = project.imported_facts_in_scope(scope, filter);
+        facts.extend(
+            self.local_nodes(include_children)
+                .into_iter()
+                .map(|(node, truthiness)| Fact::new(node.claim.clone(), truthiness)),
+        );
         facts
     }
 

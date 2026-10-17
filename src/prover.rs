@@ -30,6 +30,8 @@ use crate::term_graph::TermGraphContradiction;
 
 #[derive(Clone)]
 pub struct Prover {
+    scope: crate::proof_scope::ProofScope,
+    explicit_scope: bool,
     // The normalizer is used when we are turning the facts and goals from the environment into
     // clauses that we can use internally.
     normalizer: Normalizer,
@@ -117,9 +119,23 @@ impl fmt::Display for Outcome {
 
 impl Prover {
     pub fn new(project: &Project, verbose: bool) -> Prover {
+        let mut prover =
+            Self::with_scope(project, verbose, crate::proof_scope::ProofScope::default());
+        // Compatibility callers retain empty concrete membership authority forever.
+        prover.explicit_scope = false;
+        prover
+    }
+
+    pub fn with_scope(
+        project: &Project,
+        verbose: bool,
+        scope: crate::proof_scope::ProofScope,
+    ) -> Self {
         Prover {
+            scope: scope.clone(),
+            explicit_scope: true,
             normalizer: Normalizer::new(),
-            monomorphizer: Monomorphizer::new(),
+            monomorphizer: Monomorphizer::with_scope(scope),
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             verbose,
@@ -130,6 +146,10 @@ impl Prover {
             nonfactual_activations: 0,
             goal: None,
         }
+    }
+
+    pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
+        &self.scope
     }
 
     // Add a fact to the prover.
@@ -183,6 +203,10 @@ impl Prover {
 
     pub fn set_goal(&mut self, goal_context: &GoalContext) {
         assert!(self.goal.is_none());
+        if self.explicit_scope && self.scope != goal_context.proof_scope {
+            self.error = Some("proof scope changed after fact ingestion".into());
+            return;
+        }
 
         // Block goals already use concrete types from their local environment.
         // Use that same value for fact demand and for the counterfactual assumption.

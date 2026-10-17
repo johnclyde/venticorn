@@ -89,10 +89,10 @@ fn later_local_instances_do_not_rewrite_prior_goal_metadata() {
         .unwrap()
         .proof_scope
         .has_membership(main, "Item", &class));
-    // The registry is staged metadata at this checkpoint, not an unchecked bound resolver.
+    // The same captured authority now enables only this declared concrete instance.
     let expression = venticorn::expression::Expression::expect_value("Marked.flag<Item>");
     assert!(env
         .bindings
         .evaluate_value(&project, &expression, None)
-        .is_err());
+        .is_ok());
 }

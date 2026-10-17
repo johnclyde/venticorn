@@ -67,6 +67,12 @@ impl Stack {
 pub struct BindingMap {
     // The module all these names are in.
     module: ModuleId,
+    // Tiny declaration positions avoid storing a complete binding map on every node.
+    position: usize,
+    name_positions: HashMap<String, usize>,
+    instance_member_positions: HashMap<(ModuleId, String), usize>,
+    default_history: Vec<(usize, ModuleId, String)>,
+    hidden_codegen_names: HashSet<String>,
 
     // Maps the name of a type to the type object.
     typename_to_type: BTreeMap<String, PotentialType>,
@@ -152,6 +158,7 @@ impl UnresolvedConstant {
         &self,
         source: &dyn ErrorSource,
         actuals: Vec<AcornType>,
+        scope: &ProofScope,
     ) -> compilation::Result<AcornValue> {
         if actuals.len() != self.params.len() {
             return Err(source.error(&format!(
@@ -161,7 +168,7 @@ impl UnresolvedConstant {
             )));
         }
         for (formal, actual) in self.params.iter().zip(&actuals) {
-            if !formal.accepts(actual) {
+            if !formal.accepts_in_scope(actual, scope) {
                 return Err(source.error(&format!(
                     "type argument {} does not satisfy the class bound on {}",
                     actual, formal.name
@@ -353,6 +360,11 @@ impl BindingMap {
         assert!(module >= FIRST_NORMAL);
         let mut answer = BindingMap {
             module,
+            position: 0,
+            name_positions: HashMap::new(),
+            instance_member_positions: HashMap::new(),
+            default_history: vec![],
+            hidden_codegen_names: HashSet::new(),
             typename_to_type: BTreeMap::new(),
             type_to_typename: HashMap::new(),
             generic_type_aliases: HashMap::new(),
@@ -379,6 +391,125 @@ impl BindingMap {
     // Simple helper functions.
     ////////////////////////////////////////////////////////////////////////////////
 
+    fn record_name(&mut self, name: &str) {
+        self.position += 1;
+        self.name_positions.insert(name.to_owned(), self.position);
+    }
+
+    pub(crate) fn codegen_position(&self) -> usize {
+        self.position
+    }
+
+    // Build only when code is actually requested, retaining the selected lexical names.
+    pub(crate) fn for_codegen_at(&self, position: usize, scope: &ProofScope) -> Self {
+        let mut result = self.clone();
+        result.proof_scope = scope.clone();
+        result.hidden_codegen_names.extend(
+            self.name_positions
+                .iter()
+                .filter(|(_, p)| **p > position)
+                .map(|(name, _)| name.clone()),
+        );
+        result.name_positions.retain(|_, p| *p <= position);
+        let visible = &result.name_positions;
+        result
+            .typename_to_type
+            .retain(|name, _| visible.contains_key(name));
+        result
+            .name_to_typeclass
+            .retain(|name, _| visible.contains_key(name));
+        result
+            .identifier_to_type
+            .retain(|name, _| visible.contains_key(name));
+        result
+            .constant_info
+            .retain(|name, _| visible.contains_key(name));
+        result.aliases.retain(|name, _| visible.contains_key(name));
+        result
+            .name_to_module
+            .retain(|name, _| visible.contains_key(name));
+        result.imported_instance_members.retain(|key, _| {
+            self.instance_member_positions
+                .get(key)
+                .is_some_and(|p| *p <= position)
+        });
+        result.theorems.retain(|name| visible.contains_key(name));
+        result.type_to_typename.clear();
+        result.generic_type_aliases.clear();
+        result.typeclass_to_name.clear();
+        result.canonical_to_alias.clear();
+        result.module_to_name.clear();
+        let mut names = result
+            .name_positions
+            .iter()
+            .map(|(n, p)| (*p, n.clone()))
+            .collect::<Vec<_>>();
+        names.sort();
+        for (_, name) in names {
+            if let Some(ty) = result.typename_to_type.get(&name) {
+                match ty {
+                    PotentialType::Resolved(ty) => {
+                        result
+                            .type_to_typename
+                            .entry(ty.clone())
+                            .or_insert_with(|| name.clone());
+                        if let AcornType::Data(module, family, actuals) = ty {
+                            if actuals.is_empty() {
+                                result
+                                    .canonical_to_alias
+                                    .entry((*module, family.clone()))
+                                    .or_insert_with(|| name.clone());
+                            }
+                        }
+                    }
+                    PotentialType::Unresolved(ty) => {
+                        result
+                            .generic_type_aliases
+                            .entry((ty.module_id, ty.name.clone(), ty.params.len()))
+                            .or_insert_with(|| name.clone());
+                        result
+                            .canonical_to_alias
+                            .entry((ty.module_id, ty.name.clone()))
+                            .or_insert_with(|| name.clone());
+                    }
+                }
+            }
+            if let Some(class) = result.name_to_typeclass.get(&name) {
+                result
+                    .typeclass_to_name
+                    .entry(class.clone())
+                    .or_insert_with(|| name.clone());
+            }
+            if let Some(alias) = result.aliases.get(&name) {
+                let canonical = match alias {
+                    PotentialValue::Unresolved(c) => Some((c.module_id, c.name.clone())),
+                    PotentialValue::Resolved(v) => v
+                        .as_simple_constant()
+                        .map(|(id, name)| (id, name.to_owned())),
+                };
+                if let Some((module, canonical)) = canonical {
+                    if module != result.module {
+                        result
+                            .canonical_to_alias
+                            .entry((module, canonical))
+                            .or_insert_with(|| name.clone());
+                    }
+                }
+            }
+            // Module spelling intentionally prefers the last visible import alias.
+            if let Some(module) = result.name_to_module.get(&name) {
+                result.module_to_name.insert(*module, name);
+            }
+        }
+        result.default = self
+            .default_history
+            .iter()
+            .rev()
+            .find(|(p, _, _)| *p <= position)
+            .map(|(_, m, n)| (*m, n.clone()));
+        result
+    }
+
     pub fn name_in_use(&self, name: &str) -> bool {
         self.typename_to_type.contains_key(name)
             || self.name_to_typeclass.contains_key(name)
@@ -388,6 +519,7 @@ impl BindingMap {
 
     fn insert_type_name(&mut self, name: String, acorn_type: AcornType) {
         assert!(!self.name_in_use(&name), "type name {} already bound", name);
+        self.record_name(&name);
         self.type_to_typename
             .entry(acorn_type.clone())
             .or_insert_with(|| name.clone());
@@ -416,6 +548,7 @@ impl BindingMap {
             name: name.into(),
             params,
         });
+        self.record_name(name);
         self.typename_to_type.insert(name.into(), potential.clone());
         potential
     }
@@ -488,6 +621,7 @@ impl BindingMap {
             PotentialType::Resolved(t) => self.add_type_alias(name, t),
             PotentialType::Unresolved(t) => {
                 assert!(!self.name_in_use(name), "type alias {} already bound", name);
+                self.record_name(name);
                 self.generic_type_aliases
                     .entry((t.module_id, t.name.clone(), t.params.len()))
                     .or_insert_with(|| name.to_string());
@@ -517,6 +651,7 @@ impl BindingMap {
 
     pub fn add_typeclass(&mut self, name: &str, typeclass: Typeclass) {
         assert!(!self.name_in_use(name), "name {} already bound", name);
+        self.record_name(name);
         self.typeclass_to_name
             .entry(typeclass.clone())
             .or_insert_with(|| name.to_string());
@@ -682,6 +817,9 @@ impl BindingMap {
     }
 
     pub fn set_default(&mut self, module: ModuleId, type_name: String) {
+        self.position += 1;
+        self.default_history
+            .push((self.position, module, type_name.clone()));
         self.default = Some((module, type_name));
     }
 
@@ -722,6 +860,7 @@ impl BindingMap {
                 "generic definition cannot capture arbitrary types"
             );
         }
+        self.record_name(name);
         self.identifier_to_type
             .insert(name.to_string(), constant_type);
 
@@ -744,6 +883,7 @@ impl BindingMap {
         if self.name_in_use(name) {
             panic!("cannot alias name {} because it is already bound", name);
         }
+        self.record_name(name);
         self.identifier_to_type
             .insert(name.to_string(), value.get_type());
         let canonical = (canonical_module, canonical_name);
@@ -770,6 +910,7 @@ impl BindingMap {
 
     // Data types that come from type parameters get removed when they go out of scope.
     pub fn remove_data_type(&mut self, name: &str) {
+        self.name_positions.remove(name);
         match self.typename_to_type.remove(name) {
             Some(PotentialType::Resolved(t)) => {
                 self.type_to_typename.remove(&t);
@@ -783,6 +924,7 @@ impl BindingMap {
         if self.name_in_use(name) {
             panic!("module name {} already bound", name);
         }
+        self.record_name(name);
         self.name_to_module.insert(name.to_string(), module);
         self.module_to_name.insert(module, name.to_string());
         self.proof_scope.import(module);
@@ -795,8 +937,13 @@ impl BindingMap {
                 continue;
             }
             for name in keys_with_prefix(&owner.constant_info, &format!("{}.", scope)) {
-                self.imported_instance_members
-                    .insert((owner.module, name.clone()), class.clone());
+                let key = (owner.module, name.clone());
+                if !self.instance_member_positions.contains_key(&key) {
+                    self.position += 1;
+                    self.instance_member_positions
+                        .insert(key.clone(), self.position);
+                }
+                self.imported_instance_members.insert(key, class.clone());
             }
         }
     }
@@ -1120,9 +1267,11 @@ impl BindingMap {
                     .map(|arg| self.evaluate_type(project, arg))
                     .collect::<compilation::Result<Vec<_>>>()?;
                 let potential = self.evaluate_potential_type(project, left)?;
-                Ok(PotentialType::Resolved(
-                    potential.resolve(actuals, expression)?,
-                ))
+                Ok(PotentialType::Resolved(potential.resolve_in_scope(
+                    actuals,
+                    expression,
+                    &self.proof_scope,
+                )?))
             }
             Expression::Grouping(_, e, _) => self.evaluate_potential_type(project, e),
             Expression::Binder(token, _, _, _) | Expression::IfThenElse(token, _, _, _, _) => {
@@ -1487,9 +1636,9 @@ impl BindingMap {
                             })?;
                         return match member {
                             PotentialValue::Resolved(value) => Ok(NamedEntity::Value(value)),
-                            PotentialValue::Unresolved(unresolved) => {
-                                Ok(NamedEntity::Value(unresolved.resolve(name_token, vec![t])?))
-                            }
+                            PotentialValue::Unresolved(unresolved) => Ok(NamedEntity::Value(
+                                unresolved.resolve(name_token, vec![t], &self.proof_scope)?,
+                            )),
                         };
                     }
                 }
@@ -1543,7 +1692,11 @@ impl BindingMap {
                             if actuals.is_empty() {
                                 Ok(NamedEntity::Unresolved(unresolved))
                             } else {
-                                Ok(NamedEntity::Value(unresolved.resolve(name_token, actuals)?))
+                                Ok(NamedEntity::Value(unresolved.resolve(
+                                    name_token,
+                                    actuals,
+                                    &self.proof_scope,
+                                )?))
                             }
                         }
                         None => Err(name_token
@@ -1693,7 +1846,11 @@ impl BindingMap {
                             .into_iter()
                             .map(|arg| self.evaluate_type(project, arg))
                             .collect::<compilation::Result<Vec<_>>>()?;
-                        return Ok(NamedEntity::Type(potential.resolve(actuals, expression)?));
+                        return Ok(NamedEntity::Type(potential.resolve_in_scope(
+                            actuals,
+                            expression,
+                            &self.proof_scope,
+                        )?));
                     }
                 }
             }
@@ -1887,7 +2044,7 @@ impl BindingMap {
         }
         let mut mapping = HashMap::new();
         for (i, (arg, expected)) in args.iter().zip(&function_type.arg_types).enumerate() {
-            if !expected.match_instance(&arg.get_type(), &mut mapping) {
+            if !expected.match_instance_in_scope(&arg.get_type(), &mut mapping, &self.proof_scope) {
                 let arg_source: &dyn ErrorSource = arg_sources.get(i).map_or(source, |expr| *expr);
                 return Err(arg_source.error(&format!(
                     "expected type {}, but got {}",
@@ -1905,7 +2062,7 @@ impl BindingMap {
                 })
             })
             .collect::<compilation::Result<Vec<_>>>()?;
-        let instance = unresolved.resolve(source, actuals)?;
+        let instance = unresolved.resolve(source, actuals, &self.proof_scope)?;
         self.apply_resolved(source, instance, args, expected_type)
     }
 
@@ -2136,8 +2293,11 @@ impl BindingMap {
                                 .into_iter()
                                 .map(|argument| self.evaluate_type(project, argument))
                                 .collect::<compilation::Result<Vec<_>>>()?;
-                            let instance =
-                                unresolved.resolve(args_expr.as_ref(), actual_arguments)?;
+                            let instance = unresolved.resolve(
+                                args_expr.as_ref(),
+                                actual_arguments,
+                                &self.proof_scope,
+                            )?;
                             check_type(expression, expected_type, &instance.get_type())?;
                             return Ok(PotentialValue::Resolved(instance));
                         }
@@ -2637,6 +2797,11 @@ impl BindingMap {
     // is different from
     //   self.module, the module we are trying to express the name in
     fn name_to_expr(&self, module: ModuleId, name: &str) -> Result<Expression, CodeGenError> {
+        if module == self.module && self.hidden_codegen_names.contains(name) {
+            return Err(CodeGenError::UnhandledValue(
+                "name is declared after the selected goal".into(),
+            ));
+        }
         let mut parts = name.split('.').collect::<Vec<_>>();
 
         // Handle numeric literals
@@ -3031,6 +3196,50 @@ impl BindingMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codegen_positions_restore_prior_aliases_module_spelling_and_numeric_default() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.import_module("early", FIRST_NORMAL + 1);
+        let item = AcornType::Data(FIRST_NORMAL + 1, "Item".into(), vec![]);
+        let numeral =
+            AcornValue::new_constant(FIRST_NORMAL + 1, "Item.0".into(), vec![], item.clone());
+        let value =
+            AcornValue::new_constant(FIRST_NORMAL + 1, "value".into(), vec![], item.clone());
+        let first = bindings.codegen_position();
+        bindings.add_alias(
+            "first_alias",
+            FIRST_NORMAL + 1,
+            "value".into(),
+            PotentialValue::Resolved(value.clone()),
+        );
+        let with_alias = bindings.codegen_position();
+        bindings.import_module("later", FIRST_NORMAL + 1);
+        bindings.add_type_alias("Alias", item.clone());
+        bindings.add_alias(
+            "second_alias",
+            FIRST_NORMAL + 1,
+            "value".into(),
+            PotentialValue::Resolved(value.clone()),
+        );
+        bindings.set_default(FIRST_NORMAL + 1, "Item".into());
+        bindings.add_constant("future", vec![], AcornType::Bool, None, None);
+        let early = bindings.for_codegen_at(first, &ProofScope::default());
+        assert_eq!(early.value_to_code(&value).unwrap(), "early.value");
+        assert_eq!(early.value_to_code(&numeral).unwrap(), "early.Item.0");
+        assert_eq!(
+            bindings
+                .for_codegen_at(with_alias, &ProofScope::default())
+                .value_to_code(&value)
+                .unwrap(),
+            "first_alias"
+        );
+        assert_eq!(bindings.value_to_code(&numeral).unwrap(), "0");
+        let future =
+            AcornValue::new_constant(FIRST_NORMAL, "future".into(), vec![], AcornType::Bool);
+        assert!(early.value_to_code(&future).is_err());
+        assert!(!early.name_in_use("future"));
+    }
 
     #[test]
     fn pattern_binding_is_transactional_and_cannot_shadow_stack_names() {

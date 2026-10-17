@@ -80,6 +80,8 @@ pub struct Project {
 
     // Failed or loading modules have no fingerprint. IDs may change after a reload.
     modules: Vec<ModuleRecord>,
+    // Shared ID interpretation for cache-facing goals; reset with module reloads.
+    cache_modules: Arc<Vec<ModuleRef>>,
 
     // module_map maps from a module ref to its id
     module_map: HashMap<ModuleRef, ModuleId>,
@@ -190,6 +192,7 @@ impl Project {
             use_filesystem: true,
             open_files: HashMap::new(),
             modules: new_modules(),
+            cache_modules: Arc::new(vec![ModuleRef::Anonymous; FIRST_NORMAL as usize]),
             module_map: HashMap::new(),
             targets: HashSet::new(),
             build_cache: Arc::new(Mutex::new(BuildCache::default())),
@@ -270,6 +273,7 @@ impl Project {
     // TODO: do this incrementally instead of dropping everything.
     fn drop_modules(&mut self) {
         self.modules = new_modules();
+        self.cache_modules = Arc::new(vec![ModuleRef::Anonymous; FIRST_NORMAL as usize]);
         self.module_map = HashMap::new();
     }
 
@@ -440,7 +444,7 @@ impl Project {
                 let env = self.get_env_by_id(id).unwrap();
                 let goals = env
                     .iter_goals()
-                    .map(|node| node.goal_context().expect("parsed goal"))
+                    .map(|node| self.cache_goal_context(&node))
                     .collect::<Vec<_>>();
                 let Some(record) = storage.record(module, &hash, &goals, |id| {
                     self.modules
@@ -563,7 +567,7 @@ impl Project {
             let env = self.get_env_by_id(id).unwrap();
             let goals = env
                 .iter_goals()
-                .map(|node| node.goal_context().expect("parsed goal"))
+                .map(|node| self.cache_goal_context(&node))
                 .collect::<Vec<_>>();
             if cached.module_hash() != &hash || !cached.matches_goals(&goals) {
                 continue;
@@ -695,6 +699,12 @@ impl Project {
         }
     }
 
+    pub(crate) fn cache_goal_context(&self, node: &NodeCursor) -> GoalContext {
+        let mut goal = node.goal_context().expect("parsed goal");
+        goal.cache_modules = Some(self.cache_modules.clone());
+        goal
+    }
+
     // Verifies all goals within this target.
     // Returns the status for this file alone.
     fn verify_target(&self, target: &ModuleRef, env: &Environment, builder: &mut Builder) {
@@ -705,7 +715,7 @@ impl Project {
             .collect();
         let goals = env
             .iter_goals()
-            .map(|node| node.goal_context().expect("no goal context"))
+            .map(|node| self.cache_goal_context(&node))
             .collect::<Vec<_>>();
         let ranges = goals
             .iter()
@@ -718,8 +728,12 @@ impl Project {
             hash.cloned(),
             Some(ranges.len()),
         );
-        let dependencies_verified =
-            self.all_proof_dependencies(env.module_id)
+        let reuse_requested = self.check_hashes
+            && self.cache_policy != CachePolicy::Disabled
+            && builder.dataset.is_none();
+        let dependencies_verified = reuse_requested
+            && self
+                .all_proof_dependencies(env.module_id)
                 .into_iter()
                 .all(|id| {
                     let Some(dependency) = self.get_env_by_id(id) else {
@@ -730,16 +744,13 @@ impl Project {
                         self.get_module_hash(id),
                         &dependency
                             .iter_goals()
-                            .map(|node| node.goal_context().expect("parsed goal"))
+                            .map(|node| self.cache_goal_context(&node))
                             .collect::<Vec<_>>(),
                     )
                 });
         // Reuse policy belongs with the parsed module graph. The builder only records
         // outcomes and retains compatible snapshots of completed evidence.
-        let reuse_enabled = self.check_hashes
-            && self.cache_policy != CachePolicy::Disabled
-            && builder.dataset.is_none()
-            && dependencies_verified;
+        let reuse_enabled = dependencies_verified;
         if builder.stop_if_requested(&self.build_stopped) {
             builder.module_proving_complete(target);
             return;
@@ -767,12 +778,12 @@ impl Project {
                 goal_index: 0,
                 goals: &goals,
             };
-            let mut prover = Prover::new(self, false);
-            for fact in self.imported_facts(env.module_id) {
-                prover.add_fact(fact);
-            }
             let mut node = NodeCursor::new(env, 0);
+            let mut prover = self.prover_at_scope(&node, node.entry_scope(), None, false, false);
             loop {
+                if prover.proof_scope() != node.entry_scope() {
+                    prover = self.prover_at_scope(&node, node.entry_scope(), None, false, false);
+                }
                 let keep_going = match self.reuse_verified_block(&node, &mut context, builder) {
                     Some(keep_going) => keep_going,
                     None => {
@@ -866,8 +877,17 @@ impl Project {
         if node.num_children() == 0 && !node.current().has_goal() {
             return true;
         }
-        let mut prover = prover.clone();
-        let mut guided = guided.cloned();
+        let changed = prover.proof_scope() != node.entry_scope();
+        let mut prover = if changed {
+            self.prover_at_scope(node, node.entry_scope(), None, false, false)
+        } else {
+            prover.clone()
+        };
+        let mut guided = if changed {
+            self.guided_at_scope(node, node.entry_scope(), false, context, builder)
+        } else {
+            guided.cloned()
+        };
         if node.num_children() > 0 {
             node.descend(0);
             loop {
@@ -890,7 +910,7 @@ impl Project {
             if builder.stop_if_requested(&self.build_stopped) {
                 return false;
             }
-            let goal = node.goal_context().expect("parsed goal");
+            let goal = self.cache_goal_context(&node);
             let reused = context.reuse_enabled
                 && context.hash.is_some_and(|hash| {
                     builder.previous_cache().matches_prefix(
@@ -910,6 +930,10 @@ impl Project {
                 self.retain_theorem_premises(context.target, theorem.as_deref(), builder);
                 builder.cached_goal_finished(&goal);
             } else {
+                if prover.proof_scope() != &goal.proof_scope {
+                    prover = self.prover_at_scope(node, &goal.proof_scope, None, true, false);
+                    guided = self.guided_at_scope(node, &goal.proof_scope, true, context, builder);
+                }
                 prover.set_goal(&goal);
                 if let Some(guided) = &mut guided {
                     guided.set_goal(&goal);
@@ -932,37 +956,75 @@ impl Project {
     // Resolve advisory names against current facts only. Body sources are recognized
     // as metadata here, then admitted in their ordinary lexical order by traversal.
     // The public ImportFilter continues to affect imports only.
+    fn guided_at_scope(
+        &self,
+        node: &NodeCursor,
+        scope: &crate::proof_scope::ProofScope,
+        include_children: bool,
+        context: &ModuleVerification,
+        builder: &Builder,
+    ) -> Option<Prover> {
+        if !context.hints_enabled {
+            return None;
+        }
+        let name = node.top_block_name()?;
+        let premises = builder
+            .previous_cache()
+            .theorem_premises(context.target, name.as_ref())?;
+        self.make_guided_prover_in_scope(node, premises, scope, include_children)
+    }
+
     fn make_guided_prover(
         &self,
-        env: &Environment,
+        _env: &Environment,
         node: &NodeCursor,
         premises: &PremiseSet,
     ) -> Option<Prover> {
+        self.make_guided_prover_in_scope(node, premises, node.entry_scope(), false)
+    }
+
+    fn make_guided_prover_in_scope(
+        &self,
+        node: &NodeCursor,
+        premises: &PremiseSet,
+        scope: &crate::proof_scope::ProofScope,
+        include_children: bool,
+    ) -> Option<Prover> {
         let mut remaining = premises.clone();
-        let mut prover = Prover::new(self, false);
-        let selected = self
-            .all_dependencies(env.module_id)
-            .into_iter()
-            .filter_map(|id| self.get_env_by_id(id))
-            .flat_map(|dependency| dependency.nodes.iter())
-            .chain(env.nodes[..node.top_index()].iter());
-        for selected_node in selected {
-            let Some((id, name)) = selected_node.claim.source.qualified_fact_name() else {
-                continue;
-            };
-            let module = &self.modules.get(id as usize)?.descriptor;
-            if premises
-                .get(module)
-                .is_some_and(|names| names.contains(&name))
-            {
-                if let Some(names) = remaining.get_mut(module) {
-                    names.remove(&name);
-                }
-                // Clone only selected values, including every fact sharing a source.
-                prover.add_fact(Fact::new(
-                    selected_node.claim.clone(),
-                    crate::proof_step::Truthiness::Factual,
-                ));
+        let mut prover = Prover::with_scope(self, false, scope.clone());
+        let imported = self.dependencies_in_scope(scope);
+        let selected = imported
+            .iter()
+            .filter_map(|id| self.get_env_by_id(*id))
+            .flat_map(|dependency| {
+                dependency
+                    .nodes
+                    .iter()
+                    .map(|n| (n, crate::proof_step::Truthiness::Factual))
+            })
+            .chain(node.local_nodes(include_children));
+        for (selected_node, truthiness) in selected {
+            let selected = selected_node
+                .claim
+                .source
+                .qualified_fact_name()
+                .and_then(|(id, name)| {
+                    let module = &self.modules.get(id as usize)?.descriptor;
+                    if premises
+                        .get(module)
+                        .is_some_and(|names| names.contains(&name))
+                    {
+                        if let Some(names) = remaining.get_mut(module) {
+                            names.remove(&name);
+                        }
+                        Some(())
+                    } else {
+                        None
+                    }
+                })
+                .is_some();
+            if selected || truthiness == crate::proof_step::Truthiness::Hypothetical {
+                prover.add_fact(Fact::new(selected_node.claim.clone(), truthiness));
             }
         }
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
@@ -979,7 +1041,9 @@ impl Project {
                 }
             }
         }
-        recognize_body(self, &env.nodes[node.top_index()], &mut remaining);
+        // Recognition is metadata only; future body facts are never ingested here.
+        let root = node.root_node();
+        recognize_body(self, root, &mut remaining);
         remaining
             .values()
             .all(|names| names.is_empty())
@@ -1023,11 +1087,8 @@ impl Project {
         callback: &mut impl FnMut(Prover, GoalContext) -> bool,
     ) {
         for node in env.iter_goals() {
-            let goal_context = node.goal_context().expect("no goal context");
-            let mut prover = Prover::new(&self, false);
-            for fact in node.usable_facts(&self) {
-                prover.add_fact(fact);
-            }
+            let goal_context = self.cache_goal_context(&node);
+            let mut prover = self.prover_for_node(&node, false);
             prover.set_goal(&goal_context);
             if !callback(prover, goal_context) {
                 return;
@@ -1058,13 +1119,16 @@ impl Project {
             // Nothing to prove
             return;
         }
-        let mut prover = Prover::new(&self, false);
-        for fact in self.imported_facts_filtered(env.module_id, filter) {
-            prover.add_fact(fact);
-        }
         let mut node = NodeCursor::new(&env, 0);
+        let mut prover = self.prover_at_scope(&node, node.entry_scope(), filter, false, false);
 
-        while self.for_each_prover_fast_helper(&prover, &mut node, callback) {
+        loop {
+            if prover.proof_scope() != node.entry_scope() {
+                prover = self.prover_at_scope(&node, node.entry_scope(), filter, false, false);
+            }
+            if !self.for_each_prover_fast_helper(&prover, &mut node, filter, callback) {
+                break;
+            }
             if !node.has_next() {
                 break;
             }
@@ -1083,6 +1147,7 @@ impl Project {
         &self,
         prover: &Prover,
         node: &mut NodeCursor,
+        filter: Option<&ImportFilter>,
         callback: &mut impl FnMut(Prover, GoalContext) -> bool,
     ) -> bool {
         if node.num_children() == 0 && !node.current().has_goal() {
@@ -1090,12 +1155,16 @@ impl Project {
             return true;
         }
 
-        let mut prover = prover.clone();
+        let mut prover = if prover.proof_scope() == node.entry_scope() {
+            prover.clone()
+        } else {
+            self.prover_at_scope(node, node.entry_scope(), filter, false, false)
+        };
         if node.num_children() > 0 {
             // We need to recurse into children
             node.descend(0);
             loop {
-                if !self.for_each_prover_fast_helper(&prover, node, callback) {
+                if !self.for_each_prover_fast_helper(&prover, node, filter, callback) {
                     return false;
                 }
 
@@ -1110,7 +1179,10 @@ impl Project {
         }
 
         if node.current().has_goal() {
-            let goal_context = node.goal_context().unwrap();
+            let goal_context = self.cache_goal_context(&node);
+            if prover.proof_scope() != &goal_context.proof_scope {
+                prover = self.prover_at_scope(node, &goal_context.proof_scope, filter, true, false);
+            }
             prover.set_goal(&goal_context);
             if !callback(prover, goal_context) {
                 return false;
@@ -1458,6 +1530,7 @@ impl Project {
         // Give this module an id before parsing it, so that we can catch circular imports.
         let module_id = self.modules.len() as ModuleId;
         self.modules.push(ModuleRecord::loading(module_ref.clone()));
+        Arc::make_mut(&mut self.cache_modules).push(module_ref.clone());
         self.module_map.insert(module_ref.clone(), module_id);
 
         let mut env = Environment::new(module_id);
@@ -1554,6 +1627,58 @@ impl Project {
             }
         }
         true
+    }
+
+    fn dependencies_in_scope(&self, scope: &crate::proof_scope::ProofScope) -> Vec<ModuleId> {
+        let mut output = vec![];
+        let mut seen = HashSet::new();
+        for &module in scope.imports() {
+            if self.append_dependencies(&mut seen, &mut output, module) {
+                output.push(module);
+            }
+        }
+        output
+    }
+
+    pub(crate) fn imported_facts_in_scope(
+        &self,
+        scope: &crate::proof_scope::ProofScope,
+        filter: Option<&ImportFilter>,
+    ) -> Vec<Fact> {
+        let mut facts = vec![];
+        for dependency in self.dependencies_in_scope(scope) {
+            let selected = match filter {
+                None => None,
+                Some(filter) => match filter.get(&self.modules[dependency as usize].descriptor) {
+                    Some(names) => Some(names),
+                    None => continue,
+                },
+            };
+            if let Some(env) = self.get_env_by_id(dependency) {
+                facts.extend(env.exported_facts_filtered(selected));
+            }
+        }
+        facts
+    }
+
+    // Fresh authority is installed before any fact can trigger specialization.
+    pub fn prover_for_node(&self, node: &NodeCursor, verbose: bool) -> Prover {
+        self.prover_at_scope(node, node.goal_scope(), None, true, verbose)
+    }
+
+    fn prover_at_scope(
+        &self,
+        node: &NodeCursor,
+        scope: &crate::proof_scope::ProofScope,
+        filter: Option<&ImportFilter>,
+        include_children: bool,
+        verbose: bool,
+    ) -> Prover {
+        let mut prover = Prover::with_scope(self, verbose, scope.clone());
+        for fact in node.facts_in_scope(self, scope, filter, include_children) {
+            prover.add_fact(fact);
+        }
+        prover
     }
 
     pub fn get_bindings(&self, module_id: ModuleId) -> Option<&BindingMap> {

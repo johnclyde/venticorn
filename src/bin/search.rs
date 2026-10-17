@@ -11,7 +11,7 @@ const USAGE: &str = "cargo run --release --bin=search <module name> <line number
 use std::process::ExitCode;
 use venticorn::block::NodeCursor;
 use venticorn::project::Project;
-use venticorn::prover::{Outcome, Prover};
+use venticorn::prover::Outcome;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -45,10 +45,7 @@ async fn main() -> ExitCode {
     let goal_context = node.goal_context().unwrap();
     println!("proving {} ...", goal_context.description());
     let verbose = true;
-    let mut prover = Prover::new(&project, verbose);
-    for fact in node.usable_facts(&project) {
-        prover.add_fact(fact);
-    }
+    let mut prover = project.prover_for_node(&node, verbose);
     prover.set_goal(&goal_context);
 
     loop {
@@ -59,7 +56,7 @@ async fn main() -> ExitCode {
                 println!("Success!");
                 prover.get_and_print_proof();
                 let proof = prover.get_proof().unwrap();
-                match proof.to_code(&env.bindings) {
+                match proof.to_code(&node.bindings_for_codegen()) {
                     Ok(code) => {
                         println!("\ngenerated code:\n");
                         for line in &code {
