@@ -795,9 +795,8 @@ impl Environment {
         statement: &Statement,
         ss: &crate::statement::StructureStatement,
     ) -> compilation::Result<()> {
-        if self.bindings.typename_in_use(&ss.name) {
-            return Err(statement.error("type name already defined in this scope"));
-        }
+        self.bindings
+            .check_typename_available(statement, &ss.name)?;
 
         let formals = self
             .bindings
@@ -1067,9 +1066,8 @@ impl Environment {
         statement: &Statement,
         is: &crate::statement::InductiveStatement,
     ) -> compilation::Result<()> {
-        if self.bindings.typename_in_use(&is.name) {
-            return Err(statement.error("type name already defined in this scope"));
-        }
+        self.bindings
+            .check_typename_available(statement, &is.name)?;
         self.add_other_lines(statement);
         let range = Range {
             start: statement.first_token.start_pos(),
@@ -1344,9 +1342,7 @@ impl Environment {
 
     fn typeclass_scope(&self, ts: &TypeclassStatement) -> compilation::Result<BindingMap> {
         for name in [&ts.instance_name, &ts.typeclass_name] {
-            if self.bindings.typename_in_use(name.text()) {
-                return Err(name.error(&format!("{} already defined in this scope", name)));
-            }
+            self.bindings.check_typename_available(name, name.text())?;
         }
         if ts.instance_name.text() == ts.typeclass_name.text() {
             return Err(ts
@@ -2008,12 +2004,8 @@ impl Environment {
         match &statement.statement {
             StatementInfo::Type(ts) => {
                 self.add_other_lines(statement);
-                if self.bindings.typename_in_use(&ts.name) {
-                    return Err(statement.error(&format!(
-                        "type name '{}' already defined in this scope",
-                        ts.name
-                    )));
-                }
+                self.bindings
+                    .check_typename_available(statement, &ts.name)?;
                 if ts.type_expr.is_axiom() {
                     self.bindings.add_data_type(&ts.name);
                 } else {

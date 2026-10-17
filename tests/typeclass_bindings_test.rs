@@ -37,10 +37,19 @@ fn datatype_declarations_reject_reserved_class_names_without_mutation() {
     use venticorn::project::Project;
     use venticorn::statement::Statement;
 
-    for source in [
-        "structure Magma {\n value: Bool\n}",
-        "structure Wrapper<Magma> {\n value: Magma\n}",
-        "inductive Magma {\n unit\n}",
+    for (source, expected) in [
+        (
+            "structure Magma {\n value: Bool\n}",
+            "name Magma is already in use",
+        ),
+        (
+            "structure Wrapper<Magma> {\n value: Magma\n}",
+            "type parameter already defined in this scope",
+        ),
+        (
+            "inductive Magma {\n unit\n}",
+            "name Magma is already in use",
+        ),
     ] {
         let mut env = Environment::new_test();
         env.add("let keep: Bool = true");
@@ -55,7 +64,7 @@ fn datatype_declarations_reject_reserved_class_names_without_mutation() {
         let error = env
             .add_statement(&mut Project::new_mock(), &statement)
             .unwrap_err();
-        assert!(error.message().contains("already defined"), "{error}");
+        assert_eq!(error.message(), expected);
         assert_eq!(env.nodes.len(), nodes);
         assert_eq!(env.last_line(), last_line);
         assert_eq!(env.bindings.get_typeclass_for_name("Magma"), Some(&class));
