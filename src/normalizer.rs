@@ -452,7 +452,7 @@ impl Normalizer {
     }
 
     // Converts a checked Boolean value to CNF.
-    pub fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Normalization {
+    fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Normalization {
         // Validate every value before transformations inspect application or match types.
         if let Err(error) = value.validate() {
             return Normalization::Error(format!(
