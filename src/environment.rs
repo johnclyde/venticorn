@@ -191,7 +191,7 @@ impl Environment {
             .get_type_for_constant_name(name)
             .unwrap()
             .clone();
-        let param_names = self.bindings.get_params(name);
+        let param_names = self.bindings.unresolved_params(name);
 
         let params = param_names.into_iter().map(AcornType::Variable).collect();
         let constant = AcornValue::constant(

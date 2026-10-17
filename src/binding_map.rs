@@ -626,7 +626,7 @@ impl BindingMap {
             .attributes
             .get(member)
             .ok_or_else(|| source.error("invalid canonical class member metadata"))?;
-        if owner.get_params(&generic_name) != [info.instance_param.clone()]
+        if owner.unresolved_params(&generic_name) != [info.instance_param.clone()]
             || owner.get_type_for_constant_name(&generic_name) != Some(template_type)
             || !matches!(
                 owner.get_constant_value(&generic_name),
@@ -736,11 +736,15 @@ impl BindingMap {
         self.get_type_for_constant_name(identifier)
     }
 
-    pub fn get_params(&self, identifier: &str) -> Vec<TypeParam> {
+    pub fn unresolved_params(&self, identifier: &str) -> Vec<TypeParam> {
         match self.constant_info.get(identifier) {
             Some(info) => info.value.unresolved_params().to_vec(),
             None => vec![],
         }
+    }
+
+    pub fn get_params(&self, identifier: &str) -> Vec<TypeParam> {
+        self.unresolved_params(identifier)
     }
 
     // Gets the type for a type name, not for an identifier.
