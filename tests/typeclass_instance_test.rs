@@ -888,3 +888,25 @@ fn explicit_instance_constant_arguments_are_admitted() {
     assert_eq!(members[0].params, [target.clone()]);
     assert_eq!(members[0].instance_type, *target);
 }
+
+#[test]
+fn unresolved_class_constants_cannot_be_used_as_values() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        typeclass P: PointedSet {
+            zero: P
+        }
+        "#,
+    );
+    let node_count = env.nodes.len();
+    env.bad(
+        r#"
+        theorem goal {
+            PointedSet.zero = PointedSet.zero
+        }
+        "#,
+    );
+    assert_eq!(env.nodes.len(), node_count);
+    assert!(!env.bindings.name_in_use("goal"));
+}
