@@ -820,10 +820,7 @@ impl Environment {
         let mut arbitrary_params = Vec::with_capacity(formals.len());
         for param in &formals {
             param_names.push(param.name.clone());
-            arbitrary_params.push(
-                self.bindings
-                    .add_arbitrary_type_with_class(&param.name, param.typeclass.as_ref()),
-            );
+            arbitrary_params.push(self.bindings.add_arbitrary_type_param(param.clone()));
         }
 
         // Parse the fields before adding the struct type so that we can't have
@@ -1367,7 +1364,10 @@ impl Environment {
             name: ts.typeclass_name.text().to_string(),
         };
         scope.add_typeclass(ts.typeclass_name.text(), class.clone());
-        scope.add_arbitrary_type_with_class(ts.instance_name.text(), Some(&class));
+        scope.add_arbitrary_type_param(TypeParam {
+            name: ts.instance_name.text().to_string(),
+            typeclass: Some(class),
+        });
         Ok(scope)
     }
 
@@ -1472,10 +1472,10 @@ impl Environment {
                     );
                 }
             }
-            actuals.push(
-                self.bindings
-                    .add_arbitrary_type_with_class(&param.name, formal.typeclass.as_ref()),
-            );
+            actuals.push(self.bindings.add_arbitrary_type_param(TypeParam {
+                name: param.name.clone(),
+                typeclass: formal.typeclass.clone(),
+            }));
             param_names.push(param.name.clone());
         }
         let class_type = potential.resolve(actuals, &cs.name_token)?;

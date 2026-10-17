@@ -114,3 +114,33 @@ fn scoped_instance_types_preserve_the_canonical_class_bound() {
     bindings.remove_data_type("M");
     assert!(!bindings.name_in_use("M"));
 }
+
+#[test]
+fn complete_scoped_descriptors_keep_renamed_and_foreign_bounds() {
+    use venticorn::acorn_type::{AcornType, TypeParam};
+    let mut bindings = BindingMap::new(2);
+    for (name, module) in [("Renamed", 2), ("Foreign", 3)] {
+        let param = TypeParam {
+            name: name.into(),
+            typeclass: Some(Typeclass {
+                module_id: module,
+                name: "Magma".into(),
+            }),
+        };
+        let value = bindings.add_arbitrary_type_param(param.clone());
+        assert_eq!(value, AcornType::Arbitrary(param.clone()));
+        assert_eq!(bindings.get_type_for_name(name), Some(&value));
+        assert_eq!(value.to_generic(), AcornType::Variable(param));
+        bindings.remove_data_type(name);
+        assert!(!bindings.name_in_use(name));
+    }
+    let param = TypeParam::unconstrained("Open");
+    assert_eq!(
+        bindings.add_arbitrary_type_param(param.clone()),
+        AcornType::Arbitrary(param)
+    );
+    assert_eq!(
+        bindings.add_arbitrary_type("Legacy"),
+        AcornType::Arbitrary(TypeParam::unconstrained("Legacy"))
+    );
+}

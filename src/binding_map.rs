@@ -412,7 +412,7 @@ impl BindingMap {
 
     // Introduce a fixed but otherwise unknown type within a proof scope.
     pub fn add_arbitrary_type(&mut self, name: &str) -> AcornType {
-        self.add_arbitrary_type_with_class(name, None)
+        self.add_arbitrary_type_param(TypeParam::unconstrained(name))
     }
 
     // Preserve the defining class identity while introducing a scoped instance parameter.
@@ -421,12 +421,23 @@ impl BindingMap {
         name: &str,
         typeclass: Option<&Typeclass>,
     ) -> AcornType {
-        assert!(!self.name_in_use(name), "type name {} already bound", name);
-        let arbitrary = AcornType::Arbitrary(crate::acorn_type::TypeParam {
+        self.add_arbitrary_type_param(TypeParam {
             name: name.to_string(),
             typeclass: typeclass.cloned(),
-        });
-        self.insert_type_name(name.to_string(), arbitrary.clone());
+        })
+    }
+
+    // Introduce a complete descriptor without reconstructing its canonical class bound.
+    // Panics if the name is already bound, like the compatibility constructors above.
+    pub fn add_arbitrary_type_param(&mut self, param: TypeParam) -> AcornType {
+        assert!(
+            !self.name_in_use(&param.name),
+            "type name {} already bound",
+            param.name
+        );
+        let name = param.name.clone();
+        let arbitrary = AcornType::Arbitrary(param);
+        self.insert_type_name(name, arbitrary.clone());
         arbitrary
     }
 

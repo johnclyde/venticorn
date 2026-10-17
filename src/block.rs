@@ -107,9 +107,7 @@ impl Block {
             .map(|param| {
                 (
                     param.name.clone(),
-                    subenv
-                        .bindings
-                        .add_arbitrary_type_with_class(&param.name, param.typeclass.as_ref()),
+                    subenv.bindings.add_arbitrary_type_param(param.clone()),
                 )
             })
             .collect();
