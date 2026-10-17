@@ -426,15 +426,13 @@ impl Normalizer {
         }
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             // Check for defining one constant to equal another constant.
-            if let (AcornValue::Constant(left), AcornValue::Constant(right)) =
-                (left.as_ref(), right.as_ref())
+            if let (Some(left), Some(right)) =
+                (left.simple_constant_name(), right.simple_constant_name())
             {
-                if left.params.is_empty()
-                    && right.params.is_empty()
-                    && self.constant_map.has_key(&right.key())
-                    && !self.constant_map.has_key(&left.key())
+                if self.constant_map.has_constant_named(right)
+                    && !self.constant_map.has_constant_named(left)
                 {
-                    self.constant_map.add_alias_keys(left.key(), &right.key());
+                    self.constant_map.add_alias_named(left, right);
                     return Normalization::Clauses(vec![]);
                 }
             }
