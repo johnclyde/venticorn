@@ -1464,6 +1464,24 @@ impl BindingMap {
                 Ok(NamedEntity::Value(value))
             }
             Some(NamedEntity::Type(t)) => {
+                if let AcornType::Variable(param) | AcornType::Arbitrary(param) = &t {
+                    if let Some(class) = &param.typeclass {
+                        let member = self
+                            .evaluate_type_attribute(project, class.module_id, &class.name, name)
+                            .ok_or_else(|| {
+                                name_token.error(&format!(
+                                    "{} has no attribute named '{}'",
+                                    class.name, name
+                                ))
+                            })?;
+                        return match member {
+                            PotentialValue::Resolved(value) => Ok(NamedEntity::Value(value)),
+                            PotentialValue::Unresolved(unresolved) => {
+                                Ok(NamedEntity::Value(unresolved.resolve(name_token, vec![t])?))
+                            }
+                        };
+                    }
+                }
                 if let AcornType::Data(module, type_name, actuals) = t {
                     if name_token.token_type == TokenType::Numeral {
                         if !actuals.is_empty() {
