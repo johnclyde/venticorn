@@ -10,7 +10,6 @@ use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, PotentialValue, Stack};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
-use crate::expression::TypeParamExpr;
 use crate::fact::Fact;
 use crate::module::ModuleId;
 use crate::project::{LoadError, Project};
@@ -806,12 +805,21 @@ impl Environment {
 
         let mut param_names = vec![];
         let mut arbitrary_params = vec![];
-        for token in &TypeParamExpr::unconstrained_tokens(&ss.type_params)? {
+        for param in &ss.type_params {
+            let token = &param.name;
             if token.text() == ss.name || self.bindings.name_in_use(token.text()) {
                 return Err(token.error("type parameter already defined in this scope"));
             }
+            let class = param
+                .typeclass
+                .as_ref()
+                .map(|bound| self.bindings.evaluate_typeclass(project, bound))
+                .transpose()?;
             param_names.push(token.text().to_string());
-            arbitrary_params.push(self.bindings.add_arbitrary_type(token.text()));
+            arbitrary_params.push(
+                self.bindings
+                    .add_arbitrary_type_with_class(token.text(), class.as_ref()),
+            );
         }
 
         // Parse the fields before adding the struct type so that we can't have
@@ -888,9 +896,10 @@ impl Environment {
         }
 
         // The member functions take the type itself to a particular member.
+        let formals = self.scoped_type_params(&param_names);
         let struct_type = self
             .bindings
-            .add_potential_type(&ss.name, param_names.len())
+            .add_type_family(&ss.name, formals)
             .resolve(arbitrary_params.clone(), &ss.name_token)?;
         self.definition_ranges
             .insert(ss.name.clone(), statement.range());
@@ -1717,13 +1726,37 @@ impl Environment {
                         .name_token
                         .error("we cannot bind members to type aliases"));
                 }
+                let declared = match &potential {
+                    PotentialType::Unresolved(family) => family.params.as_slice(),
+                    _ => &[],
+                };
+                if cs.type_params.len() != declared.len() {
+                    return Err(cs.name_token.error(&format!(
+                        "type {} expects {} parameters, but got {}",
+                        cs.name,
+                        declared.len(),
+                        cs.type_params.len()
+                    )));
+                }
                 let mut param_names = Vec::with_capacity(cs.type_params.len());
                 let mut actuals = Vec::with_capacity(cs.type_params.len());
-                for token in &TypeParamExpr::unconstrained_tokens(&cs.type_params)? {
+                for (param, formal) in cs.type_params.iter().zip(declared) {
+                    let token = &param.name;
                     if self.bindings.name_in_use(token.text()) {
                         return Err(token.error("type parameter already defined in this scope"));
                     }
-                    actuals.push(self.bindings.add_arbitrary_type(token.text()));
+                    if let Some(bound) = &param.typeclass {
+                        let explicit = self.bindings.evaluate_typeclass(project, bound)?;
+                        if formal.typeclass.as_ref() != Some(&explicit) {
+                            return Err(bound.error(
+                                "class parameter bound conflicts with the type declaration",
+                            ));
+                        }
+                    }
+                    actuals.push(
+                        self.bindings
+                            .add_arbitrary_type_with_class(token.text(), formal.typeclass.as_ref()),
+                    );
                     param_names.push(token.text().to_string());
                 }
                 let class_type = potential.resolve(actuals, &cs.name_token)?;

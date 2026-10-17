@@ -64,26 +64,32 @@ fn malformed_bound_lists_are_rejected() {
 }
 
 #[test]
-fn declaration_parameter_lists_retain_bounds_at_unsupported_consumers() {
+fn declaration_parameter_lists_retain_bounds_at_family_consumers() {
     use venticorn::environment::Environment;
     use venticorn::project::Project;
+    let mut env = Environment::new_test();
+    env.add("typeclass M: Magma {\n mul: (M, M) -> M\n}\nstructure Pair<U> {\n value: U\n}");
     for source in [
         "structure Box<T: Magma> {\n value: T\n}",
-        "class Pair<T: Magma> {\n define same(self) -> Bool { true }\n}",
+        "class Box<Renamed: Magma> {\n define same(self) -> Bool { true }\n}",
     ] {
         let statement = Statement::parse_str(source).unwrap();
         let code = statement.to_string();
-        assert!(code.contains("T: Magma"));
+        assert!(code.contains(": Magma"));
         assert_eq!(Statement::parse_str(&code).unwrap().to_string(), code);
-        let mut env = Environment::new_test();
-        env.add("typeclass M: Magma {\n mul: (M, M) -> M\n}\nstructure Pair<U> {\n value: U\n}");
-        let error = env
-            .add_statement(&mut Project::new_mock(), &statement)
-            .unwrap_err();
-        assert!(error.message().contains("not supported yet"), "{error}");
-        for name in ["T", "Box", "Box.new", "Pair.same", "reflexive"] {
-            assert!(!env.bindings.name_in_use(name), "{name}");
-        }
+        env.add_statement(&mut Project::new_mock(), &statement)
+            .unwrap();
+    }
+    let error = env
+        .add_statement(
+            &mut Project::new_mock(),
+            &Statement::parse_str("class Pair<T: Magma> {\n define same(self) -> Bool { true }\n}")
+                .unwrap(),
+        )
+        .unwrap_err();
+    assert!(error.message().contains("bound conflicts"), "{error}");
+    for name in ["T", "Renamed", "Pair.same"] {
+        assert!(!env.bindings.name_in_use(name));
     }
 }
 
