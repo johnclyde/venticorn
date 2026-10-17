@@ -709,24 +709,63 @@ impl BindingMap {
         )
     }
 
-    // The caller prepares expected from the canonical complete class descriptor.
-    pub(crate) fn typecheck_instance_attribute(
+    // Check both sides of an instance member relationship against the complete
+    // canonical class descriptor. This does not publish membership or a fact.
+    pub(crate) fn check_instance_attribute(
         &self,
         source: &dyn ErrorSource,
+        owner: &BindingMap,
+        class: &Typeclass,
+        target: &AcornType,
         scope: &str,
         member: &str,
-        expected: &AcornType,
-    ) -> compilation::Result<()> {
-        let actual = self
+    ) -> compilation::Result<(AcornValue, AcornValue)> {
+        let info = owner
+            .get_typeclass_info(class)
+            .ok_or_else(|| source.error("invalid typeclass member metadata"))?;
+        if owner.module != class.module_id
+            || owner.get_typeclass_for_name(&class.name) != Some(class)
+            || info.instance_param.typeclass.as_ref() != Some(class)
+        {
+            return Err(source.error("invalid canonical typeclass metadata"));
+        }
+        let generic_name = format!("{}.{}", class.name, member);
+        let template_type = info
+            .attributes
+            .get(member)
+            .ok_or_else(|| source.error("invalid canonical class member metadata"))?;
+        if owner.get_params(&generic_name) != [info.instance_param.clone()]
+            || owner.get_type_for_identifier(&generic_name) != Some(template_type)
+            || !matches!(
+                owner.get_constant_value(&generic_name),
+                Some(PotentialValue::Unresolved(_))
+            )
+        {
+            return Err(source.error("invalid canonical class member metadata"));
+        }
+        let expected =
+            template_type.instantiate(&[(info.instance_param.name.clone(), target.clone())]);
+        let implementation = self
             .get_constant_value(&format!("{}.{}", scope, member))
             .and_then(PotentialValue::resolved);
-        if actual.as_ref().map(AcornValue::get_type).as_ref() != Some(expected) {
+        if implementation.as_ref().map(AcornValue::get_type).as_ref() != Some(&expected) {
             return Err(source.error(&format!(
                 "instance member '{}' must have type {}",
                 member, expected
             )));
         }
-        Ok(())
+        let implementation = implementation.unwrap();
+        implementation
+            .validate()
+            .map_err(|error| source.error(&error))?;
+        let generic = AcornValue::new_constant(
+            class.module_id,
+            generic_name,
+            vec![target.clone()],
+            expected,
+        );
+        generic.validate().map_err(|error| source.error(&error))?;
+        Ok((generic, implementation))
     }
 
     pub(crate) fn instance_scope(&self, target: &str, class: &Typeclass) -> Option<&str> {
