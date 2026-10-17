@@ -269,3 +269,16 @@ fn argument_free_typeclass_conditions_preserve_exact_formatting() {
     let statement = Statement::parse_str(source).unwrap();
     assert_eq!(statement.to_string(), source);
 }
+
+#[test]
+fn mixed_typeclass_members_preserve_exact_formatting() {
+    let source = indoc::indoc! {"
+        typeclass F: Foo {
+            bar: (F, F) -> Bool
+            some_bar(x: F) {
+                exists(y: F) { x.bar(y) }
+            }
+        }"};
+    let statement = Statement::parse_str(source).unwrap();
+    assert_eq!(statement.to_string(), source);
+}
