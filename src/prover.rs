@@ -17,12 +17,11 @@ use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
-use crate::normalizer::{Normalization, NormalizationError, Normalizer};
+use crate::normalizer::{NormalizationError, Normalizer};
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
-use crate::proposition::SourceType;
 use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
 
@@ -156,40 +155,18 @@ impl Prover {
 
     // Used to add facts internally, after the fact has already been monomorphized.
     fn add_monomorphic_fact(&mut self, fact: Fact) {
-        let local = fact.local();
-        let defined = match &fact.source.source_type {
-            SourceType::ConstantDefinition(value, _) => {
-                match self.normalizer.term_from_value(&value, local) {
-                    Ok(term) => Some(term.get_head().clone()),
-                    Err(NormalizationError(s)) => {
-                        self.error = Some(s);
-                        return;
-                    }
-                }
-            }
-            _ => None,
-        };
-        let clauses = match self.normalizer.normalize_value(&fact.value, local) {
-            Normalization::Clauses(clauses) => clauses,
-            Normalization::Impossible => {
-                // We have a false assumption, so we're done already.
-                self.final_step = Some(ProofStep::assumption(
-                    Clause::impossible(),
-                    fact.truthiness,
-                    &fact.source,
-                    None,
-                ));
-                return;
-            }
-            Normalization::Error(s) => {
-                self.error = Some(s);
+        let mut steps = match self.normalizer.normalize_monomorphic_fact(fact) {
+            Ok(steps) => steps,
+            Err(NormalizationError(error)) => {
+                self.error = Some(error);
                 return;
             }
         };
-        let mut steps = vec![];
-        for clause in clauses {
-            let step = ProofStep::assumption(clause, fact.truthiness, &fact.source, defined);
-            steps.push(step);
+        // An empty clause is already a known outcome, before search or subset selection.
+        // Keep its original truthiness and source when deciding Success versus Inconsistent.
+        if let Some(index) = steps.iter().position(|step| step.clause.is_impossible()) {
+            self.final_step = Some(steps.swap_remove(index));
+            return;
         }
         self.passive_set.push_batch(steps);
     }
@@ -1058,5 +1035,94 @@ mod equality_provenance_tests {
                 right_term
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod normalization_boundary_tests {
+    use super::*;
+    use crate::proposition::Source;
+
+    #[test]
+    fn false_assumptions_are_immediate_and_retain_inconsistency_policy() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "let p: Bool = axiom\ntheorem goal { p }");
+        let module = project.expect_ok("main");
+        let env = project.get_env_by_id(module).unwrap();
+        let node = env.get_node_by_name("goal");
+        let source = Source::mock();
+        for truthiness in [Truthiness::Factual, Truthiness::Hypothetical] {
+            for okay in [false, true] {
+                let mut goal = node.goal_context().unwrap();
+                goal.inconsistency_okay = okay;
+                let mut prover = Prover::with_scope(&project, false, goal.proof_scope.clone());
+                prover.add_fact(Fact {
+                    value: AcornValue::Bool(false),
+                    source: source.clone(),
+                    truthiness,
+                });
+                assert!(prover.has_immediate_outcome());
+                let step = prover.final_step.as_ref().unwrap();
+                assert!(step.clause.is_impossible());
+                assert_eq!(step.truthiness, truthiness);
+                let Rule::Assumption(info) = &step.rule else {
+                    panic!("missing false source")
+                };
+                assert_eq!(info.source, source);
+                prover.set_goal(&goal);
+                assert!(prover.has_immediate_outcome());
+                assert_eq!(
+                    prover.verification_search(),
+                    if okay {
+                        Outcome::Success
+                    } else {
+                        Outcome::Inconsistent
+                    }
+                );
+                assert_eq!(prover.iter_active_steps().count(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn a_true_goal_keeps_its_immediate_counterfactual_success() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem goal { true }");
+        let module = project.expect_ok("main");
+        let env = project.get_env_by_id(module).unwrap();
+        let node = env.get_node_by_name("goal");
+        let mut prover = project.prover_for_node(&node, false);
+        assert!(!prover.has_immediate_outcome());
+        prover.set_goal(&node.goal_context().unwrap());
+        assert!(prover.has_immediate_outcome());
+        assert_eq!(
+            prover.final_step.as_ref().unwrap().truthiness,
+            Truthiness::Counterfactual
+        );
+        assert_eq!(prover.verification_search(), Outcome::Success);
+        assert_eq!(prover.iter_active_steps().count(), 0);
+    }
+
+    #[test]
+    fn normalization_errors_remain_immediate_terminal_errors() {
+        let project = Project::new_mock();
+        let mut prover = Prover::new(&project, false);
+        let value = AcornValue::constant(
+            2,
+            "item".into(),
+            vec![],
+            crate::acorn_type::AcornType::Data(2, "Item".into(), vec![]),
+        );
+        prover.add_fact(Fact {
+            value,
+            source: Source::mock(),
+            truthiness: Truthiness::Factual,
+        });
+        assert!(prover.has_immediate_outcome());
+        assert_eq!(
+            prover.error.as_deref(),
+            Some("normalization requires a Boolean value, got Item")
+        );
+        assert_eq!(prover.verification_search(), Outcome::Error);
     }
 }
