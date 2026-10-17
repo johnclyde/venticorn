@@ -2045,44 +2045,45 @@ impl AcornValue {
         }
     }
 
-    pub(crate) fn constant_name(&self) -> Option<&GlobalConstantName> {
+    /// Borrow the complete canonical identity of a constant, including its class owner.
+    pub fn constant_name(&self) -> Option<&GlobalConstantName> {
         match self {
             Self::Constant(c) => Some(&c.name),
             _ => None,
         }
     }
 
-    pub(crate) fn simple_constant_name(&self) -> Option<&GlobalConstantName> {
+    /// Borrow the identity only when the constant has no type arguments.
+    pub fn simple_constant_name(&self) -> Option<&GlobalConstantName> {
         match self {
             Self::Constant(c) if c.params.is_empty() => Some(&c.name),
             _ => None,
         }
     }
 
+    /// Borrow the canonical identity of a directly applied constant function.
+    pub fn named_function_name(&self) -> Option<&GlobalConstantName> {
+        match self {
+            Self::Application(app) => app.function.constant_name(),
+            _ => None,
+        }
+    }
+
+    /// Compatibility display accessor; use `constant_name` for semantic identity.
     pub fn as_name(&self) -> Option<(ModuleId, String)> {
-        match self {
-            AcornValue::Constant(c) => Some((c.name.module_id, c.name.local_name.to_string())),
-            _ => None,
-        }
+        self.constant_name()
+            .map(|name| (name.module_id, name.local_name.to_string()))
     }
 
+    /// Compatibility display accessor; use `named_function_name` for identity.
     pub fn is_named_function_call(&self) -> Option<(ModuleId, String)> {
-        match self {
-            AcornValue::Application(app) => app.function.as_name(),
-            _ => None,
-        }
+        self.named_function_name()
+            .map(|name| (name.module_id, name.local_name.to_string()))
     }
 
+    /// Compatibility display accessor; use `simple_constant_name` for identity.
     pub fn as_simple_constant(&self) -> Option<(ModuleId, String)> {
-        match self {
-            AcornValue::Constant(c) => {
-                if c.params.is_empty() {
-                    Some((c.name.module_id, c.name.local_name.to_string()))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+        self.simple_constant_name()
+            .map(|name| (name.module_id, name.local_name.to_string()))
     }
 }
