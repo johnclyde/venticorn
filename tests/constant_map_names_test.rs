@@ -70,3 +70,25 @@ fn typed_alias_operations_keep_homonymous_owners_distinct_until_explicit_aliasin
         map.add_constant(10, "old", false)
     );
 }
+
+#[test]
+fn checked_alias_proposals_leave_existing_atoms_unchanged_on_failure() {
+    let mut map = ConstantMap::new();
+    let old = instance(11);
+    let new = instance(12);
+    assert!(!map.maybe_add_alias(&new, &old));
+    assert!(!map.has_constant_named(&new));
+    assert!(!map.has_constant_named(&old));
+    assert!(!map.maybe_add_alias(&old, &old));
+    let atom = map.add_constant_named(old.clone(), false);
+    assert_eq!(atom, Atom::GlobalConstant(0));
+    assert!(map.maybe_add_alias(&new, &old));
+    assert!(!map.maybe_add_alias(&new, &old));
+    assert_eq!(map.add_constant_named(new, false), atom);
+    let third = instance(13);
+    let other = map.add_constant_named(third.clone(), true);
+    assert_eq!(other, Atom::LocalConstant(0));
+    assert!(!map.maybe_add_alias(&old, &third));
+    assert_eq!(map.add_constant_named(old, false), atom);
+    assert_eq!(map.add_constant_named(third, true), other);
+}

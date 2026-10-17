@@ -429,10 +429,7 @@ impl Normalizer {
             if let (Some(left), Some(right)) =
                 (left.simple_constant_name(), right.simple_constant_name())
             {
-                if self.constant_map.has_constant_named(right)
-                    && !self.constant_map.has_constant_named(left)
-                {
-                    self.constant_map.add_alias_named(left, right);
+                if self.constant_map.maybe_add_alias(left, right) {
                     return Normalization::Clauses(vec![]);
                 }
             }

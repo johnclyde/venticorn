@@ -111,12 +111,23 @@ impl ConstantMap {
 
     /// Alias one complete identity to an existing atom after an explicit equality.
     pub fn add_alias_named(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) {
-        assert!(!self.has_constant_named(new));
-        assert!(self.has_constant_named(old));
+        assert!(
+            self.maybe_add_alias(new, old),
+            "alias needs a new name and an existing target"
+        );
+    }
+
+    /// Record an equality alias only if the new identity is unused and the target exists.
+    /// Rejected proposals leave the atom inventory unchanged.
+    pub fn maybe_add_alias(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) -> bool {
+        if self.has_constant_named(new) || !self.has_constant_named(old) {
+            return false;
+        }
         let new_key = ConstantKey::from_name(new.clone());
         let old_key = ConstantKey::from_name(old.clone());
         let atom = self.keymap[&old_key];
         self.keymap.insert(new_key, atom);
+        true
     }
 
     pub(crate) fn global_name(&self, id: AtomId) -> GlobalConstantName {
