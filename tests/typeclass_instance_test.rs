@@ -826,7 +826,6 @@ fn typeclasses_can_have_conditions_862() {
 }
 
 #[test]
-#[ignore = "pending checked instance proof obligations"]
 fn instance_statement_accepts_by_block_865() {
     let mut env = Environment::new_test();
     env.add(

@@ -210,29 +210,34 @@ fn argument_free_bounded_and_condition_only_classes_keep_their_actual_metadata()
 }
 
 #[test]
-fn law_bearing_instances_are_rejected_before_any_implementation_is_published() {
+fn law_bearing_instances_create_a_real_obligation_before_membership_is_usable() {
     let mut env = Environment::new_test();
     env.add(&format!("{SINGLETON}\ninductive State {{\n clean\n}}"));
-    let nodes = env.nodes.len();
-    let line = env.last_line();
-    let error = env
-        .add_statement(
-            &mut Project::new_mock(),
-            &Statement::parse_str(
-                "instance State: Singleton {\n let value: State = State.clean\n}",
-            )
-            .unwrap(),
-        )
-        .unwrap_err();
-    assert!(
-        error.message().contains("require proof obligations"),
-        "{error}"
+    env.add("instance State: Singleton {\n let value: State = State.clean\n}");
+    assert_eq!(env.iter_goals().count(), 1);
+    let class = env.bindings.get_typeclass_for_name("Singleton").unwrap();
+    assert!(env
+        .bindings
+        .proof_scope()
+        .has_membership(env.module_id, "State", class));
+    let node = env.iter_goals().next().unwrap();
+    let block = node.current().block.as_ref().unwrap();
+    assert!(!block
+        .entry_scope()
+        .has_membership(env.module_id, "State", class));
+    assert!(!block
+        .env
+        .bindings
+        .proof_scope()
+        .has_membership(env.module_id, "State", class));
+    assert_eq!(
+        node.current().claim.value,
+        venticorn::acorn_value::AcornValue::Bool(true)
     );
-    assert_eq!(env.nodes.len(), nodes);
-    assert_eq!(env.last_line(), line);
-    assert!(!env.bindings.name_in_use("State.Singleton.value"));
-    // A failed law-bearing declaration does not block an independent law-free instance.
+    assert!(!block.goal.as_ref().unwrap().value().is_generic());
+    // A law-free declaration still adds no obligation of its own.
     env.add("typeclass T: Pointed {\n value: T\n}\ninstance State: Pointed {\n let value: State = State.clean\n}");
+    assert_eq!(env.iter_goals().count(), 1);
 }
 
 #[test]
@@ -263,23 +268,40 @@ fn imported_same_named_classes_keep_distinct_canonical_law_metadata() {
         })
         .collect();
     assert_ne!(classes[0], classes[1]);
-    // Resolve through the owning module, then reject pending concrete obligation support.
-    let mut env = project.get_env_by_id(id).unwrap().child(0, false);
-    env.top_level = true;
-    for owner in ["left", "right"] {
-        let error = env
-            .add_statement(
-                &mut project,
-                &Statement::parse_str(&format!(
-                    "instance State: {owner}.Singleton {{\n let value: State = State.clean\n}}"
-                ))
-                .unwrap(),
-            )
-            .unwrap_err();
-        assert!(
-            error.message().contains("require proof obligations"),
-            "{error}"
+    // Each fresh consumer lowers only its declared owner's conditions.
+    for (owner, class) in ["left", "right"].into_iter().zip(&classes) {
+        let mut env = project.get_env_by_id(id).unwrap().child(0, false);
+        env.top_level = true;
+        env.add_statement(
+            &mut project,
+            &Statement::parse_str(&format!(
+                "instance State: {owner}.Singleton {{\n let value: State = State.clean\n}}"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(env.iter_goals().count(), 1);
+        let block = env
+            .iter_goals()
+            .next()
+            .unwrap()
+            .current()
+            .block
+            .as_ref()
+            .unwrap();
+        assert!(!block.entry_scope().has_membership(id, "State", class));
+        assert!(env
+            .bindings
+            .proof_scope()
+            .has_membership(id, "State", class));
+        let mut references = vec![];
+        block.goal.as_ref().unwrap().value().find_constants(
+            &|constant| constant.module_id == class.module_id && constant.name == "Singleton.value",
+            &mut references,
         );
-        assert!(!env.bindings.name_in_use("State.Singleton.value"));
+        assert!(
+            references.is_empty(),
+            "the selected class member must be lowered"
+        );
     }
 }
