@@ -771,3 +771,33 @@ fn typechecking_captures_instance_relationships_858() {
         "#,
     );
 }
+
+#[test]
+fn typechecking_captures_instance_relationships_860() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        typeclass F: Flagged {
+            flag: Bool
+        }
+        type Foo: axiom
+        type Bar: axiom
+        instance Bar: Flagged {
+            let flag: Bool = true
+        }
+        define get_flag<F: Flagged>(x: F) -> Bool {
+            F.flag
+        }
+        theorem goal_bar(b: Bar) {
+            get_flag(b)
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        theorem goal_foo(f: Foo) {
+            get_flag(f)
+        }
+        "#,
+    );
+}
