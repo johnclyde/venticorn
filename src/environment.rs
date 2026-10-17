@@ -911,8 +911,7 @@ impl Environment {
             );
             member_fns.push(
                 self.bindings
-                    .get_constant_value_named(member_fn_name)
-                    .unwrap(),
+                    .checked_constant_value(&ss.name_token, member_fn_name)?,
             );
         }
 
@@ -1132,8 +1131,7 @@ impl Environment {
             );
             constructor_fns.push(
                 self.bindings
-                    .get_constant_value_named(constructor_name)
-                    .unwrap()
+                    .checked_constant_value(&is.name_token, constructor_name)?
                     .resolved()
                     .expect("generated datatype constants have no type parameters"),
             );

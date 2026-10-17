@@ -119,3 +119,32 @@ fn typed_instance_lookup_requires_its_published_canonical_scope() {
         .get_constant_value_named(&LocalConstantName::instance(&class, "missing", "State"))
         .is_none());
 }
+
+#[test]
+fn checked_lookup_reports_absence_at_the_requesting_token() {
+    use venticorn::token::TokenType;
+    let bindings = BindingMap::new(FIRST_NORMAL);
+    let token = TokenType::Identifier.new_token("missing");
+    for name in [
+        LocalConstantName::unqualified("missing"),
+        LocalConstantName::attribute("State", "missing"),
+        LocalConstantName::instance(
+            &Typeclass {
+                module_id: FIRST_NORMAL + 1,
+                name: "Marked".into(),
+            },
+            "flag",
+            "State",
+        ),
+    ] {
+        assert!(bindings.get_constant_value_named(&name).is_none());
+        let error = bindings.checked_constant_value(&token, &name).unwrap_err();
+        assert_eq!(error.range(), token.range());
+        let kind = if name.is_qualified() {
+            "attribute"
+        } else {
+            "identifier"
+        };
+        assert_eq!(error.message(), format!("unknown {} '{}'", kind, name));
+    }
+}
