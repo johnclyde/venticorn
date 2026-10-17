@@ -4,21 +4,9 @@ use crate::atom::{Atom, AtomId};
 use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::{ModuleId, SKOLEM};
 
-// The ConstantKey identifies a constant in the Acorn language.
-#[derive(Hash, Debug, Eq, PartialEq, Clone)]
-pub struct ConstantKey {
-    pub module: ModuleId,
-    pub name: LocalConstantName,
-}
-
-impl ConstantKey {
-    pub fn from_name(name: GlobalConstantName) -> Self {
-        Self {
-            module: name.module_id,
-            name: name.local_name,
-        }
-    }
-}
+/// Compatibility name for the canonical constant identity.
+/// ConstantMap stores GlobalConstantName directly; no second key representation exists.
+pub type ConstantKey = GlobalConstantName;
 
 // In the Acorn language a constant is uniquely identified by its module id and name.
 // The low-level prover, on the other hand, just wants each constant to have a
@@ -26,18 +14,18 @@ impl ConstantKey {
 // The ConstantMap is a mapping between the two.
 #[derive(Clone)]
 pub struct ConstantMap {
-    // For global constant i in the prover, global_constants[i] is the corresponding ConstantKey.
-    // The AtomId -> ConstantKey lookup direction.
-    global_constants: Vec<Option<ConstantKey>>,
+    // For global constant i in the prover, global_constants[i] is the corresponding GlobalConstantName.
+    // The AtomId -> GlobalConstantName lookup direction.
+    global_constants: Vec<Option<GlobalConstantName>>,
 
-    // For local constant i in the prover, local_constants[i] is the corresponding ConstantKey.
-    // The AtomId -> ConstantKey lookup direction.
-    local_constants: Vec<Option<ConstantKey>>,
+    // For local constant i in the prover, local_constants[i] is the corresponding GlobalConstantName.
+    // The AtomId -> GlobalConstantName lookup direction.
+    local_constants: Vec<Option<GlobalConstantName>>,
 
     // Inverse map of constants.
-    // The ConstantKey -> AtomId lookup direction.
-    // Multiple ConstantKey can map to the same AtomId, when two constants alias to the same thing.
-    keymap: HashMap<ConstantKey, Atom>,
+    // The GlobalConstantName -> AtomId lookup direction.
+    // Multiple GlobalConstantName can map to the same AtomId, when two constants alias to the same thing.
+    name_to_id: HashMap<GlobalConstantName, Atom>,
 }
 
 impl ConstantMap {
@@ -45,7 +33,7 @@ impl ConstantMap {
         ConstantMap {
             global_constants: vec![],
             local_constants: vec![],
-            keymap: HashMap::new(),
+            name_to_id: HashMap::new(),
         }
     }
 
@@ -59,27 +47,23 @@ impl ConstantMap {
 
     /// Intern a complete canonical name without reparsing its display spelling.
     pub fn add_constant_named(&mut self, name: GlobalConstantName, local: bool) -> Atom {
-        self.add_constant_key(ConstantKey::from_name(name), local)
-    }
-
-    fn add_constant_key(&mut self, key: ConstantKey, local: bool) -> Atom {
         assert_ne!(
-            key.module, SKOLEM,
+            name.module_id, SKOLEM,
             "skolem constants should not be stored in the ConstantMap"
         );
-        if let Some(&atom) = self.keymap.get(&key) {
+        if let Some(&atom) = self.name_to_id.get(&name) {
             return atom;
         }
         let atom = if local {
             let atom_id = self.local_constants.len() as AtomId;
-            self.local_constants.push(Some(key.clone()));
+            self.local_constants.push(Some(name.clone()));
             Atom::LocalConstant(atom_id)
         } else {
             let atom_id = self.global_constants.len() as AtomId;
-            self.global_constants.push(Some(key.clone()));
+            self.global_constants.push(Some(name.clone()));
             Atom::GlobalConstant(atom_id)
         };
-        self.keymap.insert(key, atom);
+        self.name_to_id.insert(name, atom);
         atom
     }
 
@@ -91,8 +75,7 @@ impl ConstantMap {
     }
 
     pub fn has_constant_named(&self, name: &GlobalConstantName) -> bool {
-        self.keymap
-            .contains_key(&ConstantKey::from_name(name.clone()))
+        self.name_to_id.contains_key(name)
     }
 
     // Make the new module/name an alias to whatever the old one refers to.
@@ -120,37 +103,34 @@ impl ConstantMap {
     /// Record an equality alias only if the new identity is unused and the target exists.
     /// Rejected proposals leave the atom inventory unchanged.
     pub fn maybe_add_alias(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) -> bool {
-        let new_key = ConstantKey::from_name(new.clone());
-        if self.keymap.contains_key(&new_key) {
+        if self.name_to_id.contains_key(new) {
             return false;
         }
-        let old_key = ConstantKey::from_name(old.clone());
-        let Some(&atom) = self.keymap.get(&old_key) else {
+        let Some(&atom) = self.name_to_id.get(old) else {
             return false;
         };
-        self.keymap.insert(new_key, atom);
+        self.name_to_id.insert(new.clone(), atom);
         true
     }
 
-    pub(crate) fn global_name(&self, id: AtomId) -> GlobalConstantName {
-        let key = self.global_constants[id as usize].as_ref().unwrap();
-        GlobalConstantName::new(key.module, key.name.clone())
+    /// Borrow the canonical identity behind a global atom.
+    pub fn get_global_name(&self, id: AtomId) -> &GlobalConstantName {
+        self.global_constants[id as usize].as_ref().unwrap()
     }
 
-    pub(crate) fn local_name(&self, id: AtomId) -> GlobalConstantName {
-        let key = self.local_constants[id as usize].as_ref().unwrap();
-        GlobalConstantName::new(key.module, key.name.clone())
+    /// Borrow the canonical identity behind a local atom.
+    pub fn get_local_name(&self, id: AtomId) -> &GlobalConstantName {
+        self.local_constants[id as usize].as_ref().unwrap()
     }
 
-    // Get information about a global constant.
+    // Compatibility display accessors. Use the borrowed names for identity.
     pub fn get_global_info(&self, atom_id: AtomId) -> (ModuleId, String) {
-        let key = &self.global_constants[atom_id as usize].as_ref().unwrap();
-        (key.module, key.name.to_string())
+        let name = self.get_global_name(atom_id);
+        (name.module_id, name.local_name.to_string())
     }
 
-    // Get information about a local constant.
     pub fn get_local_info(&self, atom_id: AtomId) -> (ModuleId, String) {
-        let key = &self.local_constants[atom_id as usize].as_ref().unwrap();
-        (key.module, key.name.to_string())
+        let name = self.get_local_name(atom_id);
+        (name.module_id, name.local_name.to_string())
     }
 }
