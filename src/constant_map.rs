@@ -84,11 +84,15 @@ impl ConstantMap {
     }
 
     pub fn has_constant(&self, module: ModuleId, name: &str) -> bool {
-        let key = ConstantKey {
+        self.has_constant_named(&GlobalConstantName::new(
             module,
-            name: LocalConstantName::from_legacy(name),
-        };
-        self.keymap.contains_key(&key)
+            LocalConstantName::from_legacy(name),
+        ))
+    }
+
+    pub fn has_constant_named(&self, name: &GlobalConstantName) -> bool {
+        self.keymap
+            .contains_key(&ConstantKey::from_name(name.clone()))
     }
 
     // Make the new module/name an alias to whatever the old one refers to.
@@ -99,28 +103,20 @@ impl ConstantMap {
         old_module: ModuleId,
         old_name: &str,
     ) {
-        assert!(!self.has_constant(new_module, new_name));
-        assert!(self.has_constant(old_module, old_name));
-        let new_key = ConstantKey {
-            module: new_module,
-            name: LocalConstantName::from_legacy(new_name),
-        };
-        let old_key = ConstantKey {
-            module: old_module,
-            name: LocalConstantName::from_legacy(old_name),
-        };
+        self.add_alias_named(
+            &GlobalConstantName::new(new_module, LocalConstantName::from_legacy(new_name)),
+            &GlobalConstantName::new(old_module, LocalConstantName::from_legacy(old_name)),
+        );
+    }
+
+    /// Alias one complete identity to an existing atom after an explicit equality.
+    pub fn add_alias_named(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) {
+        assert!(!self.has_constant_named(new));
+        assert!(self.has_constant_named(old));
+        let new_key = ConstantKey::from_name(new.clone());
+        let old_key = ConstantKey::from_name(old.clone());
         let atom = self.keymap[&old_key];
         self.keymap.insert(new_key, atom);
-    }
-
-    pub(crate) fn has_key(&self, key: &ConstantKey) -> bool {
-        self.keymap.contains_key(key)
-    }
-
-    pub(crate) fn add_alias_keys(&mut self, new: ConstantKey, old: &ConstantKey) {
-        assert!(!self.has_key(&new));
-        let atom = self.keymap[old];
-        self.keymap.insert(new, atom);
     }
 
     pub(crate) fn global_name(&self, id: AtomId) -> GlobalConstantName {

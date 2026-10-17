@@ -48,3 +48,25 @@ fn legacy_constant_interning_cannot_guess_a_canonical_instance_owner() {
     let typed = map.add_constant_named(attribute, false);
     assert_eq!(typed, map.add_constant(10, "State.flag", false));
 }
+
+#[test]
+fn typed_alias_operations_keep_homonymous_owners_distinct_until_explicit_aliasing() {
+    let mut map = ConstantMap::new();
+    let old = instance(11);
+    let new = instance(12);
+    let atom = map.add_constant_named(old.clone(), false);
+    assert!(map.has_constant_named(&old));
+    assert!(!map.has_constant_named(&new));
+    assert!(!map.has_constant(10, "State.Marked.flag"));
+    map.add_alias_named(&new, &old);
+    assert!(map.has_constant_named(&new));
+    assert_eq!(map.add_constant_named(new, false), atom);
+    assert!(!map.has_constant(10, "State.Marked.flag"));
+    map.add_constant(10, "old", false);
+    map.add_alias(10, "new", 10, "old");
+    assert!(map.has_constant(10, "new"));
+    assert_eq!(
+        map.add_constant(10, "new", false),
+        map.add_constant(10, "old", false)
+    );
+}
