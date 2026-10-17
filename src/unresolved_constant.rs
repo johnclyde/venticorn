@@ -15,6 +15,12 @@ pub struct UnresolvedConstant {
 }
 
 impl UnresolvedConstant {
+    // Keep every declared formal as a variable, including bounds and phantom parameters.
+    pub fn to_generic_value(self) -> AcornValue {
+        let params = self.params.into_iter().map(AcornType::Variable).collect();
+        AcornValue::constant(self.module_id, self.name, params, self.generic_type)
+    }
+
     pub(crate) fn resolve(
         &self,
         source: &dyn ErrorSource,

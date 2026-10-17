@@ -59,6 +59,14 @@ impl PotentialValue {
         }
     }
 
+    // Resolve the declaration generically without inferring formals from its signature.
+    pub fn to_generic_value(self) -> AcornValue {
+        match self {
+            Self::Unresolved(value) => value.to_generic_value(),
+            Self::Resolved(value) => value,
+        }
+    }
+
     pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
         match self {
             PotentialValue::Resolved(value) => Ok(value),
@@ -113,5 +121,42 @@ mod tests {
         };
         assert_eq!(instance.params, actuals);
         assert_eq!(instance.instance_type, AcornType::Bool);
+    }
+
+    #[test]
+    fn generic_value_preserves_complete_formals_and_resolved_aliases() {
+        let formals = vec![
+            TypeParam {
+                name: "Phantom".into(),
+                typeclass: Some(Typeclass {
+                    module_id: 7,
+                    name: "Marked".into(),
+                }),
+            },
+            TypeParam::unconstrained("Other"),
+        ];
+        let value = PotentialValue::constant(3, "flag", AcornType::Bool, formals.clone())
+            .to_generic_value();
+        let AcornValue::Constant(instance) = value else {
+            panic!("expected constant")
+        };
+        assert_eq!(instance.module_id, 3);
+        assert_eq!(instance.name, "flag");
+        assert_eq!(
+            instance.params,
+            formals
+                .into_iter()
+                .map(AcornType::Variable)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(instance.instance_type, AcornType::Bool);
+        let resolved = AcornValue::Lambda(
+            vec![AcornType::Bool],
+            Box::new(AcornValue::Variable(0, AcornType::Bool)),
+        );
+        assert_eq!(
+            PotentialValue::Resolved(resolved.clone()).to_generic_value(),
+            resolved
+        );
     }
 }
