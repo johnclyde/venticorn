@@ -631,7 +631,7 @@ impl<'a> Builder<'a> {
         } else {
             100.0 * verified as f64 / self.goals_total as f64
         };
-        writeln!(writer, "{:.1}% success rate", success_percent)?;
+        writeln!(writer, "{:.2}% success rate", success_percent)?;
         if self.num_cached > 0 {
             writeln!(
                 writer,
@@ -771,7 +771,7 @@ mod tests {
         let text = statistics(&builder);
         for expected in [
             "4/5 OK",
-            "80.0% success rate",
+            "80.00% success rate",
             "3 goals reused",
             "2 searches performed",
             "1 full searches, 1 filtered searches",
@@ -802,7 +802,7 @@ mod tests {
             builder.goals_total = cached;
             builder.goals_done = cached;
             let text = statistics(&builder);
-            assert!(text.contains("100.0% success rate"), "{text}");
+            assert!(text.contains("100.00% success rate"), "{text}");
             assert!(text.contains("0 searches performed"), "{text}");
             assert!(
                 text.contains("0 full searches, 0 filtered searches"),
