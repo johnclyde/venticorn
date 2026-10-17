@@ -1918,12 +1918,12 @@ impl Environment {
             )?;
             // Export only a vacuous marker from the obligation. Its lowered law
             // is not a premise inside the block, nor an unconditional new axiom.
-            let proposition = Proposition::type_member_definition(
-                AcornValue::Bool(true),
+            let proposition = Proposition::instance(
+                None,
                 self.module_id,
                 statement.range(),
                 name.to_string(),
-                format!("instance.{}", class.name),
+                class.name.clone(),
             );
             let index = self.add_node(project, false, proposition, Some(block));
             self.add_node_lines(index, &statement.range());

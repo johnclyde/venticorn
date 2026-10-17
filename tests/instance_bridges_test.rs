@@ -113,7 +113,7 @@ fn bridge_facts_are_after_the_obligation_and_absent_from_its_own_proof() {
     let module = project.expect_ok("main");
     let env = project.get_env_by_id(module).unwrap();
     let class = env.bindings.get_typeclass_for_name("Painted").unwrap();
-    let obligation_index = env.nodes.iter().position(|node| matches!(&node.claim.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted")).unwrap();
+    let obligation_index = env.nodes.iter().position(|node| matches!(&node.claim.source.source_type, SourceType::Instance(name, class) if name == "State" && class == "Painted")).unwrap();
     let bridge_index = env.nodes.iter().position(|node| matches!(&node.claim.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")).unwrap();
     assert!(obligation_index < bridge_index);
     let obligation = env.iter_goals().next().unwrap();

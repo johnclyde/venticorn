@@ -19,6 +19,9 @@ pub enum SourceType {
     // A type definition and the member or principle that contributes this fact.
     TypeDefinition(String, String),
 
+    // The relationship between a concrete type and its declared class.
+    Instance(String, String),
+
     // The value specializes during monomorphization; its declared source name does not.
     ConstantDefinition(AcornValue, String),
 
@@ -68,6 +71,9 @@ impl Source {
             },
             SourceType::Anonymous => format!("line {}", self.user_visible_line()),
             SourceType::TypeDefinition(name, _) => format!("the '{}' definition", name),
+            SourceType::Instance(name, class) => {
+                format!("the '{}: {}' relationship", name, class)
+            }
             SourceType::ConstantDefinition(value, _) => format!("the '{}' definition", value),
             SourceType::Premise => "an assumed premise".to_string(),
             SourceType::NegatedGoal => "negating the goal".to_string(),
@@ -89,6 +95,7 @@ impl Source {
             ),
             SourceType::Anonymous => Some(self.user_visible_line().to_string()),
             SourceType::TypeDefinition(type_name, member) => Some(format!("{type_name}.{member}")),
+            SourceType::Instance(name, class) => Some(format!("{name}.instance.{class}")),
             SourceType::ConstantDefinition(_, name) => Some(name.clone()),
             SourceType::Premise | SourceType::NegatedGoal => None,
         }
@@ -152,6 +159,24 @@ impl Proposition {
                 module,
                 range,
                 source_type: SourceType::Anonymous,
+            },
+        }
+    }
+
+    // The relationship marker is separate from the block that proves its laws.
+    pub fn instance(
+        value: Option<AcornValue>,
+        module: ModuleId,
+        range: Range,
+        name: String,
+        class: String,
+    ) -> Proposition {
+        Proposition {
+            value: value.unwrap_or(AcornValue::Bool(true)),
+            source: Source {
+                module,
+                range,
+                source_type: SourceType::Instance(name, class),
             },
         }
     }

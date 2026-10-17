@@ -484,6 +484,9 @@ impl Node {
             crate::proposition::SourceType::TypeDefinition(name, member) => {
                 Some(Cow::Owned(format!("{name}.{member}")))
             }
+            crate::proposition::SourceType::Instance(name, class) => {
+                Some(Cow::Owned(format!("{name}.instance.{class}")))
+            }
             _ => None,
         }
     }

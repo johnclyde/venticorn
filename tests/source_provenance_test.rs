@@ -153,3 +153,113 @@ fn theorem_names_are_distinct_from_fact_selection_names() {
     assert!(env.get_theorem_claim("named_theorem").is_some());
     assert!(env.get_theorem_claim("4").is_none());
 }
+
+#[test]
+fn instance_relationships_keep_stable_names_and_separate_member_sources() {
+    use venticorn::builder::BuildStatus;
+    use venticorn::module::ModuleRef;
+
+    let range = Range::new(Position::new(3, 0), Position::new(8, 1));
+    let marker = Proposition::instance(None, 1, range, "Item".into(), "Marked".into());
+    assert_eq!(marker.value, AcornValue::Bool(true));
+    assert_eq!(marker.source.range, range);
+    assert_eq!(
+        marker.source.description(),
+        "the 'Item: Marked' relationship"
+    );
+    assert_eq!(
+        marker.source.fact_name().as_deref(),
+        Some("Item.instance.Marked")
+    );
+    assert_eq!(
+        marker.source.qualified_fact_name(),
+        Some((1, "Item.instance.Marked".into()))
+    );
+    let explicit = Proposition::instance(
+        Some(AcornValue::Bool(false)),
+        1,
+        range,
+        "Item".into(),
+        "Marked".into(),
+    );
+    assert_eq!(explicit.value, AcornValue::Bool(false));
+    assert_eq!(explicit.source, marker.source);
+
+    let source = "type Item: axiom\nlet p: Item -> Bool = axiom\nlet chosen: Item = axiom\naxiom known { p(chosen) }\ntypeclass T: Marked {\n relation: T -> Bool\n value: T\n found { exists(x: T) { T.relation(x) and x = T.value } }\n}\ninstance Item: Marked {\n let relation: Item -> Bool = p\n let value: Item = chosen\n}\ntheorem after { Marked.relation(Marked.value<Item>) }";
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", source);
+    let module = project.expect_ok("main");
+    let env = project.get_env_by_id(module).unwrap();
+    assert_eq!(env.iter_goals().count(), 2);
+    let relationship = env.nodes.iter().find(|node| matches!(&node.claim.source.source_type, SourceType::Instance(name, class) if name == "Item" && class == "Marked")).unwrap();
+    assert_eq!(relationship.claim.value, AcornValue::Bool(true));
+    assert!(relationship.block.as_ref().unwrap().goal.is_some());
+    let names = env
+        .nodes
+        .iter()
+        .filter_map(|node| node.claim.source.fact_name())
+        .collect::<Vec<_>>();
+    for name in [
+        "Item.instance.Marked",
+        "Item.instance.Marked.relation",
+        "Item.instance.Marked.value",
+    ] {
+        assert_eq!(
+            names
+                .iter()
+                .filter(|actual| actual.as_str() == name)
+                .count(),
+            1
+        );
+    }
+    let cold = project.sync_build_report();
+    assert_eq!(cold.status, BuildStatus::Good);
+    assert_eq!((cold.num_success, cold.num_cached), (2, 0));
+    let main = ModuleRef::Name("main".into());
+    let key = "Item.instance.Marked";
+    let advice = cold.cache.unwrap().get(&main).unwrap().block_premises()[key].clone();
+    assert!(!advice.is_empty());
+    let warm = project.sync_build_report();
+    assert_eq!(warm.status, BuildStatus::Good);
+    assert_eq!((warm.num_success, warm.num_cached), (0, 2));
+    assert_eq!(
+        warm.cache.unwrap().get(&main).unwrap().block_premises()[key],
+        advice
+    );
+    project.check_hashes = false;
+    let mut guided = project.builder(|_| {});
+    project.build(&mut guided);
+    assert_eq!(guided.status, BuildStatus::Good);
+    assert_eq!((guided.num_success, guided.num_cached), (2, 0));
+    assert!(guided.hinted_searches > 0 && guided.hinted_successes > 0);
+    assert_eq!(
+        guided.cache().unwrap().get(&main).unwrap().block_premises()[key],
+        advice
+    );
+
+    let false_source = source.replace(
+        "let relation: Item -> Bool = p",
+        "let relation: Item -> Bool = function(x: Item) { false }",
+    );
+    project.mock("/mock/main.ac", &false_source);
+    let module = project.expect_ok("main");
+    let obligation = project
+        .get_env_by_id(module)
+        .unwrap()
+        .iter_goals()
+        .next()
+        .unwrap();
+    let goal = obligation.goal_context().unwrap();
+    let mut shallow = project.prover_for_node(&obligation, false);
+    shallow.set_goal(&goal);
+    assert_eq!(shallow.quick_shallow_search(), Outcome::Exhausted);
+    let mut ordinary = project.prover_for_node(&obligation, false);
+    ordinary.set_goal(&goal);
+    assert!(matches!(
+        ordinary.quick_search(),
+        Outcome::Exhausted | Outcome::Constrained | Outcome::Timeout
+    ));
+    let rejected = project.sync_build_report();
+    assert_eq!(rejected.status, BuildStatus::Warning);
+    assert!(rejected.cache.unwrap().get(&main).is_none());
+}
