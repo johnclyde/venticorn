@@ -28,6 +28,20 @@ impl fmt::Display for LocalConstantName {
     }
 }
 
+impl LocalConstantName {
+    pub fn unqualified(name: &str) -> Self {
+        Self::Unqualified(name.to_string())
+    }
+
+    pub fn attribute(class: &str, attr: &str) -> Self {
+        Self::Attribute(class.to_string(), attr.to_string())
+    }
+
+    pub fn instance(class: &Typeclass, attr: &str, target: &str) -> Self {
+        Self::Instance(class.clone(), attr.to_string(), target.to_string())
+    }
+}
+
 /// A constant's defining module together with its structured local identity.
 #[derive(Hash, Debug, Eq, PartialEq, Clone)]
 pub struct GlobalConstantName {
