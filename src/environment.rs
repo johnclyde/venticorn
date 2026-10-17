@@ -2006,7 +2006,7 @@ impl Environment {
         match &statement.statement {
             StatementInfo::Type(ts) => {
                 self.add_other_lines(statement);
-                if self.bindings.name_in_use(&ts.name) {
+                if self.bindings.typename_in_use(&ts.name) {
                     return Err(statement.error(&format!(
                         "type name '{}' already defined in this scope",
                         ts.name
@@ -2146,7 +2146,7 @@ impl Environment {
 
                 // Give a local name to the imported module
                 let local_name = is.components.last().unwrap();
-                if self.bindings.name_in_use(local_name) {
+                if self.bindings.lowercase_name_in_use(local_name) {
                     return Err(statement.error(&format!(
                         "imported name '{}' already defined in this scope",
                         local_name
