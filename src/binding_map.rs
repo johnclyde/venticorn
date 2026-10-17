@@ -110,6 +110,9 @@ pub struct BindingMap {
     // Includes "<datatype>.<constant>" for members.
     constant_info: BTreeMap<String, ConstantInfo>,
 
+    // Ordered member spellings for completion, separate from canonical class requirements.
+    member_names: HashMap<String, BTreeMap<String, ()>>,
+
     // Whenever a name from some other scope has a local alias in this one,
     // if we're generating code, we prefer to use the local name.
     // Thus, preferred_names maps the canonical identifier to a local alias.
@@ -202,6 +205,7 @@ impl BindingMap {
             proof_scope: ProofScope::default(),
             imported_instance_members: HashMap::new(),
             constant_info: BTreeMap::new(),
+            member_names: HashMap::new(),
             canonical_to_alias: HashMap::new(),
             name_to_module: BTreeMap::new(),
             module_to_name: HashMap::new(),
@@ -225,6 +229,26 @@ impl BindingMap {
     }
 
     // Build only when code is actually requested, retaining the selected lexical names.
+    fn record_constant_name(&mut self, name: &LocalConstantName, spelling: &str) {
+        self.record_name(spelling);
+        let member = match name {
+            LocalConstantName::Attribute(owner, member) => Some((owner.clone(), member.clone())),
+            LocalConstantName::Instance(class, member, target) => {
+                Some((format!("{}.{}", target, class.name), member.clone()))
+            }
+            // Legacy raw spellings are indexed for presentation only.
+            LocalConstantName::Unqualified(raw) => raw
+                .rsplit_once('.')
+                .map(|(owner, member)| (owner.to_owned(), member.to_owned())),
+        };
+        if let Some((owner, member)) = member {
+            self.member_names
+                .entry(owner)
+                .or_default()
+                .insert(member, ());
+        }
+    }
+
     pub(crate) fn for_codegen_at(&self, position: usize, scope: &ProofScope) -> Self {
         let mut result = self.clone();
         result.proof_scope = scope.clone();
@@ -245,6 +269,10 @@ impl BindingMap {
         result
             .constant_info
             .retain(|name, _| visible.contains_key(name));
+        result.member_names.retain(|owner, members| {
+            members.retain(|member, _| visible.contains_key(&format!("{}.{}", owner, member)));
+            !members.is_empty()
+        });
         result
             .name_to_module
             .retain(|name, _| visible.contains_key(name));
@@ -837,6 +865,7 @@ impl BindingMap {
         definition: Option<AcornValue>,
         constructor: Option<(AcornType, usize, usize)>,
     ) -> &PotentialValue {
+        let local_name = name;
         let string_name = name.to_string();
         let name = string_name.as_str();
         if self.name_in_use(name) {
@@ -867,7 +896,7 @@ impl BindingMap {
             );
         }
         let value = PotentialValue::constant(self.module, name, constant_type, params);
-        self.record_name(name);
+        self.record_constant_name(local_name, name);
 
         let info = ConstantInfo {
             value,
@@ -908,7 +937,7 @@ impl BindingMap {
         if self.name_in_use(&name) {
             panic!("cannot alias name {} because it is already bound", name);
         }
-        self.record_name(&name);
+        self.record_constant_name(local_name, &name);
         let canonical = (
             canonical_name.module_id,
             canonical_name.local_name.to_string(),
@@ -3514,6 +3543,7 @@ mod name_insertion_tests {
         let types = bindings.typename_to_type.clone();
         let reverse = bindings.type_to_typename.clone();
         let aliases = bindings.canonical_to_alias.clone();
+        let members = bindings.member_names.clone();
         let positions = bindings.name_positions.clone();
         let position = bindings.position;
         let class_names = bindings.name_to_typeclass.clone();
@@ -3542,6 +3572,7 @@ mod name_insertion_tests {
         assert_eq!(bindings.type_to_typename, reverse);
         assert_eq!(bindings.canonical_to_alias, aliases);
         assert_eq!(bindings.name_positions, positions);
+        assert_eq!(bindings.member_names, members);
         assert_eq!(bindings.position, position);
         assert_eq!(bindings.name_to_typeclass, class_names);
         assert_eq!(bindings.typeclass_to_name, class_reverse);
@@ -3893,5 +3924,54 @@ mod theorem_metadata_tests {
         assert!(earlier.is_theorem("claim"));
         assert!(!earlier.is_theorem("later"));
         assert!(!earlier.has_constant_name("alias"));
+    }
+}
+
+#[cfg(test)]
+mod member_index_tests {
+    use super::*;
+
+    #[test]
+    fn member_inventory_is_sorted_alias_aware_and_lexically_pruned() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_constant_named(
+            &LocalConstantName::attribute("State", "zeta"),
+            vec![],
+            AcornType::Bool,
+            None,
+            None,
+        );
+        bindings.add_constant("State.alpha", vec![], AcornType::Bool, None, None);
+        let position = bindings.position;
+        bindings.add_alias_named(
+            &LocalConstantName::attribute("State", "middle"),
+            GlobalConstantName::new(FIRST_NORMAL, LocalConstantName::attribute("State", "alpha")),
+            bindings.get_constant_value("State.alpha").unwrap(),
+        );
+        assert_eq!(
+            bindings.member_names["State"]
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["alpha", "middle", "zeta"]
+        );
+        assert!(!bindings.is_constant("State.middle"));
+        let earlier = bindings.for_codegen_at(position, &ProofScope::default());
+        assert_eq!(
+            earlier.member_names["State"]
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["alpha", "zeta"]
+        );
+        assert!(!earlier.has_constant_name("State.middle"));
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let member = LocalConstantName::instance(&class, "flag", "State");
+        bindings.add_constant_named(&member, vec![], AcornType::Bool, None, None);
+        assert!(bindings.member_names["State.Marked"].contains_key("flag"));
+        assert!(bindings.get_constant_value_named(&member).is_none());
     }
 }
