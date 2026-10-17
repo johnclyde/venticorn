@@ -801,3 +801,27 @@ fn typechecking_captures_instance_relationships_860() {
         "#,
     );
 }
+
+#[test]
+#[ignore = "pending callable typeclass conditions"]
+fn typeclasses_can_have_conditions_862() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        typeclass S: Singleton {
+            value: S
+
+            unique(x: S) {
+                x = S.value
+            }
+        }
+
+        theorem are_equal<S: Singleton>(a: S, b: S) {
+            a = b
+        } by {
+            Singleton.unique(a)
+            Singleton.unique(b)
+        }
+        "#,
+    );
+}
