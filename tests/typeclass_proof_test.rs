@@ -152,3 +152,50 @@ fn a_valid_instance_proves_a_real_law_obligation() {
         (1, 1, 0)
     );
 }
+
+#[test]
+fn generic_instance_methods_use_checked_implementations() {
+    let text = r#"
+            inductive Z1 {
+                zero
+            }
+
+            typeclass T: TwoColored {
+                is_red: T -> Bool
+            }
+
+            instance Z1: TwoColored {
+                define is_red(self) -> Bool {
+                    true
+                }
+            }
+
+            theorem goal {
+                TwoColored.is_red(Z1.zero)
+            }
+        "#;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", text);
+    let module = project.expect_ok("main");
+    let env = project.get_env_by_id(module).unwrap();
+    assert_eq!(env.iter_goals().count(), 1);
+    for node in env.iter_goals() {
+        let goal = node.goal_context().unwrap();
+        for shallow in [false, true] {
+            let mut prover = project.prover_for_node(&node, false);
+            prover.set_goal(&goal);
+            let result = if shallow {
+                prover.quick_shallow_search()
+            } else {
+                prover.quick_search()
+            };
+            assert_eq!(result, Outcome::Success);
+        }
+    }
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!(
+        (report.goals_done, report.num_success, report.num_cached),
+        (1, 1, 0)
+    );
+}
