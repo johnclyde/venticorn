@@ -127,7 +127,10 @@ impl Block {
 
         // Inside the block, the arguments are constants. Keep values only for
         // goal kinds that bind them, rather than cloning every local declaration.
-        let needs_internal_args = matches!(&params, BlockParams::Theorem(..));
+        let needs_internal_args = matches!(
+            &params,
+            BlockParams::Theorem(..) | BlockParams::FunctionSatisfy(..)
+        );
         let mut internal_args = Vec::new();
         for (arg_name, generic_arg_type) in &args {
             let specific_arg_type = generic_arg_type.instantiate(&param_pairs);
@@ -201,20 +204,9 @@ impl Block {
             }
             BlockParams::FunctionSatisfy(unbound_goal, return_type, range) => {
                 // In the block, we need to prove this goal in bound form, so bind args to it.
-                let arg_values = args
-                    .iter()
-                    .map(|(name, _)| {
-                        subenv
-                            .bindings
-                            .get_constant_value(name)
-                            .unwrap()
-                            .resolved()
-                            .expect("block arguments have no type parameters")
-                    })
-                    .collect::<Vec<_>>();
                 // The partial goal has variables 0..args.len() bound to the block's args,
                 // but there is one last variable that needs to be existentially quantified.
-                let partial_goal = unbound_goal.bind_values(0, 0, &arg_values);
+                let partial_goal = unbound_goal.bind_values(0, 0, &internal_args);
                 let bound_goal = AcornValue::exists(vec![return_type], partial_goal);
                 let prop = Proposition::anonymous(bound_goal, env.module_id, range);
                 Some(Goal::Prove(prop))
@@ -223,7 +215,7 @@ impl Block {
                 // Each pattern variable is a local constant constrained by this case.
                 let mut arg_values = vec![];
                 for (arg_name, arg_type) in pattern_args {
-                    subenv.bindings.add_constant_named(
+                    let value = subenv.bindings.add_constant_value(
                         &LocalConstantName::unqualified(&arg_name),
                         vec![],
                         arg_type,
@@ -231,10 +223,7 @@ impl Block {
                         None,
                     );
                     arg_values.push(
-                        subenv
-                            .bindings
-                            .get_constant_value(&arg_name)
-                            .unwrap()
+                        value
                             .resolved()
                             .expect("pattern arguments have no type parameters"),
                     );
