@@ -1366,16 +1366,17 @@ impl Environment {
         &self,
         project: &Project,
         ts: &TypeclassStatement,
-    ) -> compilation::Result<(BindingMap, Vec<(String, AcornType)>)> {
+    ) -> compilation::Result<(BindingMap, Vec<(LocalConstantName, AcornType)>)> {
         let scope = self.typeclass_scope(ts)?;
         let mut names = HashSet::new();
         let mut members = vec![];
         let params = vec![ts.instance_name.text().to_string()];
         for (name, expression) in &ts.constants {
-            let full_name = format!("{}.{}", ts.typeclass_name, name);
-            if scope.name_in_use(&full_name) || !names.insert(full_name.clone()) {
+            let constant_name = LocalConstantName::attribute(ts.typeclass_name.text(), name.text());
+            if !names.insert(constant_name.clone()) {
                 return Err(name.error("typeclass member already defined in this scope"));
             }
+            scope.check_constant_name_available(name, &constant_name)?;
             let member_type = scope
                 .evaluate_type(project, expression)?
                 .parametrize(self.module_id, &params);
@@ -1384,7 +1385,7 @@ impl Environment {
                     expression.error("typeclass member cannot capture an outer arbitrary type")
                 );
             }
-            members.push((full_name, member_type));
+            members.push((constant_name, member_type));
         }
         Ok((scope, members))
     }
@@ -1531,18 +1532,26 @@ impl Environment {
             conditions: Default::default(),
         };
         for (name, member_type) in members {
-            staged
-                .bindings
-                .add_constant(&name, params.clone(), member_type, None, None);
+            staged.bindings.add_constant(
+                &name.to_string(),
+                params.clone(),
+                member_type,
+                None,
+                None,
+            );
         }
         for condition in &ts.conditions {
             let name = condition.name.text();
-            let full_name = format!("{}.{}", ts.typeclass_name, name);
-            if staged.bindings.name_in_use(&full_name) || info.conditions.contains_key(name) {
+            let constant_name = LocalConstantName::attribute(ts.typeclass_name.text(), name);
+            if info.attributes.contains_key(name) || info.conditions.contains_key(name) {
                 return Err(condition
                     .name
                     .error("typeclass member already defined in this scope"));
             }
+            staged
+                .bindings
+                .check_constant_name_available(&condition.name, &constant_name)?;
+            let full_name = constant_name.to_string();
             let range = Range {
                 start: condition.name.start_pos(),
                 end: condition.claim.last_token().end_pos(),
