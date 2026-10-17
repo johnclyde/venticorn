@@ -161,10 +161,6 @@ pub struct TypeclassInfo {
 
 #[derive(Clone)]
 struct ConstantInfo {
-    // The names of the type parameters this constant was defined with, if any.
-    // These type parameters can be used in the definition.
-    params: Vec<TypeParam>,
-
     // The canonical constant value, retaining complete unresolved formal parameters.
     value: PotentialValue,
 
@@ -742,7 +738,7 @@ impl BindingMap {
 
     pub fn get_params(&self, identifier: &str) -> Vec<TypeParam> {
         match self.constant_info.get(identifier) {
-            Some(info) => info.params.clone(),
+            Some(info) => info.value.unresolved_params().to_vec(),
             None => vec![],
         }
     }
@@ -780,7 +776,7 @@ impl BindingMap {
     // Returns the defined value and its parameters in declaration order.
     pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[TypeParam])> {
         let info = self.constant_info.get(name)?;
-        Some((info.definition.as_ref()?, &info.params))
+        Some((info.definition.as_ref()?, info.value.unresolved_params()))
     }
 
     // All other modules that we directly depend on, besides this one.
@@ -853,14 +849,12 @@ impl BindingMap {
                 "generic definition cannot capture arbitrary types"
             );
         }
-        let value =
-            PotentialValue::constant(self.module, name, constant_type.clone(), params.clone());
+        let value = PotentialValue::constant(self.module, name, constant_type.clone(), params);
         self.record_name(name);
         self.constant_name_to_type
             .insert(name.to_string(), constant_type);
 
         let info = ConstantInfo {
-            params,
             value,
             definition,
             constructor,
@@ -2937,7 +2931,7 @@ impl BindingMap {
             let Some(signature) = self.constant_name_to_type.get(&constant.name) else {
                 return false;
             };
-            (&info.params, signature)
+            (info.value.unresolved_params(), signature)
         } else {
             let Some(alias) = self
                 .canonical_to_alias
@@ -2948,7 +2942,7 @@ impl BindingMap {
             let Some(PotentialValue::Unresolved(declaration)) = self.aliases.get(alias) else {
                 return false;
             };
-            (&declaration.params, &declaration.generic_type)
+            (declaration.params.as_slice(), &declaration.generic_type)
         };
         let AcornType::Function(function) = signature else {
             return false;
@@ -3466,7 +3460,7 @@ mod name_insertion_tests {
                 .map(|(name, info)| {
                     (
                         name.clone(),
-                        info.params.clone(),
+                        info.value.unresolved_params().to_vec(),
                         info.definition.clone(),
                         info.constructor.clone(),
                     )
@@ -3632,5 +3626,58 @@ mod constant_metadata_tests {
         assert_eq!(value.name, "State.Marked.flag");
         assert_eq!(value.generic_type, AcornType::Bool);
         assert!(bindings.get_constant_value_named(&name).is_none());
+    }
+
+    #[test]
+    fn declaration_formals_survive_caching_and_are_not_inferred_from_the_signature() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let params = vec![
+            TypeParam {
+                name: "Z".into(),
+                typeclass: Some(class),
+            },
+            TypeParam::unconstrained("A"),
+        ];
+        bindings.add_constant_named(
+            &LocalConstantName::unqualified("flag"),
+            params.clone(),
+            AcornType::Bool,
+            None,
+            None,
+        );
+        let mut retrieved = bindings.get_constant_value("flag").unwrap();
+        assert_eq!(retrieved.unresolved_params(), params);
+        if let PotentialValue::Unresolved(value) = &mut retrieved {
+            value.params.clear();
+        }
+        assert_eq!(
+            bindings
+                .get_constant_value("flag")
+                .unwrap()
+                .unresolved_params(),
+            params
+        );
+        assert_eq!(bindings.get_params("flag"), params);
+        bindings.add_constant(
+            "plain",
+            vec![],
+            AcornType::Bool,
+            Some(AcornValue::Bool(true)),
+            None,
+        );
+        assert!(bindings
+            .get_constant_value("plain")
+            .unwrap()
+            .unresolved_params()
+            .is_empty());
+        assert!(bindings
+            .get_definition_and_params("plain")
+            .unwrap()
+            .1
+            .is_empty());
     }
 }
