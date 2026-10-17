@@ -112,6 +112,8 @@ pub struct BindingMap {
 
     // Ordered member spellings for completion, separate from canonical class requirements.
     member_names: HashMap<String, BTreeMap<String, ()>>,
+    // Includes local aliases, but excludes qualified member spellings.
+    unqualified_names: BTreeMap<String, ()>,
 
     // Whenever a name from some other scope has a local alias in this one,
     // if we're generating code, we prefer to use the local name.
@@ -206,6 +208,7 @@ impl BindingMap {
             imported_instance_members: HashMap::new(),
             constant_info: BTreeMap::new(),
             member_names: HashMap::new(),
+            unqualified_names: BTreeMap::new(),
             canonical_to_alias: HashMap::new(),
             name_to_module: BTreeMap::new(),
             module_to_name: HashMap::new(),
@@ -228,9 +231,11 @@ impl BindingMap {
         self.position
     }
 
-    // Build only when code is actually requested, retaining the selected lexical names.
     fn record_constant_name(&mut self, name: &LocalConstantName, spelling: &str) {
         self.record_name(spelling);
+        if !spelling.contains('.') {
+            self.unqualified_names.insert(spelling.to_owned(), ());
+        }
         let member = match name {
             LocalConstantName::Attribute(owner, member) => Some((owner.clone(), member.clone())),
             LocalConstantName::Instance(class, member, target) => {
@@ -249,6 +254,7 @@ impl BindingMap {
         }
     }
 
+    // Build only when code is actually requested, retaining the selected lexical names.
     pub(crate) fn for_codegen_at(&self, position: usize, scope: &ProofScope) -> Self {
         let mut result = self.clone();
         result.proof_scope = scope.clone();
@@ -268,6 +274,9 @@ impl BindingMap {
             .retain(|name, _| visible.contains_key(name));
         result
             .constant_info
+            .retain(|name, _| visible.contains_key(name));
+        result
+            .unqualified_names
             .retain(|name, _| visible.contains_key(name));
         result.member_names.retain(|owner, members| {
             members.retain(|member, _| visible.contains_key(&format!("{}.{}", owner, member)));
@@ -1202,20 +1211,18 @@ impl BindingMap {
                 });
             }
         }
-        for name in keys_with_prefix(&self.constant_info, prefix) {
+        for name in keys_with_prefix(&self.unqualified_names, prefix) {
             if !visible(name) {
                 continue;
             }
             if importing && (!self.is_constant(name) || self.is_theorem(name)) {
                 continue;
             }
-            if !name.contains('.') {
-                items.push(CompletionItem {
-                    label: name.clone(),
-                    kind: Some(CompletionItemKind::CONSTANT),
-                    ..Default::default()
-                });
-            }
+            items.push(CompletionItem {
+                label: name.clone(),
+                kind: Some(CompletionItemKind::CONSTANT),
+                ..Default::default()
+            });
         }
         for name in keys_with_prefix(&self.typename_to_type, prefix) {
             if !visible(name) {
@@ -3544,6 +3551,7 @@ mod name_insertion_tests {
         let reverse = bindings.type_to_typename.clone();
         let aliases = bindings.canonical_to_alias.clone();
         let members = bindings.member_names.clone();
+        let unqualified = bindings.unqualified_names.clone();
         let positions = bindings.name_positions.clone();
         let position = bindings.position;
         let class_names = bindings.name_to_typeclass.clone();
@@ -3573,6 +3581,7 @@ mod name_insertion_tests {
         assert_eq!(bindings.canonical_to_alias, aliases);
         assert_eq!(bindings.name_positions, positions);
         assert_eq!(bindings.member_names, members);
+        assert_eq!(bindings.unqualified_names, unqualified);
         assert_eq!(bindings.position, position);
         assert_eq!(bindings.name_to_typeclass, class_names);
         assert_eq!(bindings.typeclass_to_name, class_reverse);
@@ -3973,5 +3982,44 @@ mod member_index_tests {
         bindings.add_constant_named(&member, vec![], AcornType::Bool, None, None);
         assert!(bindings.member_names["State.Marked"].contains_key("flag"));
         assert!(bindings.get_constant_value_named(&member).is_none());
+    }
+}
+
+#[cfg(test)]
+mod unqualified_index_tests {
+    use super::*;
+
+    #[test]
+    fn unqualified_inventory_keeps_aliases_and_excludes_future_members() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_constant("zeta", vec![], AcornType::Bool, None, None);
+        bindings.add_alias(
+            "alpha",
+            FIRST_NORMAL,
+            "zeta".into(),
+            bindings.get_constant_value("zeta").unwrap(),
+        );
+        let position = bindings.position;
+        bindings.add_constant("State.member", vec![], AcornType::Bool, None, None);
+        bindings.add_constant("later", vec![], AcornType::Bool, None, None);
+        assert_eq!(
+            bindings
+                .unqualified_names
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["alpha", "later", "zeta"]
+        );
+        let earlier = bindings.for_codegen_at(position, &ProofScope::default());
+        assert_eq!(
+            earlier
+                .unqualified_names
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["alpha", "zeta"]
+        );
+        assert!(!earlier.is_constant("alpha"));
+        assert!(earlier.member_names.is_empty());
     }
 }
