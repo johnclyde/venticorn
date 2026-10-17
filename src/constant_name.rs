@@ -8,7 +8,7 @@ use crate::module::ModuleId;
 /// Instance identity includes the canonical class, even when its displayed name
 /// is also used by a different imported class.
 #[derive(Hash, Debug, Eq, PartialEq, Clone)]
-pub enum LocalName {
+pub enum LocalConstantName {
     Unqualified(String),
     /// An attribute of a local data type or typeclass.
     Attribute(String, String),
@@ -16,12 +16,12 @@ pub enum LocalName {
     Instance(Typeclass, String, String),
 }
 
-impl fmt::Display for LocalName {
+impl fmt::Display for LocalConstantName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LocalName::Unqualified(name) => write!(f, "{}", name),
-            LocalName::Attribute(class, attr) => write!(f, "{}.{}", class, attr),
-            LocalName::Instance(class, attr, target) => {
+            LocalConstantName::Unqualified(name) => write!(f, "{}", name),
+            LocalConstantName::Attribute(class, attr) => write!(f, "{}.{}", class, attr),
+            LocalConstantName::Instance(class, attr, target) => {
                 write!(f, "{}.{}.{}", target, class.name, attr)
             }
         }
@@ -30,9 +30,9 @@ impl fmt::Display for LocalName {
 
 /// A constant's defining module together with its structured local identity.
 #[derive(Hash, Debug, Eq, PartialEq, Clone)]
-pub struct GlobalName {
+pub struct GlobalConstantName {
     pub module_id: ModuleId,
-    pub local_name: LocalName,
+    pub local_name: LocalConstantName,
 }
 
 #[cfg(test)]
@@ -42,7 +42,7 @@ mod tests {
 
     #[test]
     fn structured_identity_does_not_depend_on_display_spelling() {
-        let left = LocalName::Instance(
+        let left = LocalConstantName::Instance(
             Typeclass {
                 module_id: 1,
                 name: "Magma".into(),
@@ -50,7 +50,7 @@ mod tests {
             "combine".into(),
             "State".into(),
         );
-        let right = LocalName::Instance(
+        let right = LocalConstantName::Instance(
             Typeclass {
                 module_id: 2,
                 name: "Magma".into(),
@@ -61,22 +61,22 @@ mod tests {
         assert_eq!(left.to_string(), "State.Magma.combine");
         assert_eq!(left.to_string(), right.to_string());
         assert_ne!(left, right);
-        let first = GlobalName {
+        let first = GlobalConstantName {
             module_id: 3,
             local_name: left.clone(),
         };
-        let other_owner = GlobalName {
+        let other_owner = GlobalConstantName {
             module_id: 4,
             local_name: left,
         };
-        let other_class = GlobalName {
+        let other_class = GlobalConstantName {
             module_id: 3,
             local_name: right,
         };
         assert_eq!(HashSet::from([first, other_owner, other_class]).len(), 3);
         assert_ne!(
-            LocalName::Unqualified("State.flag".into()),
-            LocalName::Attribute("State".into(), "flag".into()),
+            LocalConstantName::Unqualified("State.flag".into()),
+            LocalConstantName::Attribute("State".into(), "flag".into()),
         );
     }
 }

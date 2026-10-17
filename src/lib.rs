@@ -12,6 +12,7 @@ pub mod code_gen_error;
 pub mod common;
 pub mod compilation;
 pub mod constant_map;
+pub mod constant_name;
 pub mod dataset;
 pub mod display;
 pub mod environment;
@@ -25,7 +26,6 @@ pub mod literal;
 pub mod live_document;
 pub mod module;
 pub mod monomorphizer;
-pub mod names;
 pub mod normalizer;
 #[cfg(feature = "onnx")]
 pub mod ort_model;
