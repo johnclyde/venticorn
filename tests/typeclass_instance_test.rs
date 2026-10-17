@@ -490,3 +490,35 @@ fn concrete_instance_members_are_accessible() {
             "#,
     );
 }
+
+#[test]
+#[ignore = "pending checked concrete bound membership"]
+fn declared_concrete_instances_support_generic_class_members() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+
+            inductive State {
+                clean
+                dirty
+            }
+
+            instance State: Magma {
+                define mul(self, other: State) -> State {
+                    if self = State.clean and other = State.clean {
+                        State.clean
+                    } else {
+                        State.dirty
+                    }
+                }
+            }
+
+            theorem commutative(a: State, b: State) {
+                Magma.mul(a, b) = Magma.mul(b, a)
+            }
+            "#,
+    );
+}
