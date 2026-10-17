@@ -7,8 +7,11 @@ use crate::constant_map::ConstantMap;
 use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::display::DisplayClause;
 use crate::environment::Environment;
+use crate::fact::Fact;
 use crate::literal::Literal;
 use crate::module::SKOLEM;
+use crate::monomorphizer::Monomorphizer;
+use crate::proof_scope::ProofScope;
 use crate::term::{Term, TypeId};
 use crate::type_map::TypeMap;
 
@@ -99,6 +102,9 @@ impl Normalization {
 
 #[derive(Clone)]
 pub struct Normalizer {
+    // Generic demands and facts share the exact immutable authority of this normalizer.
+    monomorphizer: Monomorphizer,
+
     // Types of the skolem functions produced
     // Some of them are just constants, so we store an AcornType rather than a FunctionType
     skolem_types: Vec<AcornType>,
@@ -110,11 +116,27 @@ pub struct Normalizer {
 
 impl Normalizer {
     pub fn new() -> Normalizer {
+        Self::with_scope(ProofScope::default())
+    }
+
+    pub(crate) fn with_scope(scope: ProofScope) -> Self {
         Normalizer {
+            monomorphizer: Monomorphizer::with_scope(scope),
             skolem_types: vec![],
             type_map: TypeMap::new(),
             constant_map: ConstantMap::new(),
         }
+    }
+
+    // Return newly usable monomorphic facts without exposing mutable scope authority.
+    pub(crate) fn monomorphize_fact(&mut self, fact: Fact) -> Vec<Fact> {
+        self.monomorphizer.add_fact(fact);
+        self.monomorphizer.take_facts()
+    }
+
+    pub(crate) fn monomorphize_for_value(&mut self, value: &AcornValue) -> Vec<Fact> {
+        self.monomorphizer.add_monomorphs(value);
+        self.monomorphizer.take_facts()
     }
 
     /// Check every literal and term against this normalizer's type state.
@@ -901,5 +923,65 @@ mod tests {
             "foo",
             &["addx(addx(x0, zero), x1) != zero or ltx(x1, zero)"],
         );
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    use crate::acorn_type::{TypeParam, Typeclass};
+    use crate::proof_step::Truthiness;
+    use crate::proposition::Source;
+
+    #[test]
+    fn cloned_pending_facts_retain_exact_membership_and_denial_authority() {
+        let class = Typeclass {
+            module_id: 2,
+            name: "Marked".into(),
+        };
+        let formal = AcornType::Variable(TypeParam {
+            name: "T".into(),
+            typeclass: Some(class.clone()),
+        });
+        let data = AcornType::Data(3, "Item".into(), vec![]);
+        let generic = AcornValue::constant(
+            2,
+            "choose".into(),
+            vec![formal.clone()],
+            AcornType::functional(vec![formal.clone()], formal.clone()),
+        );
+        let argument = AcornValue::Variable(0, formal.clone());
+        let law = AcornValue::forall(
+            vec![formal],
+            AcornValue::equals(AcornValue::apply(generic, vec![argument.clone()]), argument),
+        );
+        let fact = Fact {
+            value: law,
+            source: Source::mock(),
+            truthiness: Truthiness::Factual,
+        };
+        let demand = AcornValue::constant(
+            2,
+            "choose".into(),
+            vec![data.clone()],
+            AcornType::functional(vec![data.clone()], data),
+        );
+        let mut scope = ProofScope::default();
+        scope.record_instance(3, "Item", &class);
+        let mut denied = scope.clone();
+        denied.deny_instance(3, "Item", &class);
+        let mut allowed = Normalizer::with_scope(scope);
+        assert!(allowed.monomorphize_fact(fact.clone()).is_empty());
+        let mut copied = allowed.clone();
+        for normalizer in [&mut allowed, &mut copied] {
+            let facts = normalizer.monomorphize_for_value(&demand);
+            assert_eq!(facts.len(), 1);
+            assert!(!facts[0].value.is_generic());
+            assert!(normalizer.monomorphize_for_value(&demand).is_empty());
+        }
+        for mut normalizer in [Normalizer::with_scope(denied), Normalizer::new()] {
+            assert!(normalizer.monomorphize_fact(fact.clone()).is_empty());
+            assert!(normalizer.monomorphize_for_value(&demand).is_empty());
+        }
     }
 }
