@@ -16,6 +16,9 @@ use crate::proof_scope::ProofScope;
 use crate::termination_checker::TerminationChecker;
 use crate::token::{self, Token, TokenIter, TokenType};
 
+// Preserve the existing public path while the checked representation has its own module.
+pub use crate::unresolved_constant::UnresolvedConstant;
+
 // A representation of the variables on the stack.
 pub struct Stack {
     // Maps the name of the variable to their depth and their type.
@@ -152,54 +155,6 @@ pub struct TypeclassInfo {
     pub instance_param: TypeParam,
     pub attributes: BTreeMap<String, AcornType>,
     pub conditions: BTreeMap<String, TypeclassCondition>,
-}
-
-// A generic declaration whose type arguments have not been inferred yet.
-#[derive(Clone, Debug, PartialEq)]
-pub struct UnresolvedConstant {
-    module_id: ModuleId,
-    name: String,
-    // Formal parameters are kept in declaration order.
-    params: Vec<TypeParam>,
-    generic_type: AcornType,
-}
-
-impl UnresolvedConstant {
-    fn resolve(
-        &self,
-        source: &dyn ErrorSource,
-        actuals: Vec<AcornType>,
-        scope: &ProofScope,
-    ) -> compilation::Result<AcornValue> {
-        if actuals.len() != self.params.len() {
-            return Err(source.error(&format!(
-                "expected {} type parameters, but got {}",
-                self.params.len(),
-                actuals.len()
-            )));
-        }
-        for (formal, actual) in self.params.iter().zip(&actuals) {
-            if !formal.accepts_in_scope(actual, scope) {
-                return Err(source.error(&format!(
-                    "type argument {} does not satisfy the class bound on {}",
-                    actual, formal.name
-                )));
-            }
-        }
-        let substitutions = self
-            .params
-            .iter()
-            .zip(&actuals)
-            .map(|(formal, actual)| (formal.name.clone(), actual.clone()))
-            .collect::<Vec<_>>();
-        let instance_type = self.generic_type.instantiate(&substitutions);
-        Ok(AcornValue::new_constant(
-            self.module_id,
-            self.name.clone(),
-            actuals,
-            instance_type,
-        ))
-    }
 }
 
 // A named declaration may still need type arguments before it becomes a proof value.
