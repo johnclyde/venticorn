@@ -447,7 +447,8 @@ impl Environment {
     fn add_define_statement(
         &mut self,
         project: &Project,
-        class_info: Option<(&str, &AcornType, &[String])>,
+        class_info: Option<(&str, &AcornType)>,
+        class_params: &[String],
         ds: &DefineStatement,
         range: Range,
     ) -> compilation::Result<()> {
@@ -457,9 +458,9 @@ impl Environment {
                 ds.name
             )));
         }
-        let (class_name, class_type, class_params) = match class_info {
-            Some((name, class_type, params)) => (Some(name), Some(class_type), params),
-            None => (None, None, &[][..]),
+        let (class_name, class_type) = match class_info {
+            Some((name, class_type)) => (Some(name), Some(class_type)),
+            None => (None, None),
         };
         if !class_params.is_empty() && !ds.type_params.is_empty() {
             return Err(ds.type_params[0]
@@ -1494,7 +1495,8 @@ impl Environment {
                 StatementInfo::Define(ds) => {
                     self.add_define_statement(
                         project,
-                        Some((&cs.name, &class_type, &param_names)),
+                        Some((&cs.name, &class_type)),
+                        &param_names,
                         ds,
                         substatement.range(),
                     )?;
@@ -1857,7 +1859,8 @@ impl Environment {
                     }
                     self.add_define_statement(
                         project,
-                        Some((&scope_name, &target, &[])),
+                        Some((&scope_name, &target)),
+                        &[],
                         ds,
                         member.range(),
                     )?;
@@ -2045,7 +2048,7 @@ impl Environment {
 
             StatementInfo::Define(ds) => {
                 self.add_other_lines(statement);
-                self.add_define_statement(project, None, ds, statement.range())
+                self.add_define_statement(project, None, &[], ds, statement.range())
             }
 
             StatementInfo::Theorem(ts) => self.add_theorem_statement(project, statement, ts),
