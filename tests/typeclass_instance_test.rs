@@ -370,3 +370,30 @@ fn instance_requires_every_declared_member() {
     assert!(!env.bindings.name_in_use("State.Bimagma.mul2"));
     env.add("instance State: Bimagma {\n define mul1(self, other: State) -> State { self }\n define mul2(self, other: State) -> State { other }\n}");
 }
+
+#[test]
+fn imported_class_requirements_come_from_the_canonical_defining_module() {
+    use venticorn::project::Project;
+    for (actual, accepted) in [("true", false), ("State.clean", true)] {
+        let mut project = Project::new_mock();
+        project.mock("/mock/left.ac", "typeclass T: Marked {\n value: Bool\n}");
+        project.mock("/mock/right.ac", "typeclass T: Marked {\n value: T\n}");
+        let value_type = if accepted { "State" } else { "Bool" };
+        project.mock("/mock/main.ac", &format!("import left\nimport right\ninductive State {{\n clean\n}}\ninstance State: right.Marked {{\n let value: {value_type} = {actual}\n}}"));
+        if accepted {
+            let module = project.expect_ok("main");
+            let env = project.get_env_by_id(module).unwrap();
+            assert_eq!(
+                env.bindings
+                    .get_constant_value("State.Marked.value")
+                    .unwrap()
+                    .get_type(),
+                env.bindings.get_type_for_name("State").unwrap().clone()
+            );
+        } else {
+            assert!(project.errors().iter().any(
+                |(_, error)| error.message() == "instance member 'value' must have type State"
+            ));
+        }
+    }
+}

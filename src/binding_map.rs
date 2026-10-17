@@ -533,37 +533,27 @@ impl BindingMap {
             .map(String::as_str)
     }
 
-    // Derive required signatures from the defining module's checked declarations.
-    // Concrete substitution here prepares an implementation type, not a public
-    // class-member application or evidence that the target satisfies the bound.
+    // Specialize the defining module's explicit class metadata for preparation.
+    // This does not grant public class-member application or bound membership.
     pub(crate) fn instance_member_types(
         &self,
         class: &Typeclass,
         target: &AcornType,
     ) -> Option<BTreeMap<String, AcornType>> {
-        if class.module_id != self.module || self.get_typeclass_for_name(&class.name) != Some(class)
+        let info = self.get_typeclass_info(class)?;
+        if class.module_id != self.module
+            || self.get_typeclass_for_name(&class.name) != Some(class)
+            || info.instance_param.typeclass.as_ref() != Some(class)
         {
             return None;
         }
-        let prefix = format!("{}.", class.name);
-        let mut members = BTreeMap::new();
-        for (name, info) in &self.constants {
-            let Some(member) = name.strip_prefix(&prefix) else {
-                continue;
-            };
-            let [formal] = info.params.as_slice() else {
-                return None;
-            };
-            if formal.typeclass.as_ref() != Some(class) {
-                return None;
-            }
-            let generic_type = self.identifier_types.get(name)?;
-            members.insert(
-                member.to_string(),
-                generic_type.instantiate(&[(formal.name.clone(), target.clone())]),
-            );
-        }
-        Some(members)
+        let substitution = [(info.instance_param.name.clone(), target.clone())];
+        Some(
+            info.attributes
+                .iter()
+                .map(|(name, member_type)| (name.clone(), member_type.instantiate(&substitution)))
+                .collect(),
+        )
     }
 
     pub(crate) fn instance_scope(&self, target: &str, class: &Typeclass) -> Option<&str> {
