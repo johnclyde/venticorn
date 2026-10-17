@@ -313,3 +313,34 @@ fn phantom_arguments_distinguish_instances_with_the_same_value_type() {
         Outcome::Exhausted
     );
 }
+
+#[test]
+fn explicit_generic_constructor_arguments_follow_the_constructor_name() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            type Foo: axiom
+            type Bar: axiom
+            structure Pair<T, U> {
+                first: T
+                second: U
+            }
+            let f: Foo = axiom
+            let b: Bar = axiom
+            let p1: Pair<Foo, Bar> = Pair.new(f, b)
+            let p2: Pair<Foo, Bar> = Pair<Foo, Bar>.new(f, b)
+            "#,
+    );
+    env.add(
+        r#"
+            let p3: Pair<Foo, Bar> = Pair.new<Foo, Bar>(f, b)
+            "#,
+    );
+    let expected = env.bindings.get_constant_value("p1").unwrap().get_type();
+    for name in ["p2", "p3"] {
+        assert_eq!(
+            env.bindings.get_constant_value(name).unwrap().get_type(),
+            expected
+        );
+    }
+}
