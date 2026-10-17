@@ -425,15 +425,6 @@ impl Normalizer {
             }
         }
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
-            // Check for defining one constant to equal another constant.
-            if let (Some(left), Some(right)) =
-                (left.simple_constant_name(), right.simple_constant_name())
-            {
-                if self.constant_map.maybe_add_alias(left, right) {
-                    return Normalization::Clauses(vec![]);
-                }
-            }
-
             // Check for the sort of functional equality that can be represented as a literal.
             if left.get_type().is_functional() && left.is_term() && right.is_term() {
                 // We want to represent this two ways.
