@@ -226,13 +226,6 @@ impl PotentialValue {
         }
     }
 
-    fn to_named_entity(self) -> NamedEntity {
-        match self {
-            PotentialValue::Unresolved(unresolved) => NamedEntity::Unresolved(unresolved),
-            PotentialValue::Resolved(value) => NamedEntity::Value(value),
-        }
-    }
-
     pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
         match self {
             PotentialValue::Resolved(value) => Ok(value),
@@ -300,6 +293,13 @@ enum NamedEntity {
 }
 
 impl NamedEntity {
+    fn new(value: PotentialValue) -> Self {
+        match value {
+            PotentialValue::Unresolved(unresolved) => NamedEntity::Unresolved(unresolved),
+            PotentialValue::Resolved(value) => NamedEntity::Value(value),
+        }
+    }
+
     fn expect_potential_value(
         self,
         expected_type: Option<&AcornType>,
@@ -1860,19 +1860,19 @@ impl BindingMap {
             }
             Some(NamedEntity::UnresolvedType(t)) => self
                 .evaluate_type_attribute(project, t.module_id, &t.name, name)
-                .map(PotentialValue::to_named_entity)
+                .map(NamedEntity::new)
                 .ok_or_else(|| {
                     name_token.error(&format!("{} has no member named '{}'", t.name, name))
                 }),
             Some(NamedEntity::Typeclass(class)) => self
                 .evaluate_type_attribute(project, class.module_id, &class.name, name)
-                .map(PotentialValue::to_named_entity)
+                .map(NamedEntity::new)
                 .ok_or_else(|| {
                     name_token.error(&format!("{} has no attribute named '{}'", class.name, name))
                 }),
             Some(NamedEntity::Instance(module, scope)) => self
                 .evaluate_type_attribute(project, module, &scope, name)
-                .map(PotentialValue::to_named_entity)
+                .map(NamedEntity::new)
                 .ok_or_else(|| {
                     name_token.error(&format!(
                         "instance {} has no member named '{}'",
@@ -1910,12 +1910,10 @@ impl BindingMap {
                             // This is a stack variable
                             Ok(NamedEntity::Value(AcornValue::Variable(*i, t.clone())))
                         } else {
-                            Ok(self
-                                .checked_constant_value(
-                                    name_token,
-                                    &LocalConstantName::unqualified(name),
-                                )?
-                                .to_named_entity())
+                            Ok(NamedEntity::new(self.checked_constant_value(
+                                name_token,
+                                &LocalConstantName::unqualified(name),
+                            )?))
                         }
                     }
                     TokenType::Numeral => {
