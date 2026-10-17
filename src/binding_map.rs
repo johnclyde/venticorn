@@ -350,7 +350,7 @@ impl BindingMap {
     pub fn name_in_use(&self, name: &str) -> bool {
         self.typename_to_type.contains_key(name)
             || self.name_to_typeclass.contains_key(name)
-            || self.constant_name_to_type.contains_key(name)
+            || self.constant_info.contains_key(name)
             || self.name_to_module.contains_key(name)
     }
 
@@ -402,7 +402,7 @@ impl BindingMap {
     fn insert_type_name(&mut self, name: String, potential: PotentialType) {
         assert!(
             !self.name_to_typeclass.contains_key(&name)
-                && !self.constant_name_to_type.contains_key(&name)
+                && !self.constant_info.contains_key(&name)
                 && !self.name_to_module.contains_key(&name),
             "type name {} already bound",
             name
@@ -541,7 +541,7 @@ impl BindingMap {
     pub fn add_typeclass(&mut self, name: &str, typeclass: Typeclass) {
         assert!(
             !self.typename_to_type.contains_key(name)
-                && !self.constant_name_to_type.contains_key(name)
+                && !self.constant_info.contains_key(name)
                 && !self.name_to_module.contains_key(name),
             "name {} already bound",
             name
@@ -627,7 +627,7 @@ impl BindingMap {
             .get(member)
             .ok_or_else(|| source.error("invalid canonical class member metadata"))?;
         if owner.unresolved_params(&generic_name) != [info.instance_param.clone()]
-            || owner.get_type_for_constant_name(&generic_name) != Some(template_type)
+            || owner.get_type_for_constant_name(&generic_name).as_ref() != Some(template_type)
             || !matches!(
                 owner.get_constant_value(&generic_name),
                 Some(PotentialValue::Unresolved(_))
@@ -724,11 +724,13 @@ impl BindingMap {
 
     // Gets the type for an identifier, not for a type name.
     // E.g. if let x: Nat = 0, then get_type("x") will give you Nat.
-    pub fn get_type_for_constant_name(&self, name: &str) -> Option<&AcornType> {
-        self.constant_name_to_type.get(name)
+    pub fn get_type_for_constant_name(&self, name: &str) -> Option<AcornType> {
+        self.constant_info
+            .get(name)
+            .map(|info| info.value.get_type())
     }
 
-    pub fn get_type_for_identifier(&self, identifier: &str) -> Option<&AcornType> {
+    pub fn get_type_for_identifier(&self, identifier: &str) -> Option<AcornType> {
         self.get_type_for_constant_name(identifier)
     }
 
@@ -760,7 +762,7 @@ impl BindingMap {
     }
 
     pub fn has_constant_name(&self, name: &str) -> bool {
-        self.constant_name_to_type.contains_key(name)
+        self.constant_info.contains_key(name)
     }
 
     pub fn has_identifier(&self, identifier: &str) -> bool {
@@ -3189,7 +3191,7 @@ impl BindingMap {
 
     // Check that the given name actually does have this type in the environment.
     pub fn expect_type(&self, name: &str, type_string: &str) {
-        let env_type = match self.constant_name_to_type.get(name) {
+        let env_type = match self.get_type_for_constant_name(name) {
             Some(t) => t,
             None => panic!("{} not found", name),
         };

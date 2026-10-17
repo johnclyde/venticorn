@@ -33,7 +33,7 @@ fn structured_availability_preserves_all_namespace_collisions() {
     assert!(!bindings.has_typename("value"));
     assert_eq!(
         bindings.get_type_for_constant_name("value"),
-        Some(&AcornType::Bool)
+        Some(AcornType::Bool)
     );
     assert_eq!(
         bindings.get_type_for_identifier("value"),
@@ -147,4 +147,60 @@ fn checked_lookup_reports_absence_at_the_requesting_token() {
         };
         assert_eq!(error.message(), format!("unknown {} '{}'", kind, name));
     }
+}
+
+#[test]
+fn owned_type_lookup_preserves_pending_and_computed_alias_types() {
+    use venticorn::acorn_type::TypeParam;
+    use venticorn::acorn_value::AcornValue;
+    use venticorn::binding_map::PotentialValue;
+
+    let mut bindings = BindingMap::new(FIRST_NORMAL);
+    let formals = vec![TypeParam {
+        name: "Unused".into(),
+        typeclass: Some(Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        }),
+    }];
+    let pending =
+        PotentialValue::constant(FIRST_NORMAL + 1, "flag", AcornType::Bool, formals.clone());
+    bindings.add_alias("flag", FIRST_NORMAL + 1, "flag".into(), pending.clone());
+    assert_eq!(
+        bindings.get_type_for_constant_name("flag"),
+        Some(AcornType::Bool)
+    );
+    assert_eq!(bindings.get_constant_value("flag"), Some(pending));
+    assert_eq!(
+        bindings
+            .get_constant_value("flag")
+            .unwrap()
+            .unresolved_params(),
+        formals
+    );
+    assert!(!bindings.is_constant("flag"));
+
+    let lambda = AcornValue::lambda(
+        vec![AcornType::Bool],
+        AcornValue::Variable(0, AcornType::Bool),
+    );
+    let expected = lambda.get_type();
+    bindings.add_alias(
+        "identity",
+        FIRST_NORMAL + 1,
+        "identity".into(),
+        PotentialValue::Resolved(lambda),
+    );
+    assert_eq!(
+        bindings.get_type_for_identifier("identity"),
+        Some(expected.clone())
+    );
+    let mut retrieved = bindings.get_type_for_constant_name("identity").unwrap();
+    assert_eq!(retrieved, expected);
+    retrieved = AcornType::Bool;
+    assert_ne!(
+        bindings.get_type_for_constant_name("identity"),
+        Some(retrieved)
+    );
+    assert_eq!(bindings.get_type_for_constant_name("missing"), None);
 }
