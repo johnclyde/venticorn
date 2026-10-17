@@ -448,13 +448,11 @@ impl Node {
                     .expect("missing module during add_proposition")
                     .bindings
             };
-            if !bindings.canonical_name_matches(&c.name)
-                || !bindings.is_theorem(&c.name.local_name.to_string())
-            {
+            if !bindings.is_theorem_named(&c.name.local_name) {
                 return None;
             }
             let (definition, params) =
-                bindings.get_definition_and_params(&c.name.local_name.to_string())?;
+                bindings.get_definition_and_params_named(&c.name.local_name)?;
             let pairs: Vec<_> = params
                 .iter()
                 .map(|param| param.name.clone())

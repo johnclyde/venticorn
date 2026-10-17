@@ -180,21 +180,29 @@ impl Environment {
     // Adds a proposition, or multiple propositions, to represent the definition of the provided
     // constant.
     pub fn add_identity_props(&mut self, project: &Project, name: &str) {
-        self.add_identity_props_named(project, &LocalConstantName::unqualified(name));
+        let Some(definition) = self.bindings.get_definition(name).cloned() else {
+            return;
+        };
+        self.add_definition_identity_props(project, name, definition);
     }
 
     pub fn add_identity_props_named(&mut self, project: &Project, name: &LocalConstantName) {
-        let name = name.to_string();
-        let definition = if let Some(d) = self.bindings.get_definition(&name) {
-            d.clone()
-        } else {
+        let Some(definition) = self.bindings.get_definition_named(name).cloned() else {
             return;
         };
+        self.add_definition_identity_props(project, &name.to_string(), definition);
+    }
 
+    fn add_definition_identity_props(
+        &mut self,
+        project: &Project,
+        name: &str,
+        definition: AcornValue,
+    ) {
         // A canonical definition may be prepared before its instance scope is published.
         let constant = self
             .bindings
-            .get_constant_value(&name)
+            .get_constant_value(name)
             .expect("a stored definition must have a declaration value")
             .to_generic_value();
 
@@ -216,7 +224,7 @@ impl Environment {
         } else {
             AcornValue::equals(constant.clone(), definition)
         };
-        let range = self.definition_ranges.get(&name).unwrap().clone();
+        let range = self.definition_ranges.get(name).unwrap().clone();
 
         self.add_node(
             project,
@@ -234,6 +242,10 @@ impl Environment {
 
     pub fn get_definition(&self, name: &str) -> Option<&AcornValue> {
         self.bindings.get_definition(name)
+    }
+
+    pub fn get_definition_named(&self, name: &LocalConstantName) -> Option<&AcornValue> {
+        self.bindings.get_definition_named(name)
     }
 
     pub fn get_theorem_claim(&self, name: &str) -> Option<AcornValue> {
