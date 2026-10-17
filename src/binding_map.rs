@@ -565,14 +565,27 @@ impl BindingMap {
         Ok(())
     }
 
-    fn insert_type_name(&mut self, name: String, acorn_type: AcornType) {
-        assert!(!self.name_in_use(&name), "type name {} already bound", name);
+    // Reject every collision before changing reverse names or lexical positions.
+    fn insert_type_name(&mut self, name: String, potential: PotentialType) {
+        assert!(
+            !self.name_to_typeclass.contains_key(&name)
+                && !self.constant_name_to_type.contains_key(&name)
+                && !self.name_to_module.contains_key(&name),
+            "type name {} already bound",
+            name
+        );
+        match self.typename_to_type.entry(name.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(potential.clone());
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                panic!("type name {} already bound", entry.key());
+            }
+        }
         self.record_name(&name);
-        self.type_to_typename
-            .entry(acorn_type.clone())
-            .or_insert_with(|| name.clone());
-        self.typename_to_type
-            .insert(name, PotentialType::Resolved(acorn_type));
+        if let PotentialType::Resolved(acorn_type) = potential {
+            self.type_to_typename.entry(acorn_type).or_insert(name);
+        }
     }
 
     // A generic declaration is not a usable type until all ordered actuals are supplied.
@@ -590,14 +603,12 @@ impl BindingMap {
         if params.is_empty() {
             return PotentialType::Resolved(self.add_data_type(name));
         }
-        assert!(!self.name_in_use(name), "type name {} already bound", name);
         let potential = PotentialType::Unresolved(UnresolvedType {
             module_id: self.module,
             name: name.into(),
             params,
         });
-        self.record_name(name);
-        self.typename_to_type.insert(name.into(), potential.clone());
+        self.insert_type_name(name.to_string(), potential.clone());
         potential
     }
 
@@ -612,11 +623,8 @@ impl BindingMap {
     // Adds a new data type to the binding map.
     // Panics if the name is already bound.
     pub fn add_data_type(&mut self, name: &str) -> AcornType {
-        if self.name_in_use(name) {
-            panic!("type name {} already bound", name);
-        }
         let data_type = AcornType::Data(self.module, name.to_string(), vec![]);
-        self.insert_type_name(name.to_string(), data_type.clone());
+        self.insert_type_name(name.to_string(), PotentialType::Resolved(data_type.clone()));
         data_type
     }
 
@@ -640,14 +648,9 @@ impl BindingMap {
     // Introduce a complete descriptor without reconstructing its canonical class bound.
     // Panics if the name is already bound, like the compatibility constructors above.
     pub fn add_arbitrary_type_param(&mut self, param: TypeParam) -> AcornType {
-        assert!(
-            !self.name_in_use(&param.name),
-            "type name {} already bound",
-            param.name
-        );
         let name = param.name.clone();
         let arbitrary = AcornType::Arbitrary(param);
-        self.insert_type_name(name, arbitrary.clone());
+        self.insert_type_name(name, PotentialType::Resolved(arbitrary.clone()));
         arbitrary
     }
 
@@ -664,7 +667,7 @@ impl BindingMap {
                     .or_insert(name.to_string());
             }
         }
-        self.insert_type_name(name.to_string(), acorn_type);
+        self.insert_type_name(name.to_string(), PotentialType::Resolved(acorn_type));
     }
 
     // Add a name for a complete type or an unspecialized generic family.
@@ -694,10 +697,10 @@ impl BindingMap {
         );
         self.insert_type_name(
             name.to_string(),
-            AcornType::Variable(crate::acorn_type::TypeParam {
+            PotentialType::Resolved(AcornType::Variable(crate::acorn_type::TypeParam {
                 name: name.to_string(),
                 typeclass: typeclass,
-            }),
+            })),
         );
     }
 
@@ -3551,5 +3554,61 @@ mod tests {
                 "{invalid}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod name_insertion_tests {
+    use super::*;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    fn reject_without_type_name_mutation(
+        bindings: &mut BindingMap,
+        add: impl FnOnce(&mut BindingMap),
+    ) {
+        let types = bindings.typename_to_type.clone();
+        let reverse = bindings.type_to_typename.clone();
+        let aliases = bindings.canonical_to_alias.clone();
+        let positions = bindings.name_positions.clone();
+        let position = bindings.position;
+        assert!(catch_unwind(AssertUnwindSafe(|| add(bindings))).is_err());
+        assert_eq!(bindings.typename_to_type, types);
+        assert_eq!(bindings.type_to_typename, reverse);
+        assert_eq!(bindings.canonical_to_alias, aliases);
+        assert_eq!(bindings.name_positions, positions);
+        assert_eq!(bindings.position, position);
+    }
+
+    #[test]
+    fn rejected_type_insertion_preserves_reverse_names_and_positions() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_data_type("Data");
+        bindings.add_constant("value", vec![], AcornType::Bool, None, None);
+        bindings.add_typeclass(
+            "Class",
+            Typeclass {
+                module_id: FIRST_NORMAL,
+                name: "Class".into(),
+            },
+        );
+        bindings.import_module("dependency", FIRST_NORMAL + 1);
+        for name in ["Data", "value", "Class", "dependency"] {
+            reject_without_type_name_mutation(&mut bindings, |b| {
+                b.add_data_type(name);
+            });
+            reject_without_type_name_mutation(&mut bindings, |b| {
+                b.add_arbitrary_type(name);
+            });
+            reject_without_type_name_mutation(&mut bindings, |b| {
+                b.add_potential_type(name, 1);
+            });
+        }
+        assert_eq!(
+            bindings
+                .type_to_typename
+                .get(&AcornType::Data(FIRST_NORMAL, "Data".into(), vec![]))
+                .map(String::as_str),
+            Some("Data")
+        );
     }
 }
