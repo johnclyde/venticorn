@@ -3,7 +3,7 @@ use venticorn::environment::Environment;
 use venticorn::expression::Expression;
 use venticorn::project::Project;
 use venticorn::prover::{Outcome, Prover};
-use venticorn::statement::Statement;
+use venticorn::statement::{Statement, StatementInfo};
 
 const CLASSES: &str =
     "typeclass M: Magma {\n mul: (M, M) -> M\n}\ntypeclass O: Other {\n item: O\n}\n";
@@ -306,4 +306,56 @@ fn bounded_structure_and_explicit_member_scope_are_admitted() {
             }
             "#,
     );
+}
+
+#[test]
+fn unbounded_structure_reopening_cannot_add_a_class_bound() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            
+            structure MagmaPair<T> {
+                first: T
+                second: T
+            }
+            "#,
+    );
+    let nodes = env.nodes.len();
+    let last_line = env.last_line();
+    env.bad(
+        r#"
+            class MagmaPair<T: Magma> {
+                define prod(self) -> T {
+                    self.first.mul(self.second)
+                }
+            }
+            "#,
+    );
+    assert_eq!(env.nodes.len(), nodes);
+    assert_eq!(env.last_line(), last_line);
+    assert!(!env.bindings.name_in_use("T"));
+    assert!(!env.bindings.name_in_use("MagmaPair.prod"));
+
+    let statement = Statement::parse_str(
+        "class MagmaPair<Again: Magma> { define prod(self) -> Again { self.first.mul(self.second) } }",
+    ).unwrap();
+    let StatementInfo::Class(class) = &statement.statement else {
+        panic!()
+    };
+    let bound_range = class.type_params[0].typeclass.as_ref().unwrap().range();
+    let error = env
+        .add_statement(&mut Project::new_mock(), &statement)
+        .unwrap_err();
+    assert!(error.message().contains("bound conflicts"), "{error}");
+    assert_eq!(error.range(), bound_range);
+    assert_eq!(env.nodes.len(), nodes);
+    assert_eq!(env.last_line(), last_line);
+    assert!(!env.bindings.name_in_use("Again"));
+    assert!(!env.bindings.name_in_use("MagmaPair.prod"));
+    env.add("class MagmaPair<Again> { define keep(self) -> Again { self.first } }");
+    assert!(env.bindings.name_in_use("MagmaPair.keep"));
+    assert!(!env.bindings.name_in_use("Again"));
 }
