@@ -7,7 +7,7 @@ use crate::module::ModuleId;
 ///
 /// Instance identity includes the canonical class, even when its displayed name
 /// is also used by a different imported class.
-#[derive(Hash, Debug, Eq, PartialEq, Clone)]
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub enum LocalConstantName {
     Unqualified(String),
     /// An attribute of a local data type or typeclass.
@@ -65,7 +65,7 @@ impl LocalConstantName {
 }
 
 /// A constant's defining module together with its structured local identity.
-#[derive(Hash, Debug, Eq, PartialEq, Clone)]
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub struct GlobalConstantName {
     pub module_id: ModuleId,
     pub local_name: LocalConstantName,

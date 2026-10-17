@@ -194,10 +194,13 @@ fn static_bounded_attributes_keep_phantom_actuals_and_canonical_owner() {
     for (name, owner) in [("left_flag", left), ("right_flag", right)] {
         let definition = env.bindings.get_definition(name).unwrap();
         let mut constants = vec![];
-        definition.find_constants(&|c| c.name == "Flagged.flag", &mut constants);
+        definition.find_constants(
+            &|c| c.name.local_name.to_string() == "Flagged.flag",
+            &mut constants,
+        );
         assert_eq!(constants.len(), 1);
         let c = &constants[0];
-        assert_eq!(c.module_id, owner);
+        assert_eq!(c.name.module_id, owner);
         assert_eq!(c.params.len(), 1);
         let AcornType::Variable(param) = &c.params[0] else {
             panic!("{c:?}")

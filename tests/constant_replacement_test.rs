@@ -25,11 +25,15 @@ fn recursive_replacement_shifts_closed_definitions_beneath_mixed_binders() {
             AcornValue::new_apply(outer, vec![AcornValue::Variable(1, AcornType::Bool)]),
         ),
     );
-    let replaced = value.replace_constants(0, &|c, depth| match c.name.as_str() {
-        "outer" => Some(outer_definition.clone().insert_stack(0, depth)),
-        "inner" => Some(inner_definition.clone().insert_stack(0, depth)),
-        _ => None,
-    });
+    let replaced =
+        value.replace_constants(
+            0,
+            &|c, depth| match c.name.local_name.to_string().as_str() {
+                "outer" => Some(outer_definition.clone().insert_stack(0, depth)),
+                "inner" => Some(inner_definition.clone().insert_stack(0, depth)),
+                _ => None,
+            },
+        );
     replaced.validate().unwrap();
     let expanded = replaced.expand_lambdas(0);
     expanded.validate().unwrap();

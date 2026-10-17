@@ -303,7 +303,10 @@ fn explicit_recursive_actuals_preserve_declaration_order() {
     let definition = env.get_definition("repeat").unwrap();
     definition.validate().unwrap();
     let mut recursive = vec![];
-    definition.find_constants(&|c| c.name == "repeat", &mut recursive);
+    definition.find_constants(
+        &|c| c.name.local_name.to_string() == "repeat",
+        &mut recursive,
+    );
     assert!(!recursive.is_empty());
     for constant in recursive {
         assert_eq!(

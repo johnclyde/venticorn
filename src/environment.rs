@@ -420,16 +420,21 @@ impl Environment {
             return Ok(());
         }
         if let Some(value) = &value {
-            if let Some((canonical_module, canonical_name)) = value.as_simple_constant() {
+            if let Some(canonical_name) = value.simple_constant_name() {
                 // 'let x = y' creates an alias for y, not a new constant.
-                self.bindings.add_alias_named(
-                    &constant_name,
-                    GlobalConstantName::new(
-                        canonical_module,
-                        LocalConstantName::unqualified(canonical_name),
-                    ),
-                    PotentialValue::Resolved(value.clone()),
-                );
+                if matches!(&constant_name, LocalConstantName::Instance(..)) {
+                    self.bindings.add_checked_instance_alias(
+                        &constant_name,
+                        canonical_name.clone(),
+                        PotentialValue::Resolved(value.clone()),
+                    );
+                } else {
+                    self.bindings.add_alias_named(
+                        &constant_name,
+                        canonical_name.clone(),
+                        PotentialValue::Resolved(value.clone()),
+                    );
+                }
                 self.definition_ranges.insert(name.clone(), range);
                 return Ok(());
             }
@@ -526,8 +531,8 @@ impl Environment {
                 value
                     .parametrize(self.module_id, class_params)
                     .replace_constants(0, &|constant, _| {
-                        if constant.module_id == self.module_id
-                            && constant.name == name
+                        if constant.name
+                            == GlobalConstantName::new(self.module_id, constant_name.clone())
                             && constant.params.is_empty()
                         {
                             Some(AcornValue::constant_named(
@@ -1721,7 +1726,13 @@ impl Environment {
                 );
             }
             value.validate().map_err(|error| source.error(&error))?;
-            implementations.insert(format!("{}.{}", class.name, member), value);
+            implementations.insert(
+                GlobalConstantName::new(
+                    class.module_id,
+                    LocalConstantName::attribute(&class.name, member),
+                ),
+                value,
+            );
         }
         let mut conditions = Vec::with_capacity(info.conditions.len());
         for condition in info.conditions.values() {
@@ -1729,7 +1740,7 @@ impl Environment {
             let mut references = vec![];
             specialized.find_constants(
                 &|constant| {
-                    constant.module_id == class.module_id
+                    constant.name.module_id == class.module_id
                         && implementations.contains_key(&constant.name)
                         && constant.params.len() == 1
                         && constant.params[0] == *target
@@ -1743,7 +1754,7 @@ impl Environment {
                 }
             }
             let lowered = specialized.replace_constants(0, &|constant, depth| {
-                if constant.module_id == class.module_id
+                if constant.name.module_id == class.module_id
                     && constant.params.len() == 1
                     && constant.params[0] == *target
                 {

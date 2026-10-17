@@ -77,8 +77,8 @@ fn direct_generic_imports_keep_canonical_identity_and_order_through_reexports() 
         let AcornValue::Constant(constant) = *application.function else {
             panic!("expected resolved constant")
         };
-        assert_eq!(constant.module_id, defining_id);
-        assert_eq!(constant.name, "first");
+        assert_eq!(constant.name.module_id, defining_id);
+        assert_eq!(constant.name.local_name.to_string(), "first");
         assert_eq!(
             constant.params,
             vec![
@@ -100,7 +100,7 @@ fn direct_generic_imports_keep_canonical_identity_and_order_through_reexports() 
         let AcornValue::Constant(other) = *other.function else {
             panic!("expected resolved constant")
         };
-        assert_ne!(constant.module_id, other.module_id);
+        assert_ne!(constant.name.module_id, other.name.module_id);
     }
 }
 

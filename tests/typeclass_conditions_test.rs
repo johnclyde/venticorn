@@ -82,11 +82,12 @@ fn generic_conditions_retain_the_bound_source_and_callable_metadata() {
     );
     assert_eq!(*function.return_type, AcornType::Bool);
     let mut members = vec![];
-    condition
-        .claim
-        .find_constants(&|c| c.name == "Singleton.value", &mut members);
+    condition.claim.find_constants(
+        &|c| c.name.local_name.to_string() == "Singleton.value",
+        &mut members,
+    );
     assert_eq!(members.len(), 1);
-    assert_eq!(members[0].module_id, env.module_id);
+    assert_eq!(members[0].name.module_id, env.module_id);
     assert_eq!(
         members[0].params,
         [AcornType::Variable(info.instance_param.clone())]
@@ -296,7 +297,10 @@ fn imported_same_named_classes_keep_distinct_canonical_law_metadata() {
             .has_membership(id, "State", class));
         let mut references = vec![];
         block.goal.as_ref().unwrap().value().find_constants(
-            &|constant| constant.module_id == class.module_id && constant.name == "Singleton.value",
+            &|constant| {
+                constant.name.module_id == class.module_id
+                    && constant.name.local_name.to_string() == "Singleton.value"
+            },
             &mut references,
         );
         assert!(

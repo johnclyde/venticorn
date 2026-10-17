@@ -255,7 +255,10 @@ fn recursive_generic_methods_preserve_phantom_actuals_in_declaration_order() {
     assert!(!definition.has_arbitrary());
     let mut recursive = vec![];
     definition.find_constants(
-        &|constant| constant.module_id == env.module_id && constant.name == "Box.repeat",
+        &|constant| {
+            constant.name.module_id == env.module_id
+                && constant.name.local_name.to_string() == "Box.repeat"
+        },
         &mut recursive,
     );
     assert!(!recursive.is_empty());

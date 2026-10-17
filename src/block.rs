@@ -329,8 +329,11 @@ impl Block {
         let replaced = inner_value.clone().insert_stack(0, shift_amount);
         let replaced = replaced.replace_constants(0, &|c, _depth| {
             // These variables already refer to the enclosing exported quantifiers.
-            if c.module_id == outer_env.module_id {
-                map.get(&c.name)
+            if c.name.module_id == outer_env.module_id {
+                let LocalConstantName::Unqualified(name) = &c.name.local_name else {
+                    return None;
+                };
+                map.get(name)
                     .map(|i| AcornValue::Variable(*i, c.instance_type.clone()))
             } else {
                 None
@@ -437,18 +440,21 @@ impl Node {
         }
 
         let value = proposition.value.replace_constants(0, &|c, depth| {
-            let bindings = if env.module_id == c.module_id {
+            let bindings = if env.module_id == c.name.module_id {
                 &env.bindings
             } else {
                 &project
-                    .get_env_by_id(c.module_id)
+                    .get_env_by_id(c.name.module_id)
                     .expect("missing module during add_proposition")
                     .bindings
             };
-            if !bindings.is_theorem(&c.name) {
+            if !bindings.canonical_name_matches(&c.name)
+                || !bindings.is_theorem(&c.name.local_name.to_string())
+            {
                 return None;
             }
-            let (definition, params) = bindings.get_definition_and_params(&c.name)?;
+            let (definition, params) =
+                bindings.get_definition_and_params(&c.name.local_name.to_string())?;
             let pairs: Vec<_> = params
                 .iter()
                 .map(|param| param.name.clone())

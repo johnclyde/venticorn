@@ -181,16 +181,20 @@ fn recursion_and_identity_facts_keep_ordered_phantom_class_formals() {
         .map(AcornType::Variable)
         .collect::<Vec<_>>();
     let mut recursive = vec![];
-    body.find_constants(&|c| c.name == "repeat", &mut recursive);
+    body.find_constants(
+        &|c| c.name.local_name.to_string() == "repeat",
+        &mut recursive,
+    );
     assert!(!recursive.is_empty());
     for constant in recursive {
         assert_eq!(constant.params, expected);
     }
     let mut identity = vec![];
     for node in &env.nodes {
-        node.claim
-            .value
-            .find_constants(&|c| c.name == "repeat", &mut identity);
+        node.claim.value.find_constants(
+            &|c| c.name.local_name.to_string() == "repeat",
+            &mut identity,
+        );
     }
     assert!(!identity.is_empty());
     for constant in identity {

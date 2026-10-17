@@ -147,8 +147,8 @@ mod tests {
         let AcornValue::Constant(instance) = value else {
             panic!("expected constant")
         };
-        assert_eq!(instance.module_id, 3);
-        assert_eq!(instance.name, "flag");
+        assert_eq!(instance.name.module_id, 3);
+        assert_eq!(instance.name.local_name.to_string(), "flag");
         assert_eq!(
             instance.params,
             formals
