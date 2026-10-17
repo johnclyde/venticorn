@@ -125,16 +125,31 @@ impl Block {
             })
             .collect();
 
-        // Inside the block, the arguments are constants.
+        // Inside the block, the arguments are constants. Keep values only for
+        // goal kinds that bind them, rather than cloning every local declaration.
+        let needs_internal_args = matches!(&params, BlockParams::Theorem(..));
+        let mut internal_args = Vec::new();
         for (arg_name, generic_arg_type) in &args {
             let specific_arg_type = generic_arg_type.instantiate(&param_pairs);
-            subenv.bindings.add_constant_named(
-                &LocalConstantName::unqualified(&arg_name),
-                vec![],
-                specific_arg_type,
-                None,
-                None,
-            );
+            let name = LocalConstantName::unqualified(arg_name);
+            if needs_internal_args {
+                let value = subenv.bindings.add_constant_value(
+                    &name,
+                    vec![],
+                    specific_arg_type,
+                    None,
+                    None,
+                );
+                internal_args.push(
+                    value
+                        .resolved()
+                        .expect("block arguments have no type parameters"),
+                );
+            } else {
+                subenv
+                    .bindings
+                    .add_constant_named(&name, vec![], specific_arg_type, None, None);
+            }
         }
 
         let goal = match params {
@@ -148,18 +163,6 @@ impl Block {
                 None
             }
             BlockParams::Theorem(theorem_name, theorem_range, premise, unbound_goal) => {
-                let arg_values = args
-                    .iter()
-                    .map(|(name, _)| {
-                        subenv
-                            .bindings
-                            .get_constant_value(name)
-                            .unwrap()
-                            .resolved()
-                            .expect("block arguments have no type parameters")
-                    })
-                    .collect::<Vec<_>>();
-
                 if let Some(name) = theorem_name {
                     // Within the theorem block, the theorem is treated like a function,
                     // with propositions to define its identity.
@@ -173,7 +176,7 @@ impl Block {
                     let bound =
                         unbound_premise
                             .instantiate(&param_pairs)
-                            .bind_values(0, 0, &arg_values);
+                            .bind_values(0, 0, &internal_args);
 
                     subenv.add_node(
                         project,
@@ -187,7 +190,7 @@ impl Block {
                 let bound_goal =
                     unbound_goal
                         .instantiate(&param_pairs)
-                        .bind_values(0, 0, &arg_values);
+                        .bind_values(0, 0, &internal_args);
                 Some(Goal::Prove(Proposition::theorem(
                     false,
                     bound_goal,
