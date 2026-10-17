@@ -19,7 +19,7 @@ impl PotentialValue {
         params: Vec<TypeParam>,
     ) -> Self {
         if params.is_empty() {
-            Self::Resolved(AcornValue::new_constant(
+            Self::Resolved(AcornValue::constant(
                 module_id,
                 name.to_string(),
                 vec![],

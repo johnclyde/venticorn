@@ -651,7 +651,7 @@ impl BindingMap {
         implementation
             .validate()
             .map_err(|error| source.error(&error))?;
-        let generic = AcornValue::new_constant(
+        let generic = AcornValue::constant(
             class.module_id,
             generic_name,
             vec![target.clone()],
@@ -1492,7 +1492,7 @@ impl BindingMap {
                 )))
             }
         };
-        let value = AcornValue::new_apply(read_fn, vec![initial_num, last_num]);
+        let value = AcornValue::apply(read_fn, vec![initial_num, last_num]);
         Ok(value)
     }
 
@@ -1871,7 +1871,7 @@ impl BindingMap {
         };
 
         fa.args.push(right_value);
-        let value = AcornValue::new_apply(*fa.function, fa.args);
+        let value = AcornValue::apply(*fa.function, fa.args);
         value.check_type(expression, expected_type)?;
         Ok(value)
     }
@@ -1980,7 +1980,7 @@ impl BindingMap {
                 arg.check_type(source, Some(expected))?;
             }
         }
-        let value = AcornValue::new_apply(function, args);
+        let value = AcornValue::apply(function, args);
         value.check_type(source, expected_type)?;
         Ok(value)
     }
@@ -2316,7 +2316,7 @@ impl BindingMap {
                     expected_type,
                     &function_type.applied_type(args.len()),
                 )?;
-                Ok(AcornValue::new_apply(function, args))
+                Ok(AcornValue::apply(function, args))
             }
             Expression::Grouping(_, e, _) => {
                 return self.evaluate_potential_value(stack, project, e, expected_type);
@@ -2583,7 +2583,7 @@ impl BindingMap {
                 }
             }
             value.check_type(value_expr, Some(&value_type))?;
-            AcornValue::new_lambda(arg_types.clone(), value.clone())
+            AcornValue::lambda(arg_types.clone(), value.clone())
                 .validate()
                 .map_err(|message| value_expr.error(&message))?;
             Some(value)
