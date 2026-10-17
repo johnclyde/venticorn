@@ -16,7 +16,8 @@ use crate::project::{LoadError, Project};
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 use crate::statement::{
-    Body, DefineStatement, LetStatement, Statement, StatementInfo, TypeclassStatement,
+    Body, ClassStatement, DefineStatement, LetStatement, Statement, StatementInfo,
+    TypeclassStatement,
 };
 use crate::token::{Token, TokenIter, TokenType};
 
@@ -1409,6 +1410,104 @@ impl Environment {
             .collect()
     }
 
+    fn add_class_statement(
+        &mut self,
+        project: &mut Project,
+        statement: &Statement,
+        cs: &ClassStatement,
+    ) -> compilation::Result<()> {
+        self.add_other_lines(statement);
+        let potential = self
+            .bindings
+            .get_potential_type_for_name(&cs.name)
+            .cloned()
+            .ok_or_else(|| {
+                cs.name_token
+                    .error(&format!("undefined type name '{}'", cs.name))
+            })?;
+        let canonical = match &potential {
+            PotentialType::Resolved(AcornType::Data(module, name, _)) => (*module, name),
+            PotentialType::Unresolved(t) => (t.module_id, &t.name),
+            _ => {
+                return Err(cs
+                    .name_token
+                    .error("we can only bind members to data types"))
+            }
+        };
+        if canonical.0 != self.module_id {
+            return Err(cs
+                .name_token
+                .error("we can only bind members to types in the current module"));
+        }
+        if canonical.1 != &cs.name {
+            return Err(cs
+                .name_token
+                .error("we cannot bind members to type aliases"));
+        }
+        let declared = match &potential {
+            PotentialType::Unresolved(family) => family.params.as_slice(),
+            _ => &[],
+        };
+        if cs.type_params.len() != declared.len() {
+            return Err(cs.name_token.error(&format!(
+                "type {} expects {} parameters, but got {}",
+                cs.name,
+                declared.len(),
+                cs.type_params.len()
+            )));
+        }
+        let mut param_names = Vec::with_capacity(cs.type_params.len());
+        let mut actuals = Vec::with_capacity(cs.type_params.len());
+        for (param, formal) in cs.type_params.iter().zip(declared) {
+            let token = &param.name;
+            if self.bindings.name_in_use(token.text()) {
+                return Err(token.error("type parameter already defined in this scope"));
+            }
+            if let Some(bound) = &param.typeclass {
+                let explicit = self.bindings.evaluate_typeclass(project, bound)?;
+                if formal.typeclass.as_ref() != Some(&explicit) {
+                    return Err(
+                        bound.error("class parameter bound conflicts with the type declaration")
+                    );
+                }
+            }
+            actuals.push(
+                self.bindings
+                    .add_arbitrary_type_with_class(token.text(), formal.typeclass.as_ref()),
+            );
+            param_names.push(token.text().to_string());
+        }
+        let class_type = potential.resolve(actuals, &cs.name_token)?;
+        for substatement in &cs.body.statements {
+            match &substatement.statement {
+                StatementInfo::Let(ls) => {
+                    self.add_let_statement(
+                        project,
+                        Some((&cs.name, &param_names)),
+                        ls,
+                        substatement.range(),
+                    )?;
+                }
+                StatementInfo::Define(ds) => {
+                    self.add_define_statement(
+                        project,
+                        Some((&class_type, &param_names)),
+                        ds,
+                        substatement.range(),
+                    )?;
+                }
+                _ => {
+                    return Err(substatement
+                        .error("only let and define statements are allowed in class bodies"))
+                }
+            }
+        }
+        for name in param_names {
+            self.bindings.remove_data_type(&name);
+        }
+        Ok(())
+    }
+
     fn add_typeclass_statement(
         &mut self,
         project: &mut Project,
@@ -1697,99 +1796,7 @@ impl Environment {
                 Ok(())
             }
 
-            StatementInfo::Class(cs) => {
-                self.add_other_lines(statement);
-                let potential = self
-                    .bindings
-                    .get_potential_type_for_name(&cs.name)
-                    .cloned()
-                    .ok_or_else(|| {
-                        cs.name_token
-                            .error(&format!("undefined type name '{}'", cs.name))
-                    })?;
-                let canonical = match &potential {
-                    PotentialType::Resolved(AcornType::Data(module, name, _)) => (*module, name),
-                    PotentialType::Unresolved(t) => (t.module_id, &t.name),
-                    _ => {
-                        return Err(cs
-                            .name_token
-                            .error("we can only bind members to data types"))
-                    }
-                };
-                if canonical.0 != self.module_id {
-                    return Err(cs
-                        .name_token
-                        .error("we can only bind members to types in the current module"));
-                }
-                if canonical.1 != &cs.name {
-                    return Err(cs
-                        .name_token
-                        .error("we cannot bind members to type aliases"));
-                }
-                let declared = match &potential {
-                    PotentialType::Unresolved(family) => family.params.as_slice(),
-                    _ => &[],
-                };
-                if cs.type_params.len() != declared.len() {
-                    return Err(cs.name_token.error(&format!(
-                        "type {} expects {} parameters, but got {}",
-                        cs.name,
-                        declared.len(),
-                        cs.type_params.len()
-                    )));
-                }
-                let mut param_names = Vec::with_capacity(cs.type_params.len());
-                let mut actuals = Vec::with_capacity(cs.type_params.len());
-                for (param, formal) in cs.type_params.iter().zip(declared) {
-                    let token = &param.name;
-                    if self.bindings.name_in_use(token.text()) {
-                        return Err(token.error("type parameter already defined in this scope"));
-                    }
-                    if let Some(bound) = &param.typeclass {
-                        let explicit = self.bindings.evaluate_typeclass(project, bound)?;
-                        if formal.typeclass.as_ref() != Some(&explicit) {
-                            return Err(bound.error(
-                                "class parameter bound conflicts with the type declaration",
-                            ));
-                        }
-                    }
-                    actuals.push(
-                        self.bindings
-                            .add_arbitrary_type_with_class(token.text(), formal.typeclass.as_ref()),
-                    );
-                    param_names.push(token.text().to_string());
-                }
-                let class_type = potential.resolve(actuals, &cs.name_token)?;
-                for substatement in &cs.body.statements {
-                    match &substatement.statement {
-                        StatementInfo::Let(ls) => {
-                            self.add_let_statement(
-                                project,
-                                Some((&cs.name, &param_names)),
-                                ls,
-                                substatement.range(),
-                            )?;
-                        }
-                        StatementInfo::Define(ds) => {
-                            self.add_define_statement(
-                                project,
-                                Some((&class_type, &param_names)),
-                                ds,
-                                substatement.range(),
-                            )?;
-                        }
-                        _ => {
-                            return Err(substatement.error(
-                                "only let and define statements are allowed in class bodies",
-                            ))
-                        }
-                    }
-                }
-                for name in param_names {
-                    self.bindings.remove_data_type(&name);
-                }
-                Ok(())
-            }
+            StatementInfo::Class(cs) => self.add_class_statement(project, statement, cs),
 
             StatementInfo::Numerals(ds) => {
                 self.add_other_lines(statement);
