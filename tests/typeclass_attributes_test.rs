@@ -162,3 +162,20 @@ fn class_names_are_distinct_entities_with_qualified_member_completion() {
         .iter()
         .any(|(_, e)| e.message().contains("cannot import typeclasses indirectly")));
 }
+
+#[test]
+fn bounded_operators_are_admitted_without_asserting_commutativity() {
+    let mut env = venticorn::environment::Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+            
+            // Not true but syntactically valid
+            theorem commutative<T: Magma>(a: T, b: T) {
+                a * b = b * a
+            }
+            "#,
+    );
+}
