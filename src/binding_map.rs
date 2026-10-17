@@ -3057,10 +3057,9 @@ impl BindingMap {
                     module,
                     LocalConstantName::unqualified(owner),
                 ))?;
-                return Ok(Expression::Binary(
-                    Box::new(numeric_type),
-                    TokenType::Dot.generate(),
-                    Box::new(Expression::Singleton(numeral)),
+                return Ok(Expression::generate_dot(
+                    numeric_type,
+                    Expression::Singleton(numeral),
                 ));
             }
         }
