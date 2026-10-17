@@ -832,7 +832,7 @@ impl Environment {
                     field_name_token.text()
                 )));
             }
-            let member_fn_name = format!("{}.{}", ss.name, field_name_token.text());
+            let member_fn_name = LocalConstantName::attribute(&ss.name, field_name_token.text());
             if member_fn_names.contains(&member_fn_name) {
                 return Err(field_name_token.error("structure fields must have distinct names"));
             }
@@ -903,20 +903,24 @@ impl Environment {
             let member_fn_type =
                 AcornType::new_functional(vec![struct_type.clone()], field_type.clone());
             self.bindings.add_constant(
-                &member_fn_name,
+                &member_fn_name.to_string(),
                 self.scoped_type_params(&param_names),
                 member_fn_type.parametrize(self.module_id, &param_names),
                 None,
                 None,
             );
-            member_fns.push(self.bindings.get_constant_value(&member_fn_name).unwrap());
+            member_fns.push(
+                self.bindings
+                    .get_constant_value_named(member_fn_name)
+                    .unwrap(),
+            );
         }
 
         // A "new" function to create one of these struct types.
-        let new_fn_name = format!("{}.new", ss.name);
+        let new_fn_name = LocalConstantName::attribute(&ss.name, "new");
         let new_fn_type = AcornType::new_functional(field_types.clone(), struct_type.clone());
         self.bindings.add_constant(
-            &new_fn_name,
+            &new_fn_name.to_string(),
             self.scoped_type_params(&param_names),
             new_fn_type.parametrize(self.module_id, &param_names),
             None,
@@ -930,8 +934,12 @@ impl Environment {
         );
         // The declaration fixes every actual here, including phantom parameters
         // that a constructor's ordinary field arguments cannot infer.
-        let new_fn =
-            AcornValue::new_constant(self.module_id, new_fn_name, arbitrary_params, new_fn_type);
+        let new_fn = AcornValue::new_constant(
+            self.module_id,
+            new_fn_name.to_string(),
+            arbitrary_params,
+            new_fn_type,
+        );
 
         // Each object of this new type has certain properties.
         let object_var = AcornValue::Variable(0, struct_type.clone());
@@ -1102,7 +1110,7 @@ impl Environment {
                 // This provides a base case
                 has_base = true;
             }
-            let member_name = format!("{}.{}", is.name, name_token.text());
+            let member_name = LocalConstantName::attribute(&is.name, name_token.text());
             constructors.push((member_name, type_list));
         }
         if !has_base {
@@ -1116,7 +1124,7 @@ impl Environment {
             let constructor_type =
                 AcornType::new_functional(type_list.clone(), inductive_type.clone());
             self.bindings.add_constant(
-                constructor_name,
+                &constructor_name.to_string(),
                 vec![],
                 constructor_type,
                 None,
@@ -1124,7 +1132,7 @@ impl Environment {
             );
             constructor_fns.push(
                 self.bindings
-                    .get_constant_value(constructor_name)
+                    .get_constant_value_named(constructor_name)
                     .unwrap()
                     .resolved()
                     .expect("generated datatype constants have no type parameters"),
@@ -1164,7 +1172,7 @@ impl Environment {
                         self.module_id,
                         range,
                         is.name.clone(),
-                        member_name.rsplit('.').next().unwrap().to_string(),
+                        member_name.as_attribute().unwrap().1.to_string(),
                     ),
                     None,
                 );
@@ -1251,7 +1259,7 @@ impl Environment {
                     self.module_id,
                     range,
                     is.name.clone(),
-                    member_name.rsplit('.').next().unwrap().to_string(),
+                    member_name.as_attribute().unwrap().1.to_string(),
                 ),
                 None,
             );

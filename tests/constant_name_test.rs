@@ -80,3 +80,42 @@ fn instance_names_are_qualified_but_not_data_attributes() {
     assert!(instance.is_qualified());
     assert_eq!(instance.as_attribute(), None);
 }
+
+#[test]
+fn typed_instance_lookup_requires_its_published_canonical_scope() {
+    use venticorn::environment::Environment;
+    let mut env = Environment::new_test();
+    env.add("typeclass T: Marked {\n flag: Bool\n}\ninductive State {\n clean\n}\ninstance State: Marked {\n let flag: Bool = true\n}");
+    let class = env
+        .bindings
+        .get_typeclass_for_name("Marked")
+        .unwrap()
+        .clone();
+    let good = LocalConstantName::instance(&class, "flag", "State");
+    let other_class = Typeclass {
+        module_id: class.module_id + 1,
+        name: class.name.clone(),
+    };
+    let wrong = LocalConstantName::instance(&other_class, "flag", "State");
+    assert_eq!(good.to_string(), wrong.to_string());
+    assert_eq!(
+        env.bindings.get_constant_value_named(&good),
+        env.bindings.get_constant_value("State.Marked.flag")
+    );
+    assert!(env.bindings.get_constant_value_named(&good).is_some());
+    assert!(env.bindings.get_constant_value_named(&wrong).is_none());
+    env.bindings
+        .add_constant("Absent.Marked.flag", vec![], AcornType::Bool, None, None);
+    assert!(env
+        .bindings
+        .get_constant_value("Absent.Marked.flag")
+        .is_some());
+    assert!(env
+        .bindings
+        .get_constant_value_named(&LocalConstantName::instance(&class, "flag", "Absent"))
+        .is_none());
+    assert!(env
+        .bindings
+        .get_constant_value_named(&LocalConstantName::instance(&class, "missing", "State"))
+        .is_none());
+}
