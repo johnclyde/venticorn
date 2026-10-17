@@ -52,6 +52,18 @@ impl LocalConstantName {
         Self::Instance(class.clone(), attr.to_string(), target.to_string())
     }
 
+    /// Return syntax components for a simple name without guessing an instance owner.
+    /// Instance names require the caller to validate their registered canonical scope.
+    pub fn name_chain(&self) -> Option<Vec<&str>> {
+        match self {
+            Self::Unqualified(name) if !name.contains('.') => Some(vec![name]),
+            Self::Attribute(owner, member) if !owner.contains('.') && !member.contains('.') => {
+                Some(vec![owner, member])
+            }
+            _ => None,
+        }
+    }
+
     pub fn is_qualified(&self) -> bool {
         !matches!(self, Self::Unqualified(_))
     }
