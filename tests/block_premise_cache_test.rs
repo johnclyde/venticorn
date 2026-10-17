@@ -17,13 +17,8 @@ fn function_definition_blocks_retain_and_use_complete_premise_advice() {
     let cold = project.sync_build_report();
     assert_eq!(cold.status, BuildStatus::Good);
     assert_eq!(cold.num_success, 2);
-    // The native route also uses the scoped body fact after simplification;
-    // that source remains metadata until the body has been proved in order.
-    let names: &[&str] = if cfg!(feature = "onnx") {
-        &["6", "known"]
-    } else {
-        &["known"]
-    };
+    // Scoped body facts remain available in order but are not reusable imported advice.
+    let names: &[&str] = &["known"];
     let expected = BTreeMap::from([(
         main_module(),
         names

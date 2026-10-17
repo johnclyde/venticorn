@@ -1000,10 +1000,14 @@ impl Project {
                 dependency
                     .nodes
                     .iter()
-                    .map(|n| (n, crate::proof_step::Truthiness::Factual))
+                    .map(|n| (n, crate::proof_step::Truthiness::Factual, false))
             })
-            .chain(node.local_nodes(include_children));
-        for (selected_node, truthiness) in selected {
+            .chain(
+                node.local_nodes(include_children)
+                    .into_iter()
+                    .map(|(node, truthiness)| (node, truthiness, true)),
+            );
+        for (selected_node, truthiness, local) in selected {
             let selected = selected_node
                 .claim
                 .source
@@ -1023,7 +1027,10 @@ impl Project {
                     }
                 })
                 .is_some();
-            if selected || truthiness == crate::proof_step::Truthiness::Hypothetical {
+            if selected
+                || truthiness == crate::proof_step::Truthiness::Hypothetical
+                || (local && !selected_node.claim.source.importable)
+            {
                 prover.add_fact(Fact::new(selected_node.claim.clone(), truthiness));
             }
         }

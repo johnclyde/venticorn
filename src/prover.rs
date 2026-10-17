@@ -537,7 +537,9 @@ impl Prover {
                 // its original source is still useful for finding the proof again.
                 .filter(|(_, step)| step.truthiness != Truthiness::Hypothetical)
                 .filter_map(|(_, step)| match &step.rule {
-                    Rule::Assumption(info) => info.source.qualified_fact_name(),
+                    Rule::Assumption(info) if info.source.importable => {
+                        info.source.qualified_fact_name()
+                    }
                     _ => None,
                 })
                 .collect(),
