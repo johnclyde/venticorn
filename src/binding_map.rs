@@ -68,10 +68,10 @@ pub struct BindingMap {
     module: ModuleId,
 
     // Maps the name of a type to the type object.
-    name_to_type: BTreeMap<String, PotentialType>,
+    typename_to_type: BTreeMap<String, PotentialType>,
 
     // Maps the type object to the name of a type.
-    type_to_name: HashMap<AcornType, String>,
+    type_to_typename: HashMap<AcornType, String>,
 
     // Family aliases are distinct from aliases for one complete specialized type.
     generic_type_aliases: HashMap<(ModuleId, String, usize), String>,
@@ -89,14 +89,14 @@ pub struct BindingMap {
     // Maps an identifier name to its type.
     // Has entries for both defined constants and aliases. Pending generic aliases
     // retain the signature in declaration parameters, before actuals are supplied.
-    identifier_types: BTreeMap<String, AcornType>,
+    identifier_to_type: BTreeMap<String, AcornType>,
 
     // Maps the name of a constant defined in this scope to information about it.
     // Doesn't handle variables defined on the stack, only ones that will be in scope for the
     // entirety of this environment.
     // Aliases are stored separately and resolve to their canonical constant.
     // Includes "<datatype>.<constant>" for members.
-    constants: BTreeMap<String, ConstantInfo>,
+    constant_info: BTreeMap<String, ConstantInfo>,
 
     // The canonical identifier of a constant is the first place it is defined.
     // There may be other names in this environment that refer to the same thing.
@@ -345,15 +345,15 @@ impl BindingMap {
         assert!(module >= FIRST_NORMAL);
         let mut answer = BindingMap {
             module,
-            name_to_type: BTreeMap::new(),
-            type_to_name: HashMap::new(),
+            typename_to_type: BTreeMap::new(),
+            type_to_typename: HashMap::new(),
             generic_type_aliases: HashMap::new(),
             name_to_typeclass: BTreeMap::new(),
             typeclass_definitions: HashMap::new(),
             typeclass_to_name: HashMap::new(),
             instance_scopes: HashMap::new(),
-            identifier_types: BTreeMap::new(),
-            constants: BTreeMap::new(),
+            identifier_to_type: BTreeMap::new(),
+            constant_info: BTreeMap::new(),
             aliases: HashMap::new(),
             canonical_to_alias: HashMap::new(),
             name_to_module: BTreeMap::new(),
@@ -370,18 +370,18 @@ impl BindingMap {
     ////////////////////////////////////////////////////////////////////////////////
 
     pub fn name_in_use(&self, name: &str) -> bool {
-        self.name_to_type.contains_key(name)
+        self.typename_to_type.contains_key(name)
             || self.name_to_typeclass.contains_key(name)
-            || self.identifier_types.contains_key(name)
+            || self.identifier_to_type.contains_key(name)
             || self.name_to_module.contains_key(name)
     }
 
     fn insert_type_name(&mut self, name: String, acorn_type: AcornType) {
         assert!(!self.name_in_use(&name), "type name {} already bound", name);
-        self.type_to_name
+        self.type_to_typename
             .entry(acorn_type.clone())
             .or_insert_with(|| name.clone());
-        self.name_to_type
+        self.typename_to_type
             .insert(name, PotentialType::Resolved(acorn_type));
     }
 
@@ -406,12 +406,12 @@ impl BindingMap {
             name: name.into(),
             params,
         });
-        self.name_to_type.insert(name.into(), potential.clone());
+        self.typename_to_type.insert(name.into(), potential.clone());
         potential
     }
 
     pub fn get_potential_type_for_name(&self, name: &str) -> Option<&PotentialType> {
-        self.name_to_type.get(name)
+        self.typename_to_type.get(name)
     }
 
     // Adds a new data type to the binding map.
@@ -484,7 +484,7 @@ impl BindingMap {
                 self.canonical_to_alias
                     .entry((t.module_id, t.name.clone()))
                     .or_insert_with(|| name.to_string());
-                self.name_to_type
+                self.typename_to_type
                     .insert(name.to_string(), PotentialType::Unresolved(t));
             }
         }
@@ -579,8 +579,8 @@ impl BindingMap {
         }
 
         // Constants defined here
-        let constant_type = self.identifier_types.get(name)?.clone();
-        let params = self.constants.get(name)?.params.clone();
+        let constant_type = self.identifier_to_type.get(name)?.clone();
+        let params = self.constant_info.get(name)?.params.clone();
         if params.is_empty() {
             Some(PotentialValue::Resolved(AcornValue::new_constant(
                 self.module,
@@ -601,11 +601,11 @@ impl BindingMap {
     // Gets the type for an identifier, not for a type name.
     // E.g. if let x: Nat = 0, then get_type("x") will give you Nat.
     pub fn get_type_for_identifier(&self, identifier: &str) -> Option<&AcornType> {
-        self.identifier_types.get(identifier)
+        self.identifier_to_type.get(identifier)
     }
 
     pub fn get_params(&self, identifier: &str) -> Vec<TypeParam> {
-        match self.constants.get(identifier) {
+        match self.constant_info.get(identifier) {
             Some(info) => info.params.clone(),
             None => vec![],
         }
@@ -613,29 +613,29 @@ impl BindingMap {
 
     // Gets the type for a type name, not for an identifier.
     pub fn get_type_for_name(&self, type_name: &str) -> Option<&AcornType> {
-        match self.name_to_type.get(type_name) {
+        match self.typename_to_type.get(type_name) {
             Some(PotentialType::Resolved(t)) => Some(t),
             _ => None,
         }
     }
 
     pub fn has_type_name(&self, type_name: &str) -> bool {
-        self.name_to_type.contains_key(type_name)
+        self.typename_to_type.contains_key(type_name)
     }
 
     pub fn has_identifier(&self, identifier: &str) -> bool {
-        self.identifier_types.contains_key(identifier)
+        self.identifier_to_type.contains_key(identifier)
     }
 
     // Returns the defined value, if there is a defined value.
     // If there isn't, returns None.
     pub fn get_definition(&self, name: &str) -> Option<&AcornValue> {
-        self.constants.get(name)?.definition.as_ref()
+        self.constant_info.get(name)?.definition.as_ref()
     }
 
     // Returns the defined value and its parameters in declaration order.
     pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[TypeParam])> {
-        let info = self.constants.get(name)?;
+        let info = self.constant_info.get(name)?;
         Some((info.definition.as_ref()?, &info.params))
     }
 
@@ -686,7 +686,7 @@ impl BindingMap {
                 "generic definition cannot capture arbitrary types"
             );
         }
-        self.identifier_types
+        self.identifier_to_type
             .insert(name.to_string(), constant_type);
 
         let info = ConstantInfo {
@@ -694,7 +694,7 @@ impl BindingMap {
             definition,
             constructor,
         };
-        self.constants.insert(name.to_string(), info);
+        self.constant_info.insert(name.to_string(), info);
     }
 
     // Adds a local alias for an already-existing constant.
@@ -708,7 +708,7 @@ impl BindingMap {
         if self.name_in_use(name) {
             panic!("cannot alias name {} because it is already bound", name);
         }
-        self.identifier_types
+        self.identifier_to_type
             .insert(name.to_string(), value.get_type());
         let canonical = (canonical_module, canonical_name);
         if canonical_module != self.module {
@@ -721,7 +721,7 @@ impl BindingMap {
     }
 
     pub fn is_constant(&self, name: &str) -> bool {
-        self.constants.contains_key(name)
+        self.constant_info.contains_key(name)
     }
 
     pub fn mark_as_theorem(&mut self, name: &str) {
@@ -734,9 +734,9 @@ impl BindingMap {
 
     // Data types that come from type parameters get removed when they go out of scope.
     pub fn remove_data_type(&mut self, name: &str) {
-        match self.name_to_type.remove(name) {
+        match self.typename_to_type.remove(name) {
             Some(PotentialType::Resolved(t)) => {
-                self.type_to_name.remove(&t);
+                self.type_to_typename.remove(&t);
             }
             Some(PotentialType::Unresolved(_)) => {}
             None => panic!("removing data type {} which is already not present", name),
@@ -806,7 +806,7 @@ impl BindingMap {
         };
         let full_prefix = format!("{}.{}", type_name, prefix);
         let mut items = vec![];
-        for name in keys_with_prefix(&bindings.identifier_types, &full_prefix) {
+        for name in keys_with_prefix(&bindings.identifier_to_type, &full_prefix) {
             if module == self.module && !visible(name) {
                 continue;
             }
@@ -929,7 +929,7 @@ impl BindingMap {
                 });
             }
         }
-        for name in keys_with_prefix(&self.identifier_types, prefix) {
+        for name in keys_with_prefix(&self.identifier_to_type, prefix) {
             if !visible(name) {
                 continue;
             }
@@ -944,12 +944,12 @@ impl BindingMap {
                 });
             }
         }
-        for name in keys_with_prefix(&self.name_to_type, prefix) {
+        for name in keys_with_prefix(&self.typename_to_type, prefix) {
             if !visible(name) {
                 continue;
             }
             if importing {
-                let canonical = match self.name_to_type.get(name) {
+                let canonical = match self.typename_to_type.get(name) {
                     Some(PotentialType::Resolved(AcornType::Data(module, canonical, _))) => {
                         *module == self.module && canonical == name
                     }
@@ -1022,7 +1022,7 @@ impl BindingMap {
                 if token.token_type == TokenType::Axiom {
                     return Err(token.error("axiomatic types can only be created at the top level"));
                 }
-                if let Some(acorn_type) = self.name_to_type.get(token.text()) {
+                if let Some(acorn_type) = self.typename_to_type.get(token.text()) {
                     Ok(acorn_type.clone())
                 } else if self.name_to_typeclass.contains_key(token.text()) {
                     Err(token.error("name refers to a typeclass but we expected a type"))
@@ -1188,7 +1188,7 @@ impl BindingMap {
                         .ok_or_else(|| source.error("constructor module is unavailable"))?
                 };
                 bindings
-                    .constants
+                    .constant_info
                     .get(name)
                     .ok_or_else(|| source.error("constructor metadata is unavailable"))?
             }
@@ -2372,7 +2372,7 @@ impl BindingMap {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Bool(_) => {}
             AcornValue::Constant(c) => {
-                if c.module_id == self.module && !self.constants.contains_key(&c.name) {
+                if c.module_id == self.module && !self.constant_info.contains_key(&c.name) {
                     if !c.params.is_empty() {
                         return Err(format!(
                             "cannot export scoped generic constant '{}' from this block",
@@ -2442,7 +2442,7 @@ impl BindingMap {
             ));
         }
 
-        if let Some(name) = self.type_to_name.get(acorn_type) {
+        if let Some(name) = self.type_to_typename.get(acorn_type) {
             return Ok(Expression::generate_identifier(name));
         }
         if let AcornType::Data(module, type_name, actuals) = acorn_type {
@@ -2568,7 +2568,7 @@ impl BindingMap {
                 return Ok(Expression::generate_identifier_chain(&[alias, parts[1]]));
             }
             let data_type = AcornType::Data(module, parts[0].to_string(), vec![]);
-            if let Some(type_alias) = self.type_to_name.get(&data_type) {
+            if let Some(type_alias) = self.type_to_typename.get(&data_type) {
                 let lhs = Expression::generate_identifier(type_alias);
                 let rhs = Expression::generate_identifier(parts[1]);
                 return Ok(Expression::Binary(
@@ -2629,10 +2629,10 @@ impl BindingMap {
     // arguments to infer every formal parameter in a known declaration.
     fn can_infer_type_arguments(&self, constant: &ConstantInstance, supplied: usize) -> bool {
         let (params, signature) = if constant.module_id == self.module {
-            let Some(info) = self.constants.get(&constant.name) else {
+            let Some(info) = self.constant_info.get(&constant.name) else {
                 return false;
             };
-            let Some(signature) = self.identifier_types.get(&constant.name) else {
+            let Some(signature) = self.identifier_to_type.get(&constant.name) else {
                 return false;
             };
             (&info.params, signature)
@@ -2867,7 +2867,7 @@ impl BindingMap {
 
     // Check that the given name actually does have this type in the environment.
     pub fn expect_type(&self, name: &str, type_string: &str) {
-        let env_type = match self.identifier_types.get(name) {
+        let env_type = match self.identifier_to_type.get(name) {
             Some(t) => t,
             None => panic!("{} not found", name),
         };
@@ -2974,22 +2974,24 @@ mod tests {
         env.add("structure Pair {\n first: Bool\n second: Bool\n }\n");
         let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string(), vec![]);
         assert_eq!(
-            env.bindings.constants["Foo.bar"].constructor,
+            env.bindings.constant_info["Foo.bar"].constructor,
             Some((foo.clone(), 0, 2))
         );
         assert_eq!(
-            env.bindings.constants["Foo.baz"].constructor,
+            env.bindings.constant_info["Foo.baz"].constructor,
             Some((foo, 1, 2))
         );
         assert_eq!(
-            env.bindings.constants["Pair.new"].constructor,
+            env.bindings.constant_info["Pair.new"].constructor,
             Some((
                 AcornType::Data(FIRST_NORMAL, "Pair".to_string(), vec![]),
                 0,
                 1
             ))
         );
-        assert!(env.bindings.constants["Pair.first"].constructor.is_none());
+        assert!(env.bindings.constant_info["Pair.first"]
+            .constructor
+            .is_none());
     }
 
     #[test]
