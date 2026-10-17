@@ -906,23 +906,20 @@ impl Environment {
         for (member_fn_name, field_type) in member_fn_names.iter().zip(&field_types) {
             let member_fn_type =
                 AcornType::functional(vec![struct_type.clone()], field_type.clone());
-            self.bindings.add_constant_named(
+            let member = self.bindings.add_constant_value(
                 &member_fn_name,
                 self.scoped_type_params(&param_names),
                 member_fn_type.parametrize(self.module_id, &param_names),
                 None,
                 None,
             );
-            member_fns.push(
-                self.bindings
-                    .checked_constant_value(&ss.name_token, member_fn_name)?,
-            );
+            member_fns.push(member);
         }
 
         // A "new" function to create one of these struct types.
         let new_fn_name = LocalConstantName::attribute(&ss.name, "new");
         let new_fn_type = AcornType::functional(field_types.clone(), struct_type.clone());
-        self.bindings.add_constant_named(
+        let constructor = self.bindings.add_constant_value(
             &new_fn_name,
             self.scoped_type_params(&param_names),
             new_fn_type.parametrize(self.module_id, &param_names),
@@ -937,12 +934,14 @@ impl Environment {
         );
         // The declaration fixes every actual here, including phantom parameters
         // that a constructor's ordinary field arguments cannot infer.
-        let new_fn = AcornValue::constant(
-            self.module_id,
-            new_fn_name.to_string(),
-            arbitrary_params,
-            new_fn_type,
-        );
+        let new_fn = match constructor {
+            PotentialValue::Resolved(value) => value,
+            PotentialValue::Unresolved(declaration) => declaration.resolve(
+                &ss.name_token,
+                arbitrary_params,
+                self.bindings.proof_scope(),
+            )?,
+        };
 
         // Each object of this new type has certain properties.
         let object_var = AcornValue::Variable(0, struct_type.clone());
@@ -1125,19 +1124,14 @@ impl Environment {
         let total = constructors.len();
         for (i, (constructor_name, type_list)) in constructors.iter().enumerate() {
             let constructor_type = AcornType::functional(type_list.clone(), inductive_type.clone());
-            self.bindings.add_constant_named(
+            let constructor = self.bindings.add_constant_value(
                 constructor_name,
                 vec![],
                 constructor_type,
                 None,
                 Some((inductive_type.clone(), i, total)),
             );
-            constructor_fns.push(
-                self.bindings
-                    .checked_constant_value(&is.name_token, constructor_name)?
-                    .resolved()
-                    .expect("generated datatype constants have no type parameters"),
-            );
+            constructor_fns.push(constructor.value(&is.name_token)?);
         }
 
         // The "no confusion" property. Different constructors give different results.
