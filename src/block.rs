@@ -136,13 +136,10 @@ impl Block {
             let specific_arg_type = generic_arg_type.instantiate(&param_pairs);
             let name = LocalConstantName::unqualified(arg_name);
             if needs_internal_args {
-                let value = subenv.bindings.add_constant_value(
-                    &name,
-                    vec![],
-                    specific_arg_type,
-                    None,
-                    None,
-                );
+                let value =
+                    subenv
+                        .bindings
+                        .add_constant_value(name, vec![], specific_arg_type, None, None);
                 internal_args.push(
                     value
                         .resolved()
@@ -151,7 +148,7 @@ impl Block {
             } else {
                 subenv
                     .bindings
-                    .add_constant_named(&name, vec![], specific_arg_type, None, None);
+                    .add_constant_named(name, vec![], specific_arg_type, None, None);
             }
         }
 
@@ -216,7 +213,7 @@ impl Block {
                 let mut arg_values = vec![];
                 for (arg_name, arg_type) in pattern_args {
                     let value = subenv.bindings.add_constant_value(
-                        &LocalConstantName::unqualified(&arg_name),
+                        LocalConstantName::unqualified(&arg_name),
                         vec![],
                         arg_type,
                         None,
