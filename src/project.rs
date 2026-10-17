@@ -453,8 +453,7 @@ impl Project {
                     continue;
                 }
                 let mut dependencies = env
-                    .bindings
-                    .direct_dependencies()
+                    .proof_dependencies()
                     .into_iter()
                     .map(|id| self.modules[id as usize].descriptor.clone())
                     .collect::<Vec<_>>();
@@ -507,7 +506,7 @@ impl Project {
                 }
                 let text = std::fs::read_to_string(path).ok()?;
                 let mut hash = ModuleHasher::new(&text);
-                for dependency in env.bindings.direct_dependencies() {
+                for dependency in env.proof_dependencies() {
                     let dependency_hash =
                         visit(project, dependency, hashes, visiting, stale, unsaved)?;
                     hash.add_dependency(
@@ -566,11 +565,7 @@ impl Project {
                 .iter_goals()
                 .map(|node| node.goal_context().expect("parsed goal"))
                 .collect::<Vec<_>>();
-            let ranges = goals
-                .iter()
-                .map(|goal| (goal.first_line, goal.last_line))
-                .collect::<Vec<_>>();
-            if cached.module_hash() != &hash || cached.verified() != ranges {
+            if cached.module_hash() != &hash || !cached.matches_goals(&goals) {
                 continue;
             }
             if let Some(record) = storage.record(module, &hash, &goals, |id| {
@@ -704,8 +699,7 @@ impl Project {
     // Returns the status for this file alone.
     fn verify_target(&self, target: &ModuleRef, env: &Environment, builder: &mut Builder) {
         let dependencies = env
-            .bindings
-            .direct_dependencies()
+            .proof_dependencies()
             .into_iter()
             .map(|id| self.modules[id as usize].descriptor.clone())
             .collect();
@@ -724,16 +718,22 @@ impl Project {
             hash.cloned(),
             Some(ranges.len()),
         );
-        let dependencies_verified = self.all_dependencies(env.module_id).into_iter().all(|id| {
-            let Some(dependency) = self.get_env_by_id(id) else {
-                return false;
-            };
-            builder.previous_cache().matches(
-                &self.modules[id as usize].descriptor,
-                self.get_module_hash(id),
-                &Self::goal_ranges(dependency),
-            )
-        });
+        let dependencies_verified =
+            self.all_proof_dependencies(env.module_id)
+                .into_iter()
+                .all(|id| {
+                    let Some(dependency) = self.get_env_by_id(id) else {
+                        return false;
+                    };
+                    builder.previous_cache().matches(
+                        &self.modules[id as usize].descriptor,
+                        self.get_module_hash(id),
+                        &dependency
+                            .iter_goals()
+                            .map(|node| node.goal_context().expect("parsed goal"))
+                            .collect::<Vec<_>>(),
+                    )
+                });
         // Reuse policy belongs with the parsed module graph. The builder only records
         // outcomes and retains compatible snapshots of completed evidence.
         let reuse_enabled = self.check_hashes
@@ -744,7 +744,7 @@ impl Project {
             builder.module_proving_complete(target);
             return;
         }
-        if reuse_enabled && builder.previous_cache().matches(target, hash, &ranges) {
+        if reuse_enabled && builder.previous_cache().matches(target, hash, &goals) {
             // Retain one complete hint per theorem, not one clone per nested goal.
             for node in &env.nodes {
                 if node.num_goals() > 0 {
@@ -1011,15 +1011,6 @@ impl Project {
             premises.entry(module).or_default().insert(name);
         }
         Some(premises)
-    }
-
-    fn goal_ranges(env: &Environment) -> Vec<(u32, u32)> {
-        env.iter_goals()
-            .map(|node| {
-                let goal = node.goal_context().expect("no goal context");
-                (goal.first_line, goal.last_line)
-            })
-            .collect()
     }
 
     // Create a prover for each goal in this environment, and call the callback on it.
@@ -1477,9 +1468,8 @@ impl Project {
             Module::Ok(env)
         };
         let fingerprint = if let Module::Ok(env) = &module {
-            // Every imported snapshot contributes its transitive fingerprint.
-            env.bindings
-                .direct_dependencies()
+            // Imports local to nested proofs also contribute transitive identity.
+            env.proof_dependencies()
                 .into_iter()
                 .map(|id| {
                     Some((
@@ -1506,6 +1496,31 @@ impl Project {
     pub fn load_module_by_name(&mut self, module_name: &str) -> Result<ModuleId, LoadError> {
         let module_ref = ModuleRef::Name(module_name.to_string());
         self.load_module_by_ref(&module_ref)
+    }
+
+    // Verification identity includes imports from nested proof scopes. Keep this
+    // separate from all_dependencies, whose exported-fact visibility is narrower.
+    fn all_proof_dependencies(&self, original_module_id: ModuleId) -> Vec<ModuleId> {
+        fn append(
+            project: &Project,
+            module_id: ModuleId,
+            seen: &mut HashSet<ModuleId>,
+            output: &mut Vec<ModuleId>,
+        ) {
+            let Some(env) = project.get_env_by_id(module_id) else {
+                return;
+            };
+            for dependency in env.proof_dependencies() {
+                if seen.insert(dependency) {
+                    append(project, dependency, seen, output);
+                    output.push(dependency);
+                }
+            }
+        }
+        let mut output = vec![];
+        let mut seen = HashSet::from([original_module_id]);
+        append(self, original_module_id, &mut seen, &mut output);
+        output
     }
 
     // Appends all dependencies, including chains of direct dependencies.
@@ -2223,3 +2238,6 @@ mod tests {
 
 #[cfg(test)]
 mod theorem_hint_tests;
+
+#[cfg(test)]
+mod scope_cache_tests;

@@ -24,6 +24,8 @@ use crate::token::Token;
 // proved, along with helper statements to express those propositions, but they are not
 // visible to the outside world.
 pub struct Block {
+    // Scope before entering any child; the containing goal uses the final block scope.
+    proof_scope: crate::proof_scope::ProofScope,
     // The generic types that this block is polymorphic over.
     // Internally to the block, these are fixed arbitrary types.
     // Externally, these are generic data types.
@@ -89,6 +91,10 @@ pub enum BlockParams<'a> {
 }
 
 impl Block {
+    pub fn entry_scope(&self) -> &crate::proof_scope::ProofScope {
+        &self.proof_scope
+    }
+
     pub fn new(
         project: &mut Project,
         env: &Environment,
@@ -259,6 +265,7 @@ impl Block {
             }
         };
         Ok(Block {
+            proof_scope: env.bindings.proof_scope().clone(),
             type_params: type_params.into_iter().map(|p| p.name).collect(),
             args,
             env: subenv,
@@ -377,6 +384,8 @@ impl Block {
 // 2. Plain claims, that we need to prove
 // 3. Nodes with blocks, where we need to recurse into the block and prove those nodes.
 pub struct Node {
+    // Captured before the declaration enters the enclosing scope.
+    proof_scope: crate::proof_scope::ProofScope,
     // Whether this proposition has already been proved structurally.
     // For example, this could be an axiom, or a definition.
     pub structural: bool,
@@ -397,6 +406,10 @@ pub struct Node {
 }
 
 impl Node {
+    pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
+        &self.proof_scope
+    }
+
     pub fn new(
         project: &Project,
         env: &Environment,
@@ -436,6 +449,7 @@ impl Node {
         });
         let claim = proposition.with_value(value);
         Node {
+            proof_scope: env.bindings.proof_scope().clone(),
             structural,
             claim,
             block,
@@ -664,6 +678,9 @@ impl<'a> NodeCursor<'a> {
                 node.claim.source.range.end.line,
             )
         };
+        if node.block.is_none() {
+            context.proof_scope = node.proof_scope.clone();
+        }
         for (env, _) in &self.annotated_path {
             if !env.top_level {
                 context.cache_last_line = context.cache_last_line.max(env.last_line());

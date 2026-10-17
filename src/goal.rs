@@ -33,6 +33,7 @@ impl Goal {
 
 // A goal along with some information related to it.
 pub struct GoalContext {
+    pub proof_scope: crate::proof_scope::ProofScope,
     pub module_id: ModuleId,
 
     // Legacy storage for the human-readable description. Use description() when displaying it.
@@ -91,6 +92,7 @@ impl GoalContext {
                 .unwrap_or_else(|_| format!("solve at line {}", range.start.line + 1)),
         };
         GoalContext {
+            proof_scope: env.bindings.proof_scope().clone(),
             module_id: env.module_id,
             name,
             goal,

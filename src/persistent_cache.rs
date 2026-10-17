@@ -13,6 +13,7 @@ use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::build_cache::PremiseSet;
 use crate::goal::{Goal, GoalContext};
 use crate::module::{ModuleHash, ModuleId, ModuleRef, FIRST_NORMAL};
+use crate::proof_scope::{MembershipKey, ProofScope};
 
 const MAX_RECORD_BYTES: u64 = 16 * 1024;
 const SCHEMA: u32 = 2;
@@ -331,6 +332,13 @@ impl PersistentCache {
     }
 }
 
+// Ordering is derived from stable module identities, never process-local load IDs.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CanonicalModuleIdentity {
+    Builtin(ModuleId),
+    Loaded([u8; 32]),
+}
+
 // Typed framing prevents ambiguous concatenation. Every embedded module ID is
 // replaced with its canonical descriptor, including phantom actuals and binders.
 struct PolicyHasher<'a, F: Fn(ModuleId) -> Option<ModuleRef>> {
@@ -348,13 +356,68 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
     fn text(&mut self, value: &str) {
         frame(&mut self.hash, value.as_bytes());
     }
-    fn module(&mut self, id: ModuleId) -> Option<()> {
+    fn module_key(&self, id: ModuleId) -> Option<CanonicalModuleIdentity> {
         if id < FIRST_NORMAL {
-            self.tag(0);
-            self.number(id as u64);
+            Some(CanonicalModuleIdentity::Builtin(id))
         } else {
-            self.tag(1);
-            self.hash.update(module_identity(&(self.resolve)(id)?)?);
+            let module = (self.resolve)(id)?;
+            Some(CanonicalModuleIdentity::Loaded(module_identity(&module)?))
+        }
+    }
+    fn module_key_value(&mut self, module: CanonicalModuleIdentity) {
+        match module {
+            CanonicalModuleIdentity::Builtin(id) => {
+                self.tag(0);
+                self.number(id as u64);
+            }
+            CanonicalModuleIdentity::Loaded(identity) => {
+                self.tag(1);
+                self.hash.update(identity);
+            }
+        }
+    }
+    fn module(&mut self, id: ModuleId) -> Option<()> {
+        let identity = self.module_key(id)?;
+        self.module_key_value(identity);
+        Some(())
+    }
+    fn memberships(&mut self, memberships: &BTreeSet<MembershipKey>) -> Option<()> {
+        let canonical = memberships
+            .iter()
+            .map(|key| {
+                Some((
+                    self.module_key(key.data_module)?,
+                    key.data_name.as_str(),
+                    self.module_key(key.class_module)?,
+                    key.class_name.as_str(),
+                ))
+            })
+            .collect::<Option<BTreeSet<_>>>()?;
+        self.number(canonical.len() as u64);
+        for (data_module, data_name, class_module, class_name) in canonical {
+            self.module_key_value(data_module);
+            self.text(data_name);
+            self.module_key_value(class_module);
+            self.text(class_name);
+        }
+        Some(())
+    }
+    fn proof_scope(&mut self, scope: &ProofScope) -> Option<()> {
+        self.text("venticorn:proof-scope:v1");
+        self.tag(0);
+        self.memberships(&scope.memberships)?;
+        self.tag(1);
+        self.memberships(&scope.denied_memberships)?;
+        self.tag(2);
+        // Import aliases and load order do not change which modules are visible.
+        let imports = scope
+            .imports
+            .iter()
+            .map(|id| self.module_key(*id))
+            .collect::<Option<BTreeSet<_>>>()?;
+        self.number(imports.len() as u64);
+        for module in imports {
+            self.module_key_value(module);
         }
         Some(())
     }
@@ -481,7 +544,7 @@ fn goal_policy(
         hash: Sha256::new(),
         resolve,
     };
-    state.text("venticorn:goal-policy:v1");
+    state.text("venticorn:goal-policy:v2");
     state.number(goals.len() as u64);
     for goal in goals {
         state.tag(u8::from(matches!(goal.goal, Goal::Prove(_))));
@@ -499,6 +562,7 @@ fn goal_policy(
             state.number(value as u64);
         }
         state.tag(u8::from(goal.inconsistency_okay));
+        state.proof_scope(&goal.proof_scope)?;
     }
     Some(state.hash.finalize().into())
 }
@@ -509,6 +573,7 @@ mod tests {
     use crate::acorn_type::TypeClass;
     use crate::acorn_value::ConstantInstance;
     use crate::project::Project;
+    use std::sync::Arc;
 
     fn value_digest(value: &AcornValue, id: ModuleId) -> [u8; 32] {
         let resolve = |module| (module == id).then(|| ModuleRef::Name("canonical.types".into()));
@@ -608,6 +673,170 @@ mod tests {
             assert_ne!(original, goal_policy(&[changed], &resolve).unwrap());
         }
         assert_ne!(original, goal_policy(&[], &resolve).unwrap());
+    }
+
+    fn scope_goal(first: ModuleId, second: ModuleId) -> GoalContext {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem goal { true }");
+        let env = project
+            .get_env_by_ref(&ModuleRef::Name("main".into()))
+            .unwrap();
+        let mut goal = env.iter_goals().next().unwrap().goal_context().unwrap();
+        goal.proof_scope = ProofScope {
+            memberships: Arc::new(BTreeSet::from([
+                MembershipKey {
+                    data_module: first,
+                    data_name: "One".into(),
+                    class_module: second,
+                    class_name: "Left".into(),
+                },
+                MembershipKey {
+                    data_module: second,
+                    data_name: "Two".into(),
+                    class_module: first,
+                    class_name: "Right".into(),
+                },
+            ])),
+            denied_memberships: Arc::new(BTreeSet::from([MembershipKey {
+                data_module: first,
+                data_name: "Denied".into(),
+                class_module: second,
+                class_name: "Left".into(),
+            }])),
+            imports: Arc::new(vec![first, second]),
+        };
+        goal
+    }
+
+    #[test]
+    fn scope_policy_is_canonical_across_load_order_and_import_aliases() {
+        let first = scope_goal(10, 20);
+        // Canonical module order reverses relative to the process-local IDs.
+        let mut second = scope_goal(90, 40);
+        second.proof_scope.imports = Arc::new(vec![40, 90, 40]);
+        let resolve = |id| match id {
+            10 | 90 => Some(ModuleRef::Name("alpha".into())),
+            20 | 40 => Some(ModuleRef::Name("beta".into())),
+            _ => None,
+        };
+        assert_eq!(
+            goal_policy(&[first], &resolve),
+            goal_policy(&[second], &resolve)
+        );
+        assert!(goal_policy(&[scope_goal(10, 20)], &resolve).is_some());
+    }
+
+    #[test]
+    fn scope_policy_distinguishes_allows_denials_imports_and_canonical_members() {
+        let resolve = |id| match id {
+            10 => Some(ModuleRef::Name("alpha".into())),
+            20 => Some(ModuleRef::Name("beta".into())),
+            30 => Some(ModuleRef::Name("foreign".into())),
+            _ => None,
+        };
+        let original = goal_policy(&[scope_goal(10, 20)], &resolve).unwrap();
+        for field in 0..8 {
+            let mut changed = scope_goal(10, 20);
+            match field {
+                0 => Arc::make_mut(&mut changed.proof_scope.memberships).clear(),
+                1 => Arc::make_mut(&mut changed.proof_scope.denied_memberships).clear(),
+                2 => Arc::make_mut(&mut changed.proof_scope.imports).clear(),
+                3..=6 => {
+                    let memberships = Arc::make_mut(&mut changed.proof_scope.memberships);
+                    let mut key = memberships.pop_first().unwrap();
+                    match field {
+                        3 => key.data_module = 30,
+                        4 => key.class_module = 30,
+                        5 => key.data_name.push('x'),
+                        _ => key.class_name.push('x'),
+                    }
+                    memberships.insert(key);
+                }
+                _ => {
+                    std::mem::swap(
+                        &mut changed.proof_scope.memberships,
+                        &mut changed.proof_scope.denied_memberships,
+                    );
+                }
+            }
+            assert_ne!(
+                original,
+                goal_policy(&[changed], &resolve).unwrap(),
+                "field {field}"
+            );
+        }
+        // The same membership in both groups must not cancel its denied identity.
+        let mut both = scope_goal(10, 20);
+        let key = both.proof_scope.memberships.first().unwrap().clone();
+        Arc::make_mut(&mut both.proof_scope.denied_memberships).insert(key);
+        assert_ne!(original, goal_policy(&[both], &resolve).unwrap());
+    }
+
+    #[test]
+    fn scope_policy_refuses_unresolved_identities_in_each_group() {
+        let resolve = |id| match id {
+            10 => Some(ModuleRef::Name("alpha".into())),
+            20 => Some(ModuleRef::Name("beta".into())),
+            _ => None,
+        };
+        for field in 0..3 {
+            let mut goal = scope_goal(10, 20);
+            match field {
+                0 | 1 => {
+                    let group = if field == 0 {
+                        &mut goal.proof_scope.memberships
+                    } else {
+                        &mut goal.proof_scope.denied_memberships
+                    };
+                    let group = Arc::make_mut(group);
+                    let mut key = group.pop_first().unwrap();
+                    key.class_module = 99;
+                    group.insert(key);
+                }
+                _ => Arc::make_mut(&mut goal.proof_scope.imports).push(99),
+            }
+            assert!(goal_policy(&[goal], &resolve).is_none(), "field {field}");
+        }
+    }
+
+    #[test]
+    fn scope_policy_canonicalizes_file_modules_without_confusing_named_modules() {
+        let root = std::env::temp_dir().join(format!(
+            "venticorn_scope_policy_{}_{}",
+            std::process::id(),
+            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("types.ac");
+        fs::write(&file, "").unwrap();
+        let other = root.join("other.ac");
+        fs::write(&other, "").unwrap();
+        let original = goal_policy(&[scope_goal(10, 20)], &|id| match id {
+            10 => Some(ModuleRef::File(file.clone())),
+            20 => Some(ModuleRef::Name("classes".into())),
+            _ => None,
+        })
+        .unwrap();
+        let same = goal_policy(&[scope_goal(90, 40)], &|id| match id {
+            90 => Some(ModuleRef::File(root.join(".").join("types.ac"))),
+            40 => Some(ModuleRef::Name("classes".into())),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(original, same);
+        for replacement in [
+            ModuleRef::File(other),
+            ModuleRef::Name(file.to_string_lossy().into_owned()),
+        ] {
+            let changed = goal_policy(&[scope_goal(10, 20)], &|id| match id {
+                10 => Some(replacement.clone()),
+                20 => Some(ModuleRef::Name("classes".into())),
+                _ => None,
+            })
+            .unwrap();
+            assert_ne!(original, changed);
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -693,3 +693,29 @@ fn arbitrary_type_attributes_854() {
             "#,
     );
 }
+
+#[test]
+fn typechecking_captures_instance_relationships_856() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        typeclass F: Flagged {
+            flag: Bool
+        }
+        type Foo: axiom
+        instance Foo: Flagged {
+            let flag: Bool = true
+        }
+        define get_flag<F: Flagged>(x: F) -> Bool {
+            F.flag
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        theorem goal {
+            get_flag(true)
+        }
+        "#,
+    );
+}
