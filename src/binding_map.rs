@@ -124,11 +124,6 @@ pub struct BindingMap {
 
     // The default data type to use for numeric literals.
     default: Option<(ModuleId, String)>,
-
-    // Whether this constant is the name of a theorem in this context.
-    // Inside the block containing the proof of a theorem, the name is not considered to
-    // be a theorem.
-    theorems: HashSet<String>,
 }
 
 // A condition retains a generic, expanded proposition for instance obligations,
@@ -155,6 +150,9 @@ struct ConstantInfo {
 
     // Only declarations own definitions, constructor metadata, and instance members.
     canonical: bool,
+
+    // Marked only after the theorem's proof scope has been constructed.
+    theorem: bool,
 
     // The definition of this constant, if it has one.
     definition: Option<AcornValue>,
@@ -208,7 +206,6 @@ impl BindingMap {
             name_to_module: BTreeMap::new(),
             module_to_name: HashMap::new(),
             default: None,
-            theorems: HashSet::new(),
         };
         answer.add_type_alias("Bool", AcornType::Bool);
         answer
@@ -256,7 +253,6 @@ impl BindingMap {
                 .get(key)
                 .is_some_and(|p| *p <= position)
         });
-        result.theorems.retain(|name| visible.contains_key(name));
         result.type_to_typename.clear();
         result.generic_type_aliases.clear();
         result.typeclass_to_name.clear();
@@ -876,6 +872,7 @@ impl BindingMap {
         let info = ConstantInfo {
             value,
             canonical: true,
+            theorem: false,
             definition,
             constructor,
         };
@@ -927,6 +924,7 @@ impl BindingMap {
             ConstantInfo {
                 value,
                 canonical: false,
+                theorem: false,
                 definition: None,
                 constructor: None,
             },
@@ -940,11 +938,16 @@ impl BindingMap {
     }
 
     pub fn mark_as_theorem(&mut self, name: &str) {
-        self.theorems.insert(name.to_string());
+        self.constant_info
+            .get_mut(name)
+            .expect("only a stored declaration can be marked as a theorem")
+            .theorem = true;
     }
 
     pub fn is_theorem(&self, name: &str) -> bool {
-        self.theorems.contains(name)
+        self.constant_info
+            .get(name)
+            .is_some_and(|info| info.theorem)
     }
 
     // Data types that come from type parameters get removed when they go out of scope.
@@ -1174,7 +1177,7 @@ impl BindingMap {
             if !visible(name) {
                 continue;
             }
-            if importing && (!self.is_constant(name) || self.theorems.contains(name)) {
+            if importing && (!self.is_constant(name) || self.is_theorem(name)) {
                 continue;
             }
             if !name.contains('.') {
@@ -3526,6 +3529,7 @@ mod name_insertion_tests {
                         name.clone(),
                         info.value.clone(),
                         info.canonical,
+                        info.theorem,
                         info.definition.clone(),
                         info.constructor.clone(),
                     )
@@ -3858,5 +3862,36 @@ mod insertion_value_tests {
             None,
         );
         assert_eq!(value.resolved().unwrap().get_type(), AcornType::Bool);
+    }
+}
+
+#[cfg(test)]
+mod theorem_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn theorem_flags_follow_declaration_visibility_and_not_alias_ownership() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_constant("claim", vec![], AcornType::Bool, None, None);
+        let before_mark = bindings.clone();
+        assert!(!before_mark.is_theorem("claim"));
+        bindings.mark_as_theorem("claim");
+        assert!(bindings.is_theorem("claim"));
+        let position = bindings.position;
+        bindings.add_alias(
+            "alias",
+            FIRST_NORMAL,
+            "claim".into(),
+            bindings.get_constant_value("claim").unwrap(),
+        );
+        assert!(!bindings.is_theorem("alias"));
+        assert!(!bindings.is_constant("alias"));
+        assert!(!bindings.is_theorem("missing"));
+        bindings.add_constant("later", vec![], AcornType::Bool, None, None);
+        bindings.mark_as_theorem("later");
+        let earlier = bindings.for_codegen_at(position, &ProofScope::default());
+        assert!(earlier.is_theorem("claim"));
+        assert!(!earlier.is_theorem("later"));
+        assert!(!earlier.has_constant_name("alias"));
     }
 }
