@@ -447,7 +447,8 @@ impl Environment {
     fn add_define_statement(
         &mut self,
         project: &Project,
-        class_info: Option<(&str, &AcornType)>,
+        class_name: Option<&str>,
+        self_type: Option<&AcornType>,
         class_params: &[String],
         ds: &DefineStatement,
         range: Range,
@@ -458,15 +459,11 @@ impl Environment {
                 ds.name
             )));
         }
-        let (class_name, class_type) = match class_info {
-            Some((name, class_type)) => (Some(name), Some(class_type)),
-            None => (None, None),
-        };
         if !class_params.is_empty() && !ds.type_params.is_empty() {
             return Err(ds.type_params[0]
                 .error("generic class members cannot declare additional type parameters"));
         }
-        let name = match (class_name, class_type) {
+        let name = match (class_name, self_type) {
             (Some(name), Some(AcornType::Data(..))) => format!("{}.{}", name, ds.name),
             (None, None) => ds.name.clone(),
             _ => return Err(ds.name_token.error("class type must be a data type")),
@@ -478,7 +475,7 @@ impl Environment {
             )));
         }
 
-        if class_type.is_some() && ds.args.is_empty() {
+        if self_type.is_some() && ds.args.is_empty() {
             return Err(ds
                 .name_token
                 .error("a member function must have a 'self' argument"));
@@ -492,11 +489,11 @@ impl Environment {
                 &ds.args,
                 Some(&ds.return_type),
                 &ds.return_value,
-                class_type,
+                self_type,
                 Some(&name),
             )?;
 
-        if let Some(class_type) = class_type {
+        if let Some(class_type) = self_type {
             if &arg_types[0] != class_type {
                 return Err(ds.args[0].token().error("self must be the class type"));
             }
@@ -1495,7 +1492,8 @@ impl Environment {
                 StatementInfo::Define(ds) => {
                     self.add_define_statement(
                         project,
-                        Some((&cs.name, &class_type)),
+                        Some(&cs.name),
+                        Some(&class_type),
                         &param_names,
                         ds,
                         substatement.range(),
@@ -1859,7 +1857,8 @@ impl Environment {
                     }
                     self.add_define_statement(
                         project,
-                        Some((&scope_name, &target)),
+                        Some(&scope_name),
+                        Some(&target),
                         &[],
                         ds,
                         member.range(),
@@ -2048,7 +2047,7 @@ impl Environment {
 
             StatementInfo::Define(ds) => {
                 self.add_other_lines(statement);
-                self.add_define_statement(project, None, &[], ds, statement.range())
+                self.add_define_statement(project, None, None, &[], ds, statement.range())
             }
 
             StatementInfo::Theorem(ts) => self.add_theorem_statement(project, statement, ts),
