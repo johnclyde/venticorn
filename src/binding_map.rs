@@ -900,6 +900,23 @@ impl BindingMap {
         }
     }
 
+    // Admission callers report absence at the requesting source location, while
+    // genuine probes may continue to use the Option-returning lookups.
+    pub fn checked_constant_value(
+        &self,
+        source: &dyn ErrorSource,
+        name: &LocalConstantName,
+    ) -> compilation::Result<PotentialValue> {
+        self.get_constant_value_named(name).ok_or_else(|| {
+            let kind = if name.is_qualified() {
+                "attribute"
+            } else {
+                "identifier"
+            };
+            source.error(&format!("unknown {} '{}'", kind, name))
+        })
+    }
+
     // Gets the type for an identifier, not for a type name.
     // E.g. if let x: Nat = 0, then get_type("x") will give you Nat.
     pub fn get_type_for_constant_name(&self, name: &str) -> Option<&AcornType> {
@@ -1734,9 +1751,7 @@ impl BindingMap {
             .bindings_for_module(project, module)
             .ok_or_else(|| source.error("could not load bindings for attribute module"))?;
         let constant_name = LocalConstantName::attribute(&type_name, name);
-        let function = bindings
-            .get_constant_value_named(&constant_name)
-            .ok_or_else(|| source.error(&format!("unknown attribute '{}'", constant_name)))?;
+        let function = bindings.checked_constant_value(source, &constant_name)?;
         self.apply_potential(source, function, vec![instance], None)
     }
 
@@ -1894,10 +1909,13 @@ impl BindingMap {
                         } else if let Some((i, t)) = stack.get(name) {
                             // This is a stack variable
                             Ok(NamedEntity::Value(AcornValue::Variable(*i, t.clone())))
-                        } else if let Some(potential) = self.get_constant_value(name) {
-                            Ok(potential.to_named_entity())
                         } else {
-                            Err(name_token.error(&format!("unknown identifier '{}'", name)))
+                            Ok(self
+                                .checked_constant_value(
+                                    name_token,
+                                    &LocalConstantName::unqualified(name),
+                                )?
+                                .to_named_entity())
                         }
                     }
                     TokenType::Numeral => {
