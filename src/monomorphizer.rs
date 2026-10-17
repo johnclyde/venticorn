@@ -3,7 +3,7 @@ use std::fmt;
 
 use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
-use crate::constant_map::ConstantKey;
+use crate::constant_name::GlobalConstantName;
 use crate::fact::Fact;
 
 // A sorted substitution of type variables belonging to one fact.
@@ -70,12 +70,12 @@ pub struct Monomorphizer {
 
     // The concrete constant instances requested by facts, goals, or their definitions.
     // Indexed by constant id.
-    instantiations_for_constant: HashMap<ConstantKey, Vec<ConstantParams>>,
+    instantiations_for_constant: HashMap<GlobalConstantName, Vec<ConstantParams>>,
 
     // An index tracking how each generic constant is used in the generic facts.
     // This is updated whenever we add a fact.
     // Lists (index in generic facts, params for the constant) for each occurrence.
-    generic_constants: HashMap<ConstantKey, Vec<(usize, ConstantParams)>>,
+    generic_constants: HashMap<GlobalConstantName, Vec<(usize, ConstantParams)>>,
 }
 
 impl Monomorphizer {
@@ -119,7 +119,7 @@ impl Monomorphizer {
 
         // Store a reference to our generic instances in the index
         for c in &instances {
-            let constant_key = c.key();
+            let constant_key = c.name.clone();
             let params = ConstantParams::new(c.type_arguments().cloned().collect());
             self.generic_constants
                 .entry(constant_key)
@@ -129,7 +129,7 @@ impl Monomorphizer {
 
         // Check how this new generic fact should be monomorphized
         for c in instances {
-            let constant_key = c.key();
+            let constant_key = c.name.clone();
             let instance_params = ConstantParams::new(c.type_arguments().cloned().collect());
             if let Some(monomorphs) = self.instantiations_for_constant.get(&constant_key) {
                 for monomorph_params in monomorphs.clone() {
@@ -149,7 +149,7 @@ impl Monomorphizer {
     // form of the generic constant.
     fn monomorphize_matching_facts(
         &mut self,
-        constant_key: &ConstantKey,
+        constant_key: &GlobalConstantName,
         monomorph_params: &ConstantParams,
     ) {
         monomorph_params.assert_full();
@@ -236,7 +236,7 @@ impl Monomorphizer {
         );
         for c in monomorphs {
             self.monomorphize_matching_facts(
-                &c.key(),
+                &c.name,
                 &ConstantParams::new(c.type_arguments().cloned().collect()),
             );
         }
