@@ -894,7 +894,7 @@ impl BindingMap {
         constructor: Option<(AcornType, usize, usize)>,
     ) {
         self.add_constant_named(
-            &LocalConstantName::from_legacy(name),
+            LocalConstantName::from_legacy(name),
             params,
             constant_type,
             definition,
@@ -905,38 +905,38 @@ impl BindingMap {
     // Structured declaration names do not by themselves grant instance membership.
     pub fn add_constant_named(
         &mut self,
-        name: &LocalConstantName,
+        name: impl Into<LocalConstantName>,
         params: Vec<TypeParam>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
         constructor: Option<(AcornType, usize, usize)>,
     ) {
-        self.insert_constant_named(name, params, constant_type, definition, constructor);
+        self.insert_constant_named(name.into(), params, constant_type, definition, constructor);
     }
 
     // Return an independent value only when the caller needs the inserted declaration.
     pub fn add_constant_value(
         &mut self,
-        name: &LocalConstantName,
+        name: impl Into<LocalConstantName>,
         params: Vec<TypeParam>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
         constructor: Option<(AcornType, usize, usize)>,
     ) -> PotentialValue {
-        self.insert_constant_named(name, params, constant_type, definition, constructor)
+        self.insert_constant_named(name.into(), params, constant_type, definition, constructor)
             .clone()
     }
 
     fn insert_constant_named(
         &mut self,
-        name: &LocalConstantName,
+        name: LocalConstantName,
         params: Vec<TypeParam>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
         constructor: Option<(AcornType, usize, usize)>,
     ) -> &PotentialValue {
         let local_name = name;
-        let string_name = name.to_string();
+        let string_name = local_name.to_string();
         let name = string_name.as_str();
         if self.name_in_use(name) {
             panic!("constant name {} already bound", name);
@@ -965,12 +965,12 @@ impl BindingMap {
                 "generic definition cannot capture arbitrary types"
             );
         }
+        self.record_constant_name(&local_name, name);
         let value = PotentialValue::constant_named(
-            GlobalConstantName::new(self.module, local_name.clone()),
+            GlobalConstantName::new(self.module, local_name),
             constant_type,
             params,
         );
-        self.record_constant_name(local_name, name);
 
         let info = ConstantInfo {
             value,

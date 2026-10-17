@@ -16,6 +16,13 @@ pub enum LocalConstantName {
     Instance(Typeclass, String, String),
 }
 
+// Borrowed compatibility inputs retain the exact structured identity.
+impl From<&LocalConstantName> for LocalConstantName {
+    fn from(name: &LocalConstantName) -> Self {
+        name.clone()
+    }
+}
+
 impl fmt::Display for LocalConstantName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
