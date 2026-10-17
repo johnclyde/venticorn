@@ -60,6 +60,15 @@ pub struct GlobalConstantName {
     pub local_name: LocalConstantName,
 }
 
+impl GlobalConstantName {
+    pub fn new(module_id: ModuleId, local_name: LocalConstantName) -> Self {
+        Self {
+            module_id,
+            local_name,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

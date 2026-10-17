@@ -8,7 +8,7 @@ use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
 use crate::compilation::{self, Error, ErrorSource};
-use crate::constant_name::LocalConstantName;
+use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::named_entity::NamedEntity;
@@ -870,7 +870,7 @@ impl BindingMap {
                 "generic definition cannot capture arbitrary types"
             );
         }
-        let value = PotentialValue::constant(self.module, name, constant_type.clone(), params);
+        let value = PotentialValue::constant(self.module, name, constant_type, params);
         self.record_name(name);
 
         let info = ConstantInfo {
@@ -890,12 +890,33 @@ impl BindingMap {
         canonical_name: String,
         value: PotentialValue,
     ) {
-        if self.name_in_use(name) {
+        self.add_alias_named(
+            &LocalConstantName::unqualified(name),
+            GlobalConstantName::new(
+                canonical_module,
+                LocalConstantName::unqualified(&canonical_name),
+            ),
+            value,
+        );
+    }
+
+    // Aliases carry canonical identity for naming, never declaration or instance authority.
+    pub fn add_alias_named(
+        &mut self,
+        local_name: &LocalConstantName,
+        canonical_name: GlobalConstantName,
+        value: PotentialValue,
+    ) {
+        let name = local_name.to_string();
+        if self.name_in_use(&name) {
             panic!("cannot alias name {} because it is already bound", name);
         }
-        self.record_name(name);
-        let canonical = (canonical_module, canonical_name);
-        if canonical_module != self.module {
+        self.record_name(&name);
+        let canonical = (
+            canonical_name.module_id,
+            canonical_name.local_name.to_string(),
+        );
+        if canonical_name.module_id != self.module {
             // Prefer this alias locally to using the qualified, canonical name
             self.canonical_to_alias
                 .entry(canonical.clone())
@@ -1942,10 +1963,12 @@ impl BindingMap {
             NamedEntity::Value(value) => {
                 // Add a local alias that mirrors this constant's name in the imported module.
                 if let Some((ext_module, ext_name)) = value.as_simple_constant() {
-                    self.add_alias(
-                        name_token.text(),
-                        ext_module,
-                        ext_name.to_string(),
+                    self.add_alias_named(
+                        &LocalConstantName::unqualified(name_token.text()),
+                        GlobalConstantName::new(
+                            ext_module,
+                            LocalConstantName::unqualified(ext_name),
+                        ),
                         PotentialValue::Resolved(value),
                     );
                 } else {
@@ -1963,10 +1986,12 @@ impl BindingMap {
                 Ok(())
             }
             NamedEntity::Unresolved(unresolved) => {
-                self.add_alias(
-                    name_token.text(),
-                    unresolved.module_id,
-                    unresolved.name.clone(),
+                self.add_alias_named(
+                    &LocalConstantName::unqualified(name_token.text()),
+                    GlobalConstantName::new(
+                        unresolved.module_id,
+                        LocalConstantName::unqualified(&unresolved.name),
+                    ),
                     PotentialValue::Unresolved(unresolved),
                 );
                 Ok(())
