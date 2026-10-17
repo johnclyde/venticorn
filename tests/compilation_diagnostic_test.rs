@@ -8,7 +8,7 @@ fn assert_error_span(code: &str, text: &str) {
     assert_diagnostic(code, text, "unknown identifier");
 }
 
-fn assert_diagnostic(code: &str, text: &str, message: &str) {
+fn assert_diagnostic(code: &str, text: &str, message: &str) -> String {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", code);
     let errors = project.errors();
@@ -27,6 +27,7 @@ fn assert_diagnostic(code: &str, text: &str, message: &str) {
         error.range(),
         Range::new(position(start), position(start + text.len()))
     );
+    error.message().to_string()
 }
 
 #[test]
@@ -292,10 +293,13 @@ fn infix_member_and_type_errors_cover_the_complete_operation() {
         "a + a",
         "expected type Bool",
     );
-    assert_diagnostic(
-        &format!("{declarations}let bad: Number = a * a"),
-        "a * a",
-        "unknown instance variable 'Number.mul'",
+    assert_eq!(
+        assert_diagnostic(
+            &format!("{declarations}let bad: Number = a * a"),
+            "a * a",
+            "unknown attribute 'Number.mul'",
+        ),
+        "unknown attribute 'Number.mul'",
     );
 }
 

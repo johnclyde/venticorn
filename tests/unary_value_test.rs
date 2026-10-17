@@ -1,4 +1,5 @@
 // Modified for Venticorn: prefix notation uses the type's checked neg method.
+use tower_lsp::lsp_types::{Position, Range};
 use venticorn::acorn_type::AcornType;
 use venticorn::environment::Environment;
 use venticorn::expression::Expression;
@@ -43,7 +44,11 @@ fn unary_minus_requires_a_method_on_the_operand_type() {
         .bindings
         .evaluate_value(&Project::new_mock(), &Expression::expect_value("-a"), None)
         .unwrap_err();
-    assert_eq!(error.message(), "unknown instance variable 'Number.neg'");
+    assert_eq!(error.message(), "unknown attribute 'Number.neg'");
+    assert_eq!(
+        error.range(),
+        Range::new(Position::new(0, 0), Position::new(0, 1))
+    );
     env.bad("class Number {\n let neg: Number = axiom\n}");
 }
 #[test]
