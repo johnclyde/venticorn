@@ -107,3 +107,48 @@ fn an_invalid_instance_must_fail_its_actual_law_obligation() {
     );
     assert_eq!(project.cached_build().num_modules(), 0);
 }
+
+#[test]
+fn a_valid_instance_proves_a_real_law_obligation() {
+    let text = r#"
+            inductive Z1 {
+                zero
+            }
+
+            typeclass S: Singleton {
+                value: S
+
+                unique(x: S) {
+                    x = S.value
+                }
+            }
+
+            instance Z1: Singleton {
+                let value: Z1 = Z1.zero
+            }
+        "#;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", text);
+    let module = project.expect_ok("main");
+    let env = project.get_env_by_id(module).unwrap();
+    assert_eq!(env.iter_goals().count(), 1);
+    for node in env.iter_goals() {
+        let goal = node.goal_context().unwrap();
+        for shallow in [false, true] {
+            let mut prover = project.prover_for_node(&node, false);
+            prover.set_goal(&goal);
+            let result = if shallow {
+                prover.quick_shallow_search()
+            } else {
+                prover.quick_search()
+            };
+            assert_eq!(result, Outcome::Success);
+        }
+    }
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!(
+        (report.goals_done, report.num_success, report.num_cached),
+        (1, 1, 0)
+    );
+}
