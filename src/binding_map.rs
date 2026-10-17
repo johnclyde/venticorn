@@ -888,6 +888,18 @@ impl BindingMap {
         }
     }
 
+    // Structured instance names are looked up through their canonical owner.
+    // A coincidentally identical display string cannot establish an instance.
+    pub fn get_constant_value_named(&self, name: &LocalConstantName) -> Option<PotentialValue> {
+        match name {
+            LocalConstantName::Instance(class, attribute, target) => {
+                let scope = self.instance_scope(target, class)?;
+                self.get_constant_value(&format!("{}.{}", scope, attribute))
+            }
+            _ => self.get_constant_value(&name.to_string()),
+        }
+    }
+
     // Gets the type for an identifier, not for a type name.
     // E.g. if let x: Nat = 0, then get_type("x") will give you Nat.
     pub fn get_type_for_constant_name(&self, name: &str) -> Option<&AcornType> {
@@ -1671,8 +1683,8 @@ impl BindingMap {
         var_name: &str,
     ) -> Option<PotentialValue> {
         let bindings = self.bindings_for_module(project, module)?;
-        let constant_name = format!("{}.{}", type_name, var_name);
-        bindings.get_constant_value(&constant_name)
+        let constant_name = LocalConstantName::attribute(type_name, var_name);
+        bindings.get_constant_value_named(&constant_name)
     }
 
     // Evaluates an expression that is supposed to describe a value, with an empty stack.
@@ -1721,9 +1733,9 @@ impl BindingMap {
         let bindings = self
             .bindings_for_module(project, module)
             .ok_or_else(|| source.error("could not load bindings for attribute module"))?;
-        let constant_name = format!("{}.{}", type_name, name);
+        let constant_name = LocalConstantName::attribute(&type_name, name);
         let function = bindings
-            .get_constant_value(&constant_name)
+            .get_constant_value_named(&constant_name)
             .ok_or_else(|| source.error(&format!("unknown attribute '{}'", constant_name)))?;
         self.apply_potential(source, function, vec![instance], None)
     }
