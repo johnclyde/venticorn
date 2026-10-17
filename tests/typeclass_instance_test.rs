@@ -722,3 +722,52 @@ fn typechecking_captures_instance_relationships_856() {
         "#,
     );
 }
+
+#[test]
+fn bool_not_instance_of_anything_858() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        typeclass F: Flagged {
+            flag: Bool
+        }
+        type Foo: axiom
+        instance Foo: Flagged {
+            let flag: Bool = true
+        }
+        define get_flag<F: Flagged>(x: F) -> Bool {
+            F.flag
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        theorem goal {
+            get_flag(true)
+        }
+        "#,
+    );
+}
+
+#[test]
+fn typechecking_captures_instance_relationships_858() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+        typeclass F: Flagged {
+            flag: Bool
+        }
+        type Foo: axiom
+        define get_flag<F: Flagged>(x: F) -> Bool {
+            F.flag
+        }
+        "#,
+    );
+    env.bad(
+        r#"
+        theorem goal(f: Foo) {
+            get_flag(f)
+        }
+        "#,
+    );
+}
