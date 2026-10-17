@@ -1869,7 +1869,86 @@ impl Environment {
         }
         // Later goals may use this declaration conditionally on the whole module
         // verifying; a failed obligation prevents completed module publication.
-        self.bindings.add_instance_scope(name, class, scope_name);
+        self.bindings
+            .add_instance_scope(name, class.clone(), scope_name.clone());
+        // These definitions are available only after the obligation boundary.
+        // The proof block was already captured under its own denied membership;
+        // neither these facts nor this widened outer scope can enter that block.
+        let bridges = {
+            let owner = if class.module_id == self.module_id {
+                &self.bindings
+            } else {
+                project.get_bindings(class.module_id).ok_or_else(|| {
+                    instance
+                        .typeclass
+                        .error("could not load bindings for typeclass module")
+                })?
+            };
+            if owner.get_typeclass_for_name(&class.name) != Some(&class)
+                || info.instance_param.typeclass.as_ref() != Some(&class)
+            {
+                return Err(instance
+                    .typeclass
+                    .error("invalid canonical typeclass metadata"));
+            }
+            let substitution = [(info.instance_param.name.clone(), target.clone())];
+            let mut bridges = Vec::with_capacity(info.attributes.len());
+            for (member, template_type) in &info.attributes {
+                let generic_name = format!("{}.{}", class.name, member);
+                if owner.get_params(&generic_name) != [info.instance_param.clone()]
+                    || owner.get_type_for_identifier(&generic_name) != Some(template_type)
+                    || !matches!(
+                        owner.get_constant_value(&generic_name),
+                        Some(PotentialValue::Unresolved(_))
+                    )
+                {
+                    return Err(instance
+                        .typeclass
+                        .error("invalid canonical class member metadata"));
+                }
+                let expected_type = template_type.instantiate(&substitution);
+                let implementation = self
+                    .bindings
+                    .get_constant_value(&format!("{}.{}", scope_name, member))
+                    .and_then(PotentialValue::resolved)
+                    .ok_or_else(|| {
+                        instance
+                            .typeclass
+                            .error("invalid instance implementation metadata")
+                    })?;
+                if implementation.get_type() != expected_type {
+                    return Err(instance
+                        .typeclass
+                        .error("invalid instance bridge signature"));
+                }
+                let generic_member = AcornValue::new_constant(
+                    class.module_id,
+                    generic_name,
+                    vec![target.clone()],
+                    expected_type,
+                );
+                let claim = AcornValue::new_equals(generic_member, implementation);
+                claim
+                    .validate()
+                    .map_err(|error| instance.typeclass.error(&error))?;
+                bridges.push((member.clone(), claim));
+            }
+            bridges
+        };
+        for (member, claim) in bridges {
+            self.add_node(
+                project,
+                true,
+                Proposition::type_member_definition(
+                    claim,
+                    self.module_id,
+                    statement.range(),
+                    name.to_string(),
+                    format!("instance.{}.{}", class.name, member),
+                ),
+                None,
+            );
+        }
         self.add_other_lines(statement);
         Ok(())
     }
