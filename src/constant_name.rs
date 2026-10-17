@@ -72,6 +72,11 @@ pub struct GlobalConstantName {
 }
 
 impl GlobalConstantName {
+    /// Compatibility constructor for callers of the former ConstantKey adapter.
+    pub fn from_name(name: Self) -> Self {
+        name
+    }
+
     pub fn new(module_id: ModuleId, local_name: LocalConstantName) -> Self {
         Self {
             module_id,

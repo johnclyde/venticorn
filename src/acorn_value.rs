@@ -5,7 +5,6 @@ use std::fmt;
 use crate::acorn_type::AcornType;
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
-use crate::constant_map::ConstantKey;
 use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::ModuleId;
 use crate::token::TokenType;
@@ -143,11 +142,9 @@ impl ConstantInstance {
         }
     }
 
-    pub fn key(&self) -> ConstantKey {
-        ConstantKey {
-            module: self.name.module_id,
-            name: self.name.local_name.clone(),
-        }
+    /// Compatibility accessor for callers that need an owned canonical identity.
+    pub fn key(&self) -> GlobalConstantName {
+        self.name.clone()
     }
 
     // Actual arguments in declaration order.

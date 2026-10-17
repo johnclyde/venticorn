@@ -460,11 +460,11 @@ impl Normalizer {
         match atom {
             Atom::True => AcornValue::Bool(true),
             Atom::GlobalConstant(i) => {
-                let name = self.constant_map.global_name(*i);
+                let name = self.constant_map.get_global_name(*i).clone();
                 AcornValue::constant_named(name, vec![], acorn_type)
             }
             Atom::LocalConstant(i) => {
-                let name = self.constant_map.local_name(*i);
+                let name = self.constant_map.get_local_name(*i).clone();
                 AcornValue::constant_named(name, vec![], acorn_type)
             }
             Atom::Monomorph(i) => AcornValue::Constant(self.type_map.get_monomorph(*i).clone()),
@@ -538,14 +538,8 @@ impl Normalizer {
     pub fn atom_str(&self, atom: &Atom) -> String {
         match atom {
             Atom::True => "true".to_string(),
-            Atom::GlobalConstant(i) => {
-                let (_, name) = self.constant_map.get_global_info(*i);
-                name.to_string()
-            }
-            Atom::LocalConstant(i) => {
-                let (_, name) = self.constant_map.get_local_info(*i);
-                name.to_string()
-            }
+            Atom::GlobalConstant(i) => self.constant_map.get_global_name(*i).local_name.to_string(),
+            Atom::LocalConstant(i) => self.constant_map.get_local_name(*i).local_name.to_string(),
             Atom::Monomorph(i) => self.type_map.get_monomorph(*i).to_string(),
             Atom::Variable(i) => format!("x{}", i),
             Atom::Skolem(i) => format!("s{}", i),

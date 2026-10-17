@@ -23,8 +23,8 @@ fn canonical_constant_interning_keeps_owners_and_atom_locality() {
     let right = instance(12);
     assert_eq!(left.local_name.to_string(), right.local_name.to_string());
     let key = ConstantKey::from_name(left.clone());
-    assert_eq!(key.module, left.module_id);
-    assert_eq!(key.name, left.local_name);
+    assert_eq!(key.module_id, left.module_id);
+    assert_eq!(key.local_name, left.local_name);
     let mut map = ConstantMap::new();
     let a = map.add_constant_named(left.clone(), false);
     let b = map.add_constant_named(right.clone(), false);
@@ -91,4 +91,26 @@ fn checked_alias_proposals_leave_existing_atoms_unchanged_on_failure() {
     assert!(!map.maybe_add_alias(&old, &third));
     assert_eq!(map.add_constant_named(old, false), atom);
     assert_eq!(map.add_constant_named(third, true), other);
+}
+
+#[test]
+fn borrowed_atom_names_keep_the_original_canonical_target_after_aliasing() {
+    let mut map = ConstantMap::new();
+    let owner = instance(11);
+    let alias = instance(12);
+    assert_eq!(
+        map.add_constant_named(owner.clone(), false),
+        Atom::GlobalConstant(0)
+    );
+    assert!(map.maybe_add_alias(&alias, &owner));
+    assert_eq!(map.get_global_name(0), &owner);
+    assert_ne!(map.get_global_name(0), &alias);
+    assert_eq!(map.get_global_info(0), (10, "State.Marked.flag".into()));
+    let local = instance(13);
+    assert_eq!(
+        map.add_constant_named(local.clone(), true),
+        Atom::LocalConstant(0)
+    );
+    assert_eq!(map.get_local_name(0), &local);
+    assert_eq!(map.get_local_info(0), (10, "State.Marked.flag".into()));
 }

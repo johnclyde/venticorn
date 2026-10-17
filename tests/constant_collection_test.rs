@@ -59,8 +59,8 @@ fn collection_visits_function_arguments_binders_conditions_and_match_branches() 
     );
     let mut found = vec![];
     generic("identity").find_constants(&|_| true, &mut found);
-    assert_eq!(found[0].key().module, 10);
-    assert_eq!(found[0].key().name.to_string(), "identity");
+    assert_eq!(found[0].key().module_id, 10);
+    assert_eq!(found[0].key().local_name.to_string(), "identity");
     assert_eq!(AcornValue::Constant(found.remove(0)), generic("identity"));
 }
 
