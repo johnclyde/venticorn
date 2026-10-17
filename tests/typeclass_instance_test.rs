@@ -659,3 +659,23 @@ fn forbid_instance_on_alias_851() {
             "#,
     );
 }
+
+#[test]
+#[ignore = "pending bounded type attribute support"]
+fn typechecking_captures_instance_relationships_853() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass F: Flagged {
+                flag: Bool
+            }
+            type Foo: axiom
+            instance Foo: Flagged {
+                let flag: Bool = true
+            }
+            define get_flag<F: Flagged>(x: F) -> Bool {
+                F.flag
+            }
+            "#,
+    );
+}
