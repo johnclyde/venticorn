@@ -522,3 +522,77 @@ fn declared_concrete_instances_support_generic_class_members() {
             "#,
     );
 }
+
+#[test]
+fn instance_constant_members_are_admitted() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass P: PointedSet {
+                basepoint: P
+            }
+
+            inductive Z2 {
+                zero
+                one
+            }
+
+            instance Z2: PointedSet {
+                let basepoint: Z2 = Z2.zero
+            }
+            "#,
+    );
+}
+
+#[test]
+fn instance_constant_members_reject_extras() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass P: PointedSet {
+                basepoint: P
+            }
+
+            inductive Z2 {
+                zero
+                one
+            }
+            "#,
+    );
+    env.bad(
+        r#"
+            instance Z2: PointedSet {
+                let basepoint: Z2 = Z2.zero
+                let other: Z2 = Z2.one
+            }
+            "#,
+    );
+    assert!(!env.bindings.name_in_use("Z2.PointedSet.basepoint"));
+    assert!(!env.bindings.name_in_use("Z2.PointedSet.other"));
+}
+
+#[test]
+fn instance_constant_members_require_the_declared_type() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass P: PointedSet {
+                basepoint: P
+            }
+
+            inductive Z2 {
+                zero
+                one
+            }
+            "#,
+    );
+    env.bad(
+        r#"
+            instance Z2: PointedSet {
+                let basepoint: Bool = true
+            }
+            "#,
+    );
+    assert!(!env.bindings.name_in_use("Z2.PointedSet.basepoint"));
+    assert!(!env.bindings.name_in_use("Z2.PointedSet.other"));
+}
