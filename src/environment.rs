@@ -7,7 +7,7 @@ use tower_lsp::lsp_types::{CompletionItem, Range};
 use crate::acorn_type::{AcornType, PotentialType, TypeParam, Typeclass};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
-use crate::binding_map::{BindingMap, PotentialValue, Stack, TypeclassInfo};
+use crate::binding_map::{BindingMap, PotentialValue, Stack, TypeclassCondition, TypeclassInfo};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
 use crate::fact::Fact;
@@ -1377,11 +1377,6 @@ impl Environment {
         ts: &TypeclassStatement,
     ) -> compilation::Result<(BindingMap, Vec<(String, AcornType)>)> {
         let scope = self.typeclass_scope(ts)?;
-        if let Some(condition) = ts.conditions.first() {
-            return Err(condition
-                .name
-                .error("typeclass conditions are not supported yet"));
-        }
         let mut names = HashSet::new();
         let mut members = vec![];
         let params = vec![ts.instance_name.text().to_string()];
@@ -1522,32 +1517,108 @@ impl Environment {
                 .first_token
                 .error("typeclass declarations are only supported at the top level"));
         }
-        let (mut scope, members) = self.prepare_typeclass(project, ts)?;
-        let params = vec![match scope.get_type_for_name(ts.instance_name.text()) {
+        let (scope, members) = self.prepare_typeclass(project, ts)?;
+        let mut staged = self.child(statement.first_line(), true);
+        staged.bindings = scope;
+        let param = match staged.bindings.get_type_for_name(ts.instance_name.text()) {
             Some(AcornType::Arbitrary(param)) => param.clone(),
             _ => unreachable!("the staged instance type must exist"),
-        }];
-        let info = TypeclassInfo {
-            instance_param: params[0].clone(),
+        };
+        let params = vec![param.clone()];
+        let param_names = vec![param.name.clone()];
+        let mut info = TypeclassInfo {
+            instance_param: param,
             attributes: ts
                 .constants
                 .iter()
                 .zip(&members)
                 .map(|((name, _), (_, member_type))| (name.text().to_string(), member_type.clone()))
                 .collect(),
+            conditions: Default::default(),
         };
         for (name, member_type) in members {
-            scope.add_constant(&name, params.clone(), member_type, None, None);
+            staged
+                .bindings
+                .add_constant(&name, params.clone(), member_type, None, None);
         }
-        scope.add_typeclass_info(
+        for condition in &ts.conditions {
+            let name = condition.name.text();
+            let full_name = format!("{}.{}", ts.typeclass_name, name);
+            if staged.bindings.name_in_use(&full_name) || info.conditions.contains_key(name) {
+                return Err(condition
+                    .name
+                    .error("typeclass member already defined in this scope"));
+            }
+            let range = Range {
+                start: condition.name.start_pos(),
+                end: condition.claim.last_token().end_pos(),
+            };
+            let (_, _, arg_types, value, _) = staged.bindings.evaluate_scoped_value(
+                project,
+                &[],
+                &condition.args,
+                None,
+                &condition.claim,
+                None,
+                None,
+            )?;
+            let unbound_claim = value.ok_or_else(|| {
+                condition
+                    .claim
+                    .error("typeclass conditions must have values")
+            })?;
+            let claim = AcornValue::new_forall(arg_types.clone(), unbound_claim.clone())
+                .parametrize(self.module_id, &param_names);
+            let definition = AcornValue::new_lambda(arg_types, unbound_claim)
+                .parametrize(self.module_id, &param_names);
+            if claim.has_arbitrary() || definition.has_arbitrary() {
+                return Err(condition
+                    .claim
+                    .error("typeclass condition cannot capture an outer arbitrary type"));
+            }
+            claim
+                .validate()
+                .map_err(|error| condition.claim.error(&error))?;
+            definition
+                .validate()
+                .map_err(|error| condition.claim.error(&error))?;
+            let node = Node::new(
+                project,
+                &staged,
+                true,
+                Proposition::theorem(true, claim, self.module_id, range, Some(full_name.clone())),
+                None,
+            );
+            // Inspect the actual exported proposition after theorem-name expansion,
+            // exactly as for ordinary bounded theorems. Fact does not retain erased
+            // declaration formals, so a closed condition cannot safely be published.
+            if !node.claim.value.has_type_variable(&param_names[0]) {
+                return Err(condition
+                    .name
+                    .error("bounded typeclass condition must occur in the exported proposition"));
+            }
+            info.conditions.insert(
+                name.to_string(),
+                TypeclassCondition {
+                    claim: node.claim.value.clone(),
+                    definition,
+                    range,
+                },
+            );
+            staged.definition_ranges.insert(full_name, range);
+            staged.nodes.push(node);
+        }
+        staged.bindings.add_typeclass_info(
             Typeclass {
                 module_id: self.module_id,
                 name: ts.typeclass_name.text().to_string(),
             },
             info,
         );
-        scope.remove_data_type(ts.instance_name.text());
-        self.bindings = scope;
+        staged.bindings.remove_data_type(ts.instance_name.text());
+        self.bindings = staged.bindings;
+        self.definition_ranges = staged.definition_ranges;
+        self.nodes.extend(staged.nodes);
         self.add_other_lines(statement);
         Ok(())
     }
@@ -1607,6 +1678,16 @@ impl Environment {
                     .error("could not load bindings for typeclass module")
             })?
         };
+        let info = class_bindings.get_typeclass_info(&class).ok_or_else(|| {
+            instance
+                .typeclass
+                .error("invalid typeclass member metadata")
+        })?;
+        if !info.conditions.is_empty() {
+            return Err(instance.typeclass.error(
+                "instances with typeclass conditions require proof obligations, which are not supported yet",
+            ));
+        }
         let mut required = class_bindings
             .instance_member_types(&class, &target)
             .ok_or_else(|| {

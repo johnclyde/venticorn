@@ -1,7 +1,7 @@
 // Modified for Venticorn: staged match binding and constructor metadata.
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
+use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Range};
 
 use crate::acorn_type::{AcornType, PotentialType, TypeParam, Typeclass, UnresolvedType};
 use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
@@ -136,11 +136,21 @@ pub struct BindingMap {
     theorems: HashSet<String>,
 }
 
-// A class definition retains its complete bound and declared member signatures.
+// A condition retains a generic, expanded proposition for instance obligations,
+// plus its generic lambda for a separately published callable theorem name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TypeclassCondition {
+    pub claim: AcornValue,
+    pub definition: AcornValue,
+    pub range: Range,
+}
+
+// A class definition separates required member signatures from logical conditions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TypeclassInfo {
     pub instance_param: TypeParam,
     pub attributes: BTreeMap<String, AcornType>,
+    pub conditions: BTreeMap<String, TypeclassCondition>,
 }
 
 // A generic declaration whose type arguments have not been inferred yet.

@@ -19,7 +19,7 @@ fn typeclass_is_a_reserved_keyword_with_identifier_boundaries() {
 }
 
 #[test]
-fn unsupported_typeclass_conditions_report_an_error_without_verifying() {
+fn erased_typeclass_conditions_report_an_error_without_verifying() {
     let mut project = Project::new_mock();
     project.mock(
         "/mock/main.ac",
@@ -30,7 +30,7 @@ fn unsupported_typeclass_conditions_report_an_error_without_verifying() {
     assert!(errors[0]
         .1
         .message()
-        .contains("typeclass conditions are not supported yet"));
+        .contains("bounded typeclass condition must occur in the exported proposition"));
     assert_eq!(
         errors[0].1.range(),
         Range::new(Position::new(1, 1), Position::new(1, 4))
@@ -166,9 +166,7 @@ fn rejected_typeclasses_leave_the_environment_unchanged() {
     let error = env
         .add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err();
-    assert!(error
-        .message()
-        .contains("typeclass conditions are not supported yet"));
+    assert!(error.message().contains("unknown identifier"));
     assert_eq!(env.nodes.len(), nodes);
     assert_eq!(env.last_line(), last_line);
     assert_eq!(
