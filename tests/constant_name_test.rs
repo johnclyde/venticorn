@@ -18,6 +18,7 @@ fn structured_availability_preserves_all_namespace_collisions() {
     bindings.add_constant("value", vec![], AcornType::Bool, None, None);
     for name in ["Data", "Class", "dependency", "value"] {
         assert!(bindings.typename_in_use(name), "{}", name);
+        assert!(bindings.lowercase_name_in_use(name), "{}", name);
         assert!(
             bindings.constant_name_in_use(&LocalConstantName::Unqualified(name.into())),
             "{}",
