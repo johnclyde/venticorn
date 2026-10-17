@@ -11,12 +11,14 @@ use crate::compilation::{self, Error, ErrorSource};
 use crate::constant_name::LocalConstantName;
 use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::module::{ModuleId, FIRST_NORMAL};
+use crate::named_entity::NamedEntity;
 use crate::project::Project;
 use crate::proof_scope::ProofScope;
 use crate::termination_checker::TerminationChecker;
 use crate::token::{self, Token, TokenIter, TokenType};
 
 // Preserve the existing public path while the checked representation has its own module.
+pub use crate::potential_value::PotentialValue;
 pub use crate::unresolved_constant::UnresolvedConstant;
 
 // A representation of the variables on the stack.
@@ -157,41 +159,6 @@ pub struct TypeclassInfo {
     pub conditions: BTreeMap<String, TypeclassCondition>,
 }
 
-// A named declaration may still need type arguments before it becomes a proof value.
-#[derive(Clone, Debug, PartialEq)]
-pub enum PotentialValue {
-    Unresolved(UnresolvedConstant),
-    Resolved(AcornValue),
-}
-
-impl PotentialValue {
-    // Internal callers use this only after introducing a constant with no type parameters.
-    pub fn resolved(self) -> Option<AcornValue> {
-        match self {
-            PotentialValue::Resolved(value) => Some(value),
-            PotentialValue::Unresolved(..) => None,
-        }
-    }
-
-    // Pending declarations expose their generic signature only to inference.
-    pub fn get_type(&self) -> AcornType {
-        match self {
-            PotentialValue::Unresolved(unresolved) => unresolved.generic_type.clone(),
-            PotentialValue::Resolved(value) => value.get_type(),
-        }
-    }
-
-    pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
-        match self {
-            PotentialValue::Resolved(value) => Ok(value),
-            PotentialValue::Unresolved(unresolved) => Err(source.error(&format!(
-                "value {} requires type arguments",
-                unresolved.name
-            ))),
-        }
-    }
-}
-
 #[derive(Clone)]
 struct ConstantInfo {
     // The names of the type parameters this constant was defined with, if any.
@@ -208,23 +175,13 @@ struct ConstantInfo {
     constructor: Option<(AcornType, usize, usize)>,
 }
 
-// Return an error if the types don't match.
-// This doesn't do full polymorphic typechecking, but it will fail if there's no
-// way that the types can match, for example if a function expects T -> Nat and
-// the value provided is Nat.
-// actual_type should be non-generic here.
-// expected_type can be generic.
-pub fn check_type<'a>(
+// Compatibility entry point for exact type checking.
+pub fn check_type(
     source: &dyn ErrorSource,
     expected_type: Option<&AcornType>,
     actual_type: &AcornType,
 ) -> compilation::Result<()> {
-    if let Some(e) = expected_type {
-        if e != actual_type {
-            return Err(source.error(&format!("expected type {}, but this is {}", e, actual_type)));
-        }
-    }
-    Ok(())
+    actual_type.check_eq(source, expected_type)
 }
 
 fn keys_with_prefix<'a, T>(
@@ -234,91 +191,6 @@ fn keys_with_prefix<'a, T>(
     map.range(prefix.to_string()..)
         .take_while(move |(key, _)| key.starts_with(prefix))
         .map(|(key, _)| key)
-}
-
-// A name can refer to any of these things.
-enum NamedEntity {
-    Value(AcornValue),
-    Type(AcornType),
-    Module(ModuleId),
-    Typeclass(Typeclass),
-    Instance(ModuleId, String),
-    Unresolved(UnresolvedConstant),
-    UnresolvedType(UnresolvedType),
-}
-
-impl NamedEntity {
-    fn new(value: PotentialValue) -> Self {
-        match value {
-            PotentialValue::Unresolved(unresolved) => NamedEntity::Unresolved(unresolved),
-            PotentialValue::Resolved(value) => NamedEntity::Value(value),
-        }
-    }
-
-    fn expect_potential_value(
-        self,
-        expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<PotentialValue> {
-        match self {
-            NamedEntity::Unresolved(unresolved) => Ok(PotentialValue::Unresolved(unresolved)),
-            entity => Ok(PotentialValue::Resolved(
-                entity.expect_value(expected_type, source)?,
-            )),
-        }
-    }
-
-    fn expect_value(
-        self,
-        expected_type: Option<&AcornType>,
-        source: &dyn ErrorSource,
-    ) -> compilation::Result<AcornValue> {
-        match self {
-            NamedEntity::Unresolved(unresolved) => Err(source.error(&format!(
-                "value {} requires type arguments",
-                unresolved.name
-            ))),
-            NamedEntity::Value(value) => {
-                check_type(source, expected_type, &value.get_type())?;
-                Ok(value)
-            }
-            NamedEntity::Type(_) | NamedEntity::UnresolvedType(_) => {
-                Err(source.error("name refers to a type but we expected a value"))
-            }
-            NamedEntity::Module(_) => {
-                Err(source.error("name refers to a module but we expected a value"))
-            }
-            NamedEntity::Typeclass(_) => {
-                Err(source.error("name refers to a typeclass but we expected a value"))
-            }
-            NamedEntity::Instance(..) => Err(source.error("instance namespace is not a value")),
-        }
-    }
-
-    fn expect_type(self, source: &dyn ErrorSource) -> compilation::Result<AcornType> {
-        match self {
-            NamedEntity::Unresolved(unresolved) => Err(source.error(&format!(
-                "value {} requires type arguments",
-                unresolved.name
-            ))),
-            NamedEntity::Value(_) => {
-                Err(source.error("name refers to a value but we expected a type"))
-            }
-            NamedEntity::Type(t) => Ok(t),
-            NamedEntity::UnresolvedType(t) => Err(source.error(&format!(
-                "type {} requires {} type parameters",
-                t.name,
-                t.params.len()
-            ))),
-            NamedEntity::Module(_) => {
-                Err(source.error("name refers to a module but we expected a type"))
-            }
-            NamedEntity::Typeclass(_) => {
-                Err(source.error("name refers to a typeclass but we expected a type"))
-            }
-            NamedEntity::Instance(..) => Err(source.error("instance namespace is not a type")),
-        }
-    }
 }
 
 impl BindingMap {
@@ -1508,7 +1380,7 @@ impl BindingMap {
         };
         match &info.constructor {
             Some((constructor_type, i, total)) => {
-                check_type(source, Some(expected_type), &constructor_type)?;
+                constructor_type.check_eq(source, Some(expected_type))?;
                 Ok((*i, *total))
             }
             None => Err(source.error("expected a constructor")),
@@ -1539,7 +1411,7 @@ impl BindingMap {
                 if pattern_type.is_functional() {
                     return Err(pattern.error("constructor requires arguments"));
                 }
-                check_type(pattern, Some(expected_type), &pattern_type)?;
+                pattern_type.check_eq(pattern, Some(expected_type))?;
 
                 return Ok((constructor, vec![], i, total));
             }
@@ -1668,7 +1540,7 @@ impl BindingMap {
     ) -> compilation::Result<AcornValue> {
         let value =
             self.evaluate_value_with_stack(&mut Stack::new(), project, expression, expected_type)?;
-        check_type(expression, expected_type, &value.get_type())?;
+        value.check_type(expression, expected_type)?;
         value
             .validate()
             .map_err(|message| expression.error(&message))?;
@@ -2002,14 +1874,14 @@ impl BindingMap {
                     return Err(expression
                         .error(&format!("expected a binary function for '{}' method", name)));
                 }
-                check_type(expression, Some(&f.arg_types[1]), &right_value.get_type())?;
+                right_value.check_type(expression, Some(&f.arg_types[1]))?;
             }
             _ => return Err(expression.error(&format!("unexpected type for '{}' method", name))),
         };
 
         fa.args.push(right_value);
         let value = AcornValue::new_apply(*fa.function, fa.args);
-        check_type(expression, expected_type, &value.get_type())?;
+        value.check_type(expression, expected_type)?;
         Ok(value)
     }
 
@@ -2114,11 +1986,11 @@ impl BindingMap {
                 )));
             }
             for (arg, expected) in args.iter().zip(&ft.arg_types) {
-                check_type(source, Some(expected), &arg.get_type())?;
+                arg.check_type(source, Some(expected))?;
             }
         }
         let value = AcornValue::new_apply(function, args);
-        check_type(source, expected_type, &value.get_type())?;
+        value.check_type(source, expected_type)?;
         Ok(value)
     }
 
@@ -2206,7 +2078,7 @@ impl BindingMap {
         let value = self
             .evaluate_potential_value(stack, project, expression, expected_type)?
             .value(expression)?;
-        check_type(expression, expected_type, &value.get_type())?;
+        value.check_type(expression, expected_type)?;
         Ok(value)
     }
 
@@ -2228,7 +2100,7 @@ impl BindingMap {
                     return Err(token.error("binder keywords cannot be used as values"));
                 }
                 TokenType::True | TokenType::False => {
-                    check_type(token, expected_type, &AcornType::Bool)?;
+                    AcornType::Bool.check_eq(token, expected_type)?;
                     Ok(AcornValue::Bool(token.token_type == TokenType::True))
                 }
                 TokenType::Identifier | TokenType::Numeral | TokenType::SelfToken => {
@@ -2242,7 +2114,7 @@ impl BindingMap {
             },
             Expression::Unary(token, expr) => match token.token_type {
                 TokenType::Not => {
-                    check_type(expression, expected_type, &AcornType::Bool)?;
+                    AcornType::Bool.check_eq(expression, expected_type)?;
                     let value = self.evaluate_value_with_stack(
                         stack,
                         project,
@@ -2258,13 +2130,13 @@ impl BindingMap {
                     })?;
                     let operand = self.evaluate_value_with_stack(stack, project, expr, None)?;
                     let value = self.evaluate_instance_attribute(token, project, operand, name)?;
-                    check_type(token, expected_type, &value.get_type())?;
+                    value.check_type(token, expected_type)?;
                     Ok(value)
                 }
             },
             Expression::Binary(left, token, right) => match token.token_type {
                 TokenType::RightArrow | TokenType::Implies => {
-                    check_type(expression, expected_type, &AcornType::Bool)?;
+                    AcornType::Bool.check_eq(expression, expected_type)?;
                     let left_value = self.evaluate_value_with_stack(
                         stack,
                         project,
@@ -2285,7 +2157,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::Equals => {
-                    check_type(expression, expected_type, &AcornType::Bool)?;
+                    AcornType::Bool.check_eq(expression, expected_type)?;
                     let left_value = self.evaluate_value_with_stack(stack, project, left, None)?;
                     let right_value = self.evaluate_value_with_stack(
                         stack,
@@ -2300,7 +2172,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::NotEquals => {
-                    check_type(expression, expected_type, &AcornType::Bool)?;
+                    AcornType::Bool.check_eq(expression, expected_type)?;
                     let left_value = self.evaluate_value_with_stack(stack, project, left, None)?;
                     let right_value = self.evaluate_value_with_stack(
                         stack,
@@ -2315,7 +2187,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::And => {
-                    check_type(expression, expected_type, &AcornType::Bool)?;
+                    AcornType::Bool.check_eq(expression, expected_type)?;
                     let left_value = self.evaluate_value_with_stack(
                         stack,
                         project,
@@ -2335,7 +2207,7 @@ impl BindingMap {
                     ))
                 }
                 TokenType::Or => {
-                    check_type(expression, expected_type, &AcornType::Bool)?;
+                    AcornType::Bool.check_eq(expression, expected_type)?;
                     let left_value = self.evaluate_value_with_stack(
                         stack,
                         project,
@@ -2401,7 +2273,7 @@ impl BindingMap {
                                 actual_arguments,
                                 &self.proof_scope,
                             )?;
-                            check_type(expression, expected_type, &instance.get_type())?;
+                            instance.check_type(expression, expected_type)?;
                             return Ok(PotentialValue::Resolved(instance));
                         }
                         arguments
@@ -2445,7 +2317,7 @@ impl BindingMap {
                         self.evaluate_value_with_stack(stack, project, arg_expr, Some(arg_type))?;
                     // Some expression forms do not use the expectation while evaluating.
                     // Enforce the argument type at the application boundary as well.
-                    check_type(*arg_expr, Some(arg_type), &arg.get_type())?;
+                    arg.check_type(*arg_expr, Some(arg_type))?;
                     args.push(arg);
                 }
                 check_type(
@@ -2485,7 +2357,7 @@ impl BindingMap {
                 {
                     // We could check this before creating the value rather than afterwards.
                     // It seems theoretically faster but I'm not sure if there's any reason to.
-                    check_type(token, expected_type, &ret_val.as_ref().unwrap().get_type())?;
+                    ret_val.as_ref().unwrap().check_type(token, expected_type)?;
                 }
                 ret_val
             }
@@ -2719,7 +2591,7 @@ impl BindingMap {
                         .error("the termination checker could not prove that this terminates"));
                 }
             }
-            check_type(value_expr, Some(&value_type), &value.get_type())?;
+            value.check_type(value_expr, Some(&value_type))?;
             AcornValue::new_lambda(arg_types.clone(), value.clone())
                 .validate()
                 .map_err(|message| value_expr.error(&message))?;
