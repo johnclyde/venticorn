@@ -1534,6 +1534,17 @@ impl Environment {
         Ok(())
     }
 
+    fn add_instance_statement(
+        &mut self,
+        _project: &mut Project,
+        statement: &Statement,
+        _instance: &crate::statement::InstanceStatement,
+    ) -> compilation::Result<()> {
+        Err(statement
+            .first_token
+            .error("instance declarations are not supported yet"))
+    }
+
     // Adds a statement to the environment.
     // If the statement has a body, this call creates a sub-environment and adds the body
     // to that sub-environment.
@@ -1881,6 +1892,10 @@ impl Environment {
             }
 
             StatementInfo::Typeclass(ts) => self.add_typeclass_statement(project, statement, ts),
+
+            StatementInfo::Instance(instance) => {
+                self.add_instance_statement(project, statement, instance)
+            }
 
             StatementInfo::Match(ms) => {
                 let scrutinee = self.bindings.evaluate_value(project, &ms.scrutinee, None)?;
