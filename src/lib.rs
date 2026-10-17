@@ -33,6 +33,7 @@ pub mod pattern_tree;
 pub mod persistent_cache;
 pub mod project;
 pub mod proof;
+pub mod proof_scope;
 pub mod proof_step;
 pub mod proposition;
 pub mod prover;

@@ -1,6 +1,6 @@
 // Modified for Venticorn.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, Range};
 
@@ -2109,6 +2109,23 @@ impl Environment {
                 Err(e) => return Err(e),
             }
         }
+    }
+
+    // Every module imported anywhere in this file contributes to proof identity,
+    // including imports local to a nested proof. This inventory does not grant
+    // any fact visibility outside the lexical scope of its import.
+    pub(crate) fn proof_dependencies(&self) -> Vec<ModuleId> {
+        fn collect(env: &Environment, dependencies: &mut BTreeSet<ModuleId>) {
+            dependencies.extend(env.bindings.direct_dependencies());
+            for node in &env.nodes {
+                if let Some(block) = &node.block {
+                    collect(&block.env, dependencies);
+                }
+            }
+        }
+        let mut dependencies = BTreeSet::new();
+        collect(self, &mut dependencies);
+        dependencies.into_iter().collect()
     }
 
     // Get all facts that this environment exports.

@@ -3,6 +3,7 @@ use crate::acorn_value::AcornValue;
 use crate::goal::{Goal, GoalContext};
 use crate::module::{ModuleHash, ModuleRef};
 use crate::project::ModuleFingerprint;
+use crate::proof_scope::ProofScope;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 // Advisory source selections, never evidence that a current goal is verified.
@@ -20,6 +21,7 @@ pub(crate) struct CachedGoal {
     full_range: (u32, u32),
     context_end: u32,
     inconsistency_okay: bool,
+    proof_scope: ProofScope,
 }
 
 impl CachedGoal {
@@ -31,6 +33,7 @@ impl CachedGoal {
             full_range: (goal.first_line, goal.last_line),
             context_end: goal.cache_last_line,
             inconsistency_okay: goal.inconsistency_okay,
+            proof_scope: goal.proof_scope.clone(),
         }
     }
 
@@ -41,6 +44,7 @@ impl CachedGoal {
             && self.full_range == (goal.first_line, goal.last_line)
             && self.context_end == goal.cache_last_line
             && self.inconsistency_okay == goal.inconsistency_okay
+            && self.proof_scope == goal.proof_scope
     }
 }
 
@@ -80,6 +84,21 @@ impl CachedModule {
 
     pub fn verified(&self) -> &[(u32, u32)] {
         &self.verified
+    }
+
+    // Full reuse and persistence must validate the actual completed obligations,
+    // not relabel an old range list with the current goal policy.
+    pub(crate) fn matches_goals(&self, expected: &[GoalContext]) -> bool {
+        self.goals.len() == expected.len()
+            && self.verified.len() == expected.len()
+            && self
+                .goals
+                .iter()
+                .zip(&self.verified)
+                .zip(expected)
+                .all(|((cached, range), goal)| {
+                    *range == (goal.first_line, goal.last_line) && cached.matches(goal)
+                })
     }
 }
 
@@ -142,10 +161,10 @@ impl BuildCache {
         &self,
         module: &ModuleRef,
         hash: Option<&ModuleHash>,
-        expected: &[(u32, u32)],
+        expected: &[GoalContext],
     ) -> bool {
         self.get(module)
-            .is_some_and(|cached| Some(&cached.hash) == hash && cached.verified == expected)
+            .is_some_and(|cached| Some(&cached.hash) == hash && cached.matches_goals(expected))
     }
 
     pub(crate) fn matches_prefix(
@@ -194,6 +213,8 @@ mod tests {
     use super::*;
     use crate::builder::Builder;
     use crate::project::Project;
+    use crate::proof_scope::MembershipKey;
+    use std::sync::Arc;
 
     #[test]
     fn prefix_lookup_rejects_changed_obligation_or_policy_even_with_same_source() {
@@ -216,6 +237,89 @@ mod tests {
             proposition.value = AcornValue::Bool(false);
         }
         assert!(!cache.matches_prefix(&module, hash, &goal, 0));
+    }
+
+    #[test]
+    fn whole_prefix_and_publication_checks_reject_changed_scope_with_identical_source() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem identity { true }\n");
+        let cache = project.sync_build_report().cache.unwrap();
+        let module = ModuleRef::Name("main".into());
+        let env = project.get_env_by_ref(&module).unwrap();
+        let current_goal = || env.iter_goals().next().unwrap().goal_context().unwrap();
+        let hash = project.get_module_hash(env.module_id).unwrap();
+        let cached = cache.get(&module).unwrap();
+        let goal = current_goal();
+        assert!(cached.matches_goals(std::slice::from_ref(&goal)));
+        assert!(cache.matches(&module, Some(hash), std::slice::from_ref(&goal)));
+        assert!(cache.matches_prefix(&module, hash, &goal, 0));
+        let membership = MembershipKey {
+            data_module: env.module_id,
+            data_name: "Item".into(),
+            class_module: env.module_id,
+            class_name: "Magma".into(),
+        };
+        for field in 0..5 {
+            let mut changed = current_goal();
+            match field {
+                0 => {
+                    Arc::make_mut(&mut changed.proof_scope.memberships).insert(membership.clone());
+                }
+                1 => {
+                    Arc::make_mut(&mut changed.proof_scope.denied_memberships)
+                        .insert(membership.clone());
+                }
+                2 => Arc::make_mut(&mut changed.proof_scope.imports).push(env.module_id),
+                3 => changed.inconsistency_okay = !changed.inconsistency_okay,
+                _ => changed.goal = Goal::Solve(changed.goal.value().clone(), changed.goal.range()),
+            }
+            let expected = std::slice::from_ref(&changed);
+            assert!(!cached.matches_goals(expected), "field {field}");
+            assert!(
+                !cache.matches(&module, Some(hash), expected),
+                "field {field}"
+            );
+            assert!(
+                !cache.matches_prefix(&module, hash, &changed, 0),
+                "field {field}"
+            );
+        }
+        assert!(!cached.matches_goals(&[]));
+        let mut incomplete = cache.clone();
+        incomplete.modules.get_mut(&module).unwrap().goals.clear();
+        assert!(!incomplete.matches(&module, Some(hash), &[current_goal()]));
+        let mut stale_range = cache;
+        stale_range.modules.get_mut(&module).unwrap().verified[0] = (0, 1);
+        assert!(!stale_range.matches(&module, Some(hash), &[current_goal()]));
+    }
+
+    #[test]
+    fn dataset_replacement_retains_advice_only_for_equal_scope() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem identity { true }\n");
+        let mut original = project.sync_build_report().cache.unwrap();
+        let module = ModuleRef::Name("main".into());
+        let premises = BTreeMap::from([(
+            "identity".to_owned(),
+            PremiseSet::from([(module.clone(), BTreeSet::from(["prior".to_owned()]))]),
+        )]);
+        original.modules.get_mut(&module).unwrap().theorem_premises = premises.clone();
+        for change_scope in [false, true] {
+            let mut previous = original.clone();
+            let mut completed = original.clone();
+            let replacement = completed.modules.get_mut(&module).unwrap();
+            replacement.theorem_premises.clear();
+            if change_scope {
+                Arc::make_mut(&mut replacement.goals[0].proof_scope.imports).push(99);
+            }
+            previous.merge_completed(&completed);
+            let retained = previous.get(&module).unwrap().theorem_premises();
+            if change_scope {
+                assert!(retained.is_empty());
+            } else {
+                assert_eq!(retained, &premises);
+            }
+        }
     }
 
     #[test]

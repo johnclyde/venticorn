@@ -11,6 +11,7 @@ use crate::compilation::{self, Error, ErrorSource};
 use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::project::Project;
+use crate::proof_scope::ProofScope;
 use crate::termination_checker::TerminationChecker;
 use crate::token::{self, Token, TokenIter, TokenType};
 
@@ -85,6 +86,7 @@ pub struct BindingMap {
     // Successfully admitted concrete implementations, keyed by canonical local data
     // name and canonical class. This records declarations, not bound membership.
     instance_scopes: HashMap<(String, Typeclass), String>,
+    proof_scope: ProofScope,
 
     // Formatting metadata only; evaluation always consults the canonical owner.
     imported_instance_members: HashMap<(ModuleId, String), Typeclass>,
@@ -358,6 +360,7 @@ impl BindingMap {
             typeclass_definitions: HashMap::new(),
             typeclass_to_name: HashMap::new(),
             instance_scopes: HashMap::new(),
+            proof_scope: ProofScope::default(),
             imported_instance_members: HashMap::new(),
             identifier_to_type: BTreeMap::new(),
             constant_info: BTreeMap::new(),
@@ -591,7 +594,13 @@ impl BindingMap {
         self.instance_scopes.values().any(|value| value == scope)
     }
 
+    pub fn proof_scope(&self) -> &ProofScope {
+        &self.proof_scope
+    }
+
     pub(crate) fn add_instance_scope(&mut self, target: &str, class: Typeclass, scope: String) {
+        self.proof_scope
+            .record_instance(self.module, target, &class);
         assert!(!self.instance_scope_in_use(&scope));
         assert!(self
             .instance_scopes
@@ -776,9 +785,11 @@ impl BindingMap {
         }
         self.name_to_module.insert(name.to_string(), module);
         self.module_to_name.insert(module, name.to_string());
+        self.proof_scope.import(module);
     }
 
     pub(crate) fn import_instance_members(&mut self, owner: &BindingMap) {
+        self.proof_scope.include_memberships(&owner.proof_scope);
         for ((_, class), scope) in &owner.instance_scopes {
             if owner.get_constant_value(scope).is_some() {
                 continue;
