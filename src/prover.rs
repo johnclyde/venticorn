@@ -18,7 +18,6 @@ use crate::goal::{Goal, GoalContext};
 use crate::interfaces::{ClauseInfo, InfoResult, Location, ProofStepInfo};
 use crate::literal::Literal;
 use crate::module::ModuleId;
-use crate::monomorphizer::Monomorphizer;
 use crate::normalizer::{Normalization, NormalizationError, Normalizer};
 use crate::passive_set::PassiveSet;
 use crate::project::Project;
@@ -35,9 +34,6 @@ pub struct Prover {
     // The normalizer is used when we are turning the facts and goals from the environment into
     // clauses that we can use internally.
     normalizer: Normalizer,
-
-    // The monomorphizer turns possibly-polymorphic facts into monomorphic facts that we use internally.
-    monomorphizer: Monomorphizer,
 
     // The "active" clauses are the ones we use for reasoning.
     active_set: ActiveSet,
@@ -134,8 +130,7 @@ impl Prover {
         Prover {
             scope: scope.clone(),
             explicit_scope: true,
-            normalizer: Normalizer::new(),
-            monomorphizer: Monomorphizer::with_scope(scope),
+            normalizer: Normalizer::with_scope(scope),
             active_set: ActiveSet::new(),
             passive_set: PassiveSet::new(),
             verbose,
@@ -155,8 +150,7 @@ impl Prover {
     // Add a fact to the prover.
     // The fact can be either polymorphic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
-        self.monomorphizer.add_fact(fact);
-        for fact in self.monomorphizer.take_facts() {
+        for fact in self.normalizer.monomorphize_fact(fact) {
             self.add_monomorphic_fact(fact);
         }
     }
@@ -212,8 +206,7 @@ impl Prover {
         // Use that same value for fact demand and for the counterfactual assumption.
         let goal_value = goal_context.goal.value();
         assert!(!goal_value.is_generic());
-        self.monomorphizer.add_monomorphs(&goal_value);
-        for fact in self.monomorphizer.take_facts() {
+        for fact in self.normalizer.monomorphize_for_value(&goal_value) {
             self.add_monomorphic_fact(fact);
         }
 
