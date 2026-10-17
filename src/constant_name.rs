@@ -29,6 +29,17 @@ impl fmt::Display for LocalConstantName {
 }
 
 impl LocalConstantName {
+    // Compatibility for old raw constructors: only an exact one-dot member is classified.
+    // A multi-part spelling cannot establish a canonical instance class owner.
+    pub(crate) fn from_legacy(name: &str) -> Self {
+        if let Some((owner, member)) = name.split_once('.') {
+            if !owner.is_empty() && !member.is_empty() && !member.contains('.') {
+                return Self::attribute(owner, member);
+            }
+        }
+        Self::unqualified(name)
+    }
+
     pub fn unqualified(name: &str) -> Self {
         Self::Unqualified(name.to_string())
     }

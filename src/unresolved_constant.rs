@@ -1,14 +1,13 @@
 use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
-use crate::module::ModuleId;
+use crate::constant_name::GlobalConstantName;
 use crate::proof_scope::ProofScope;
 
 // A generic declaration whose type arguments have not been inferred yet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnresolvedConstant {
-    pub(crate) module_id: ModuleId,
-    pub(crate) name: String,
+    pub(crate) name: GlobalConstantName,
     // Complete formal parameters remain in declaration order, including phantom bounds.
     pub(crate) params: Vec<TypeParam>,
     pub(crate) generic_type: AcornType,
@@ -18,7 +17,7 @@ impl UnresolvedConstant {
     // Keep every declared formal as a variable, including bounds and phantom parameters.
     pub fn to_generic_value(self) -> AcornValue {
         let params = self.params.into_iter().map(AcornType::Variable).collect();
-        AcornValue::constant(self.module_id, self.name, params, self.generic_type)
+        AcornValue::constant_named(self.name, params, self.generic_type)
     }
 
     pub(crate) fn resolve(
@@ -49,8 +48,7 @@ impl UnresolvedConstant {
             .map(|(formal, actual)| (formal.name.clone(), actual.clone()))
             .collect::<Vec<_>>();
         let instance_type = self.generic_type.instantiate(&substitutions);
-        Ok(AcornValue::constant(
-            self.module_id,
+        Ok(AcornValue::constant_named(
             self.name.clone(),
             actuals,
             instance_type,

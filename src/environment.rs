@@ -530,9 +530,8 @@ impl Environment {
                             && constant.name == name
                             && constant.params.is_empty()
                         {
-                            Some(AcornValue::constant(
-                                constant.module_id,
-                                constant.name.clone(),
+                            Some(AcornValue::constant_named(
+                                GlobalConstantName::new(self.module_id, constant_name.clone()),
                                 self.scoped_type_params(class_params)
                                     .into_iter()
                                     .map(AcornType::Variable)
@@ -774,8 +773,11 @@ impl Environment {
             None,
             None,
         );
-        let function_constant =
-            AcornValue::constant(self.module_id, fss.name.clone(), vec![], function_type);
+        let function_constant = AcornValue::constant_named(
+            GlobalConstantName::new(self.module_id, LocalConstantName::unqualified(&fss.name)),
+            vec![],
+            function_type,
+        );
         let function_term = AcornValue::apply(
             function_constant.clone(),
             arg_types

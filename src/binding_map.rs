@@ -343,7 +343,9 @@ impl BindingMap {
             {
                 let alias = &info.value;
                 let canonical = match alias {
-                    PotentialValue::Unresolved(c) => Some((c.module_id, c.name.clone())),
+                    PotentialValue::Unresolved(c) => {
+                        Some((c.name.module_id, c.name.local_name.to_string()))
+                    }
                     PotentialValue::Resolved(v) => v
                         .as_simple_constant()
                         .map(|(id, name)| (id, name.to_owned())),
@@ -833,7 +835,7 @@ impl BindingMap {
         constructor: Option<(AcornType, usize, usize)>,
     ) {
         self.add_constant_named(
-            &LocalConstantName::unqualified(name),
+            &LocalConstantName::from_legacy(name),
             params,
             constant_type,
             definition,
@@ -904,7 +906,11 @@ impl BindingMap {
                 "generic definition cannot capture arbitrary types"
             );
         }
-        let value = PotentialValue::constant(self.module, name, constant_type, params);
+        let value = PotentialValue::constant_named(
+            GlobalConstantName::new(self.module, local_name.clone()),
+            constant_type,
+            params,
+        );
         self.record_constant_name(local_name, name);
 
         let info = ConstantInfo {
@@ -2025,10 +2031,7 @@ impl BindingMap {
             NamedEntity::Unresolved(unresolved) => {
                 self.add_alias_named(
                     &LocalConstantName::unqualified(name_token.text()),
-                    GlobalConstantName::new(
-                        unresolved.module_id,
-                        LocalConstantName::unqualified(&unresolved.name),
-                    ),
+                    unresolved.name.clone(),
                     PotentialValue::Unresolved(unresolved),
                 );
                 Ok(())
@@ -2617,7 +2620,7 @@ impl BindingMap {
         Option<AcornValue>,
         AcornType,
     )> {
-        let function_name = function_name.map(LocalConstantName::unqualified);
+        let function_name = function_name.map(LocalConstantName::from_legacy);
         self.evaluate_scoped_value_named(
             project,
             type_params,
@@ -3727,8 +3730,9 @@ mod constant_metadata_tests {
             panic!("phantom parameters must remain unresolved");
         };
         assert_eq!(value.params, params);
-        assert_eq!(value.module_id, FIRST_NORMAL);
-        assert_eq!(value.name, "State.Marked.flag");
+        assert_eq!(value.name.module_id, FIRST_NORMAL);
+        assert_eq!(value.name.local_name, name);
+        assert_eq!(value.name.local_name.to_string(), "State.Marked.flag");
         assert_eq!(value.generic_type, AcornType::Bool);
         assert!(bindings.get_constant_value_named(&name).is_none());
     }

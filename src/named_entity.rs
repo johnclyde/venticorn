@@ -46,7 +46,7 @@ impl NamedEntity {
         match self {
             NamedEntity::Unresolved(unresolved) => Err(source.error(&format!(
                 "value {} requires type arguments",
-                unresolved.name
+                unresolved.name.local_name
             ))),
             NamedEntity::Value(value) => {
                 value.check_type(source, expected_type)?;
@@ -69,7 +69,7 @@ impl NamedEntity {
         match self {
             NamedEntity::Unresolved(unresolved) => Err(source.error(&format!(
                 "value {} requires type arguments",
-                unresolved.name
+                unresolved.name.local_name
             ))),
             NamedEntity::Value(_) => {
                 Err(source.error("name refers to a value but we expected a type"))
