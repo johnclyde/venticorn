@@ -411,8 +411,8 @@ impl Environment {
                     .name_token
                     .error("generic member cannot capture arbitrary types"));
             }
-            self.bindings.add_constant(
-                &name,
+            self.bindings.add_constant_named(
+                &constant_name,
                 self.scoped_type_params(class_params),
                 constant_type,
                 definition,
@@ -437,7 +437,7 @@ impl Environment {
         }
 
         self.bindings
-            .add_constant(&name, vec![], acorn_type, value, None);
+            .add_constant_named(&constant_name, vec![], acorn_type, value, None);
         self.definition_ranges.insert(name.clone(), range);
         self.add_identity_props(project, &name);
         Ok(())
@@ -484,14 +484,14 @@ impl Environment {
 
         // Calculate the function value
         let (param_names, _, arg_types, unbound_value, value_type) =
-            self.bindings.evaluate_scoped_value(
+            self.bindings.evaluate_scoped_value_named(
                 project,
                 &ds.type_params,
                 &ds.args,
                 Some(&ds.return_type),
                 &ds.return_value,
                 self_type,
-                Some(&name),
+                Some(&constant_name),
             )?;
 
         if let Some(class_type) = self_type {
@@ -554,8 +554,13 @@ impl Environment {
             }
             self.scoped_type_params(class_params)
         };
-        self.bindings
-            .add_constant(&name, param_names, constant_type, definition, None);
+        self.bindings.add_constant_named(
+            &constant_name,
+            param_names,
+            constant_type,
+            definition,
+            None,
+        );
 
         self.definition_ranges.insert(name.clone(), range);
         self.add_identity_props(project, &name);
@@ -584,15 +589,16 @@ impl Environment {
             end: ts.claim_right_brace.end_pos(),
         };
 
-        let (type_params, arg_names, arg_types, value, _) = self.bindings.evaluate_scoped_value(
-            project,
-            &ts.type_params,
-            &ts.args,
-            None,
-            &ts.claim,
-            None,
-            None,
-        )?;
+        let (type_params, arg_names, arg_types, value, _) =
+            self.bindings.evaluate_scoped_value_named(
+                project,
+                &ts.type_params,
+                &ts.args,
+                None,
+                &ts.claim,
+                None,
+                None,
+            )?;
 
         let unbound_claim = value.ok_or_else(|| ts.claim.error("theorems must have values"))?;
 
@@ -632,8 +638,8 @@ impl Environment {
                 return Err(statement.error("theorem name conflicts with a parameter"));
             }
             let lambda_claim = AcornValue::lambda(arg_types, unbound_claim);
-            staged.bindings.add_constant(
-                name,
+            staged.bindings.add_constant_named(
+                &LocalConstantName::unqualified(name),
                 type_params.clone(),
                 lambda_claim.get_type(),
                 Some(lambda_claim),
@@ -718,15 +724,16 @@ impl Environment {
         self.definition_ranges
             .insert(fss.name.clone(), definition_range);
 
-        let (_, mut arg_names, mut arg_types, condition, _) = self.bindings.evaluate_scoped_value(
-            project,
-            &[],
-            &fss.declarations,
-            None,
-            &fss.condition,
-            None,
-            None,
-        )?;
+        let (_, mut arg_names, mut arg_types, condition, _) =
+            self.bindings.evaluate_scoped_value_named(
+                project,
+                &[],
+                &fss.declarations,
+                None,
+                &fss.condition,
+                None,
+                None,
+            )?;
 
         let unbound_condition = condition.ok_or_else(|| statement.error("missing condition"))?;
         if unbound_condition.get_type() != AcornType::Bool {
@@ -761,8 +768,13 @@ impl Environment {
 
         // We define this function not with an equality, but via the condition.
         let function_type = AcornType::functional(arg_types.clone(), return_type);
-        self.bindings
-            .add_constant(&fss.name, vec![], function_type.clone(), None, None);
+        self.bindings.add_constant_named(
+            &LocalConstantName::unqualified(&fss.name),
+            vec![],
+            function_type.clone(),
+            None,
+            None,
+        );
         let function_constant =
             AcornValue::constant(self.module_id, fss.name.clone(), vec![], function_type);
         let function_term = AcornValue::apply(
@@ -902,8 +914,8 @@ impl Environment {
         for (member_fn_name, field_type) in member_fn_names.iter().zip(&field_types) {
             let member_fn_type =
                 AcornType::functional(vec![struct_type.clone()], field_type.clone());
-            self.bindings.add_constant(
-                &member_fn_name.to_string(),
+            self.bindings.add_constant_named(
+                &member_fn_name,
                 self.scoped_type_params(&param_names),
                 member_fn_type.parametrize(self.module_id, &param_names),
                 None,
@@ -918,8 +930,8 @@ impl Environment {
         // A "new" function to create one of these struct types.
         let new_fn_name = LocalConstantName::attribute(&ss.name, "new");
         let new_fn_type = AcornType::functional(field_types.clone(), struct_type.clone());
-        self.bindings.add_constant(
-            &new_fn_name.to_string(),
+        self.bindings.add_constant_named(
+            &new_fn_name,
             self.scoped_type_params(&param_names),
             new_fn_type.parametrize(self.module_id, &param_names),
             None,
@@ -1121,8 +1133,8 @@ impl Environment {
         let total = constructors.len();
         for (i, (constructor_name, type_list)) in constructors.iter().enumerate() {
             let constructor_type = AcornType::functional(type_list.clone(), inductive_type.clone());
-            self.bindings.add_constant(
-                &constructor_name.to_string(),
+            self.bindings.add_constant_named(
+                constructor_name,
                 vec![],
                 constructor_type,
                 None,
@@ -1320,8 +1332,8 @@ impl Environment {
         // The lambda form is the functional form, which we bind in the environment.
         let name = format!("{}.induction", is.name);
         let lambda_claim = AcornValue::lambda(vec![hyp_type.clone()], unbound_claim.clone());
-        self.bindings.add_constant(
-            &name,
+        self.bindings.add_constant_named(
+            &LocalConstantName::attribute(&is.name, "induction"),
             vec![],
             lambda_claim.get_type(),
             Some(lambda_claim),
@@ -1535,13 +1547,9 @@ impl Environment {
             conditions: Default::default(),
         };
         for (name, member_type) in members {
-            staged.bindings.add_constant(
-                &name.to_string(),
-                params.clone(),
-                member_type,
-                None,
-                None,
-            );
+            staged
+                .bindings
+                .add_constant_named(&name, params.clone(), member_type, None, None);
         }
         for condition in &ts.conditions {
             let name = condition.name.text();
@@ -1559,7 +1567,7 @@ impl Environment {
                 start: condition.name.start_pos(),
                 end: condition.claim.last_token().end_pos(),
             };
-            let (_, _, arg_types, value, _) = staged.bindings.evaluate_scoped_value(
+            let (_, _, arg_types, value, _) = staged.bindings.evaluate_scoped_value_named(
                 project,
                 &[],
                 &condition.args,
@@ -1588,8 +1596,8 @@ impl Environment {
             definition
                 .validate()
                 .map_err(|error| condition.claim.error(&error))?;
-            staged.bindings.add_constant(
-                &full_name,
+            staged.bindings.add_constant_named(
+                &constant_name,
                 params.clone(),
                 definition.get_type(),
                 Some(definition.clone()),
@@ -1665,8 +1673,13 @@ impl Environment {
 
         // Define the quantifiers as constants
         for (quant_name, quant_type) in quant_names.iter().zip(quant_types.iter()) {
-            self.bindings
-                .add_constant(quant_name, vec![], quant_type.clone(), None, None);
+            self.bindings.add_constant_named(
+                &LocalConstantName::unqualified(quant_name),
+                vec![],
+                quant_type.clone(),
+                None,
+                None,
+            );
             self.definition_ranges
                 .insert(quant_name.clone(), statement.range());
         }

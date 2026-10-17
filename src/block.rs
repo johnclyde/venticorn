@@ -10,6 +10,7 @@ use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
+use crate::constant_name::LocalConstantName;
 use crate::environment::{Environment, LineType};
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
@@ -127,9 +128,13 @@ impl Block {
         // Inside the block, the arguments are constants.
         for (arg_name, generic_arg_type) in &args {
             let specific_arg_type = generic_arg_type.instantiate(&param_pairs);
-            subenv
-                .bindings
-                .add_constant(&arg_name, vec![], specific_arg_type, None, None);
+            subenv.bindings.add_constant_named(
+                &LocalConstantName::unqualified(&arg_name),
+                vec![],
+                specific_arg_type,
+                None,
+                None,
+            );
         }
 
         let goal = match params {
@@ -215,9 +220,13 @@ impl Block {
                 // Each pattern variable is a local constant constrained by this case.
                 let mut arg_values = vec![];
                 for (arg_name, arg_type) in pattern_args {
-                    subenv
-                        .bindings
-                        .add_constant(&arg_name, vec![], arg_type, None, None);
+                    subenv.bindings.add_constant_named(
+                        &LocalConstantName::unqualified(&arg_name),
+                        vec![],
+                        arg_type,
+                        None,
+                        None,
+                    );
                     arg_values.push(
                         subenv
                             .bindings
