@@ -22,15 +22,15 @@ fn class_headers_validate_names_without_leaking_temporary_types() {
     for (source, expected) in [
         (
             "typeclass Existing: Magma {\n value: Bool\n}",
-            "Existing already defined",
+            "name Existing is already in use",
         ),
         (
             "typeclass M: Existing {\n value: M\n}",
-            "Existing already defined",
+            "name Existing is already in use",
         ),
         (
             "typeclass M: Reserved {\n value: M\n}",
-            "Reserved already defined",
+            "name Reserved is already in use",
         ),
         ("typeclass M: M {\n value: M\n}", "names must be distinct"),
     ] {

@@ -554,6 +554,17 @@ impl BindingMap {
         self.name_in_use(name)
     }
 
+    pub fn check_typename_available(
+        &self,
+        source: &dyn ErrorSource,
+        name: &str,
+    ) -> compilation::Result<()> {
+        if self.typename_in_use(name) {
+            return Err(source.error(&format!("name {} is already in use", name)));
+        }
+        Ok(())
+    }
+
     fn insert_type_name(&mut self, name: String, acorn_type: AcornType) {
         assert!(!self.name_in_use(&name), "type name {} already bound", name);
         self.record_name(&name);
