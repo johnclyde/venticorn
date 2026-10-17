@@ -186,20 +186,12 @@ impl Environment {
             return;
         };
 
-        let constant_type_clone = self
-            .bindings
-            .get_type_for_constant_name(name)
-            .unwrap()
-            .clone();
+        let constant_type = self.bindings.get_type_for_constant_name(name).unwrap();
         let param_names = self.bindings.unresolved_params(name);
 
         let params = param_names.into_iter().map(AcornType::Variable).collect();
-        let constant = AcornValue::constant(
-            self.module_id,
-            name.to_string(),
-            params,
-            constant_type_clone,
-        );
+        let constant =
+            AcornValue::constant(self.module_id, name.to_string(), params, constant_type);
 
         let claim = if let AcornValue::Lambda(acorn_types, return_value) = definition {
             let args: Vec<_> = acorn_types
