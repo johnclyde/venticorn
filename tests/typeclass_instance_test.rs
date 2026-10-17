@@ -430,3 +430,32 @@ fn instance_rejects_undeclared_members() {
     assert!(!env.bindings.name_in_use("State.Magma.mul"));
     assert!(!env.bindings.name_in_use("State.Magma.add"));
 }
+
+#[test]
+fn instance_member_signatures_match_the_class() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+
+            inductive State {
+                clean
+                dirty
+            }
+            "#,
+    );
+    let nodes = env.nodes.len();
+    env.bad(
+        r#"
+            instance State: Magma {
+                define mul(self, other: State) -> Bool {
+                    true
+                }
+            }
+            "#,
+    );
+    assert_eq!(env.nodes.len(), nodes);
+    assert!(!env.bindings.name_in_use("State.Magma.mul"));
+}
