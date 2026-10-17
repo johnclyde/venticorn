@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use tower_lsp::lsp_types::Url;
 
-use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::active_set::ActiveSet;
 use crate::binding_map::BindingMap;
@@ -170,7 +169,7 @@ impl Prover {
             }
             _ => None,
         };
-        let clauses = match self.normalize_proposition(&fact.value, local) {
+        let clauses = match self.normalizer.normalize(&fact.value, local) {
             Normalization::Clauses(clauses) => clauses,
             Normalization::Impossible => {
                 // We have a false assumption, so we're done already.
@@ -238,17 +237,6 @@ impl Prover {
                 }
             },
         }
-    }
-
-    fn normalize_proposition(&mut self, proposition: &AcornValue, local: bool) -> Normalization {
-        if let Err(e) = proposition.validate() {
-            return Normalization::Error(format!(
-                "validation error: {} while normalizing: {}",
-                e, proposition
-            ));
-        }
-        assert_eq!(proposition.get_type(), AcornType::Bool);
-        self.normalizer.normalize(proposition, local)
     }
 
     pub fn iter_active_steps(&self) -> impl Iterator<Item = (usize, &ProofStep)> {
