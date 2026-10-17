@@ -617,3 +617,21 @@ fn forbid_class_on_alias_849() {
     assert_eq!(error.range().start.line, 3);
     assert!(!env.bindings.name_in_use("Bar.b"));
 }
+
+#[test]
+fn forbid_class_on_alias_850() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            type Foo: axiom
+            type Bar: Foo
+            "#,
+    );
+    env.bad(
+        r#"
+            class Bar {
+                let b: Bool = true
+            }
+            "#,
+    );
+}

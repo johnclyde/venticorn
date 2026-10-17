@@ -1413,6 +1413,26 @@ impl Environment {
             .collect()
     }
 
+    // Validate ownership before any class or instance member is introduced.
+    fn check_canonical_classname(
+        &self,
+        name_token: &Token,
+        potential: &PotentialType,
+    ) -> compilation::Result<()> {
+        let canonical = match potential {
+            PotentialType::Resolved(AcornType::Data(module, name, _)) => (*module, name),
+            PotentialType::Unresolved(t) => (t.module_id, &t.name),
+            _ => return Err(name_token.error("we can only bind members to data types")),
+        };
+        if canonical.0 != self.module_id {
+            return Err(name_token.error("we can only bind members to types in the current module"));
+        }
+        if canonical.1 != name_token.text() {
+            return Err(name_token.error("we cannot bind members to type aliases"));
+        }
+        Ok(())
+    }
+
     fn add_class_statement(
         &mut self,
         project: &mut Project,
@@ -1428,25 +1448,7 @@ impl Environment {
                 cs.name_token
                     .error(&format!("undefined type name '{}'", cs.name))
             })?;
-        let canonical = match &potential {
-            PotentialType::Resolved(AcornType::Data(module, name, _)) => (*module, name),
-            PotentialType::Unresolved(t) => (t.module_id, &t.name),
-            _ => {
-                return Err(cs
-                    .name_token
-                    .error("we can only bind members to data types"))
-            }
-        };
-        if canonical.0 != self.module_id {
-            return Err(cs
-                .name_token
-                .error("we can only bind members to types in the current module"));
-        }
-        if canonical.1 != &cs.name {
-            return Err(cs
-                .name_token
-                .error("we cannot bind members to type aliases"));
-        }
+        self.check_canonical_classname(&cs.name_token, &potential)?;
         let declared = match &potential {
             PotentialType::Unresolved(family) => family.params.as_slice(),
             _ => &[],
