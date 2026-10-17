@@ -80,6 +80,10 @@ pub struct BindingMap {
     typeclass_names: BTreeMap<String, Typeclass>,
     reverse_typeclass_names: HashMap<Typeclass, String>,
 
+    // Successfully admitted concrete implementations, keyed by canonical local data
+    // name and canonical class. This records declarations, not bound membership.
+    instance_scopes: HashMap<(String, Typeclass), String>,
+
     // Maps an identifier name to its type.
     // Has entries for both defined constants and aliases. Pending generic aliases
     // retain the signature in declaration parameters, before actuals are supplied.
@@ -337,6 +341,7 @@ impl BindingMap {
             generic_type_aliases: HashMap::new(),
             typeclass_names: BTreeMap::new(),
             reverse_typeclass_names: HashMap::new(),
+            instance_scopes: HashMap::new(),
             identifier_types: BTreeMap::new(),
             constants: BTreeMap::new(),
             aliases: HashMap::new(),
@@ -506,6 +511,57 @@ impl BindingMap {
         self.reverse_typeclass_names
             .get(typeclass)
             .map(String::as_str)
+    }
+
+    // Derive required signatures from the defining module's checked declarations.
+    // Concrete substitution here prepares an implementation type, not a public
+    // class-member application or evidence that the target satisfies the bound.
+    pub(crate) fn instance_member_types(
+        &self,
+        class: &Typeclass,
+        target: &AcornType,
+    ) -> Option<BTreeMap<String, AcornType>> {
+        if class.module_id != self.module || self.get_typeclass_for_name(&class.name) != Some(class)
+        {
+            return None;
+        }
+        let prefix = format!("{}.", class.name);
+        let mut members = BTreeMap::new();
+        for (name, info) in &self.constants {
+            let Some(member) = name.strip_prefix(&prefix) else {
+                continue;
+            };
+            let [formal] = info.params.as_slice() else {
+                return None;
+            };
+            if formal.typeclass.as_ref() != Some(class) {
+                return None;
+            }
+            let generic_type = self.identifier_types.get(name)?;
+            members.insert(
+                member.to_string(),
+                generic_type.instantiate(&[(formal.name.clone(), target.clone())]),
+            );
+        }
+        Some(members)
+    }
+
+    pub(crate) fn instance_scope(&self, target: &str, class: &Typeclass) -> Option<&str> {
+        self.instance_scopes
+            .get(&(target.to_string(), class.clone()))
+            .map(String::as_str)
+    }
+
+    pub(crate) fn instance_scope_in_use(&self, scope: &str) -> bool {
+        self.instance_scopes.values().any(|value| value == scope)
+    }
+
+    pub(crate) fn add_instance_scope(&mut self, target: &str, class: Typeclass, scope: String) {
+        assert!(!self.instance_scope_in_use(&scope));
+        assert!(self
+            .instance_scopes
+            .insert((target.to_string(), class), scope)
+            .is_none());
     }
 
     // Look up a constant without treating a pending generic declaration as a proof value.
