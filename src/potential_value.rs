@@ -51,6 +51,14 @@ impl PotentialValue {
         }
     }
 
+    // Complete declaration-order formals, including parameters absent from the signature.
+    pub fn unresolved_params(&self) -> &[TypeParam] {
+        match self {
+            Self::Unresolved(value) => &value.params,
+            Self::Resolved(_) => &[],
+        }
+    }
+
     pub fn value(self, source: &dyn ErrorSource) -> compilation::Result<AcornValue> {
         match self {
             PotentialValue::Resolved(value) => Ok(value),
