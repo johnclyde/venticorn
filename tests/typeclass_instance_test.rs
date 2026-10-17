@@ -336,3 +336,37 @@ fn concrete_instance_implementation_body_is_admitted() {
             "#,
     );
 }
+
+#[test]
+fn instance_requires_every_declared_member() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass B: Bimagma {
+                mul1: (B, B) -> B
+                mul2: (B, B) -> B
+            }
+
+            inductive State {
+                clean
+                dirty
+            }
+            "#,
+    );
+    let nodes = env.nodes.len();
+    let line = env.last_line();
+    env.bad(
+        r#"
+            instance State: Bimagma {
+                define mul1(self, other: State) -> State {
+                    State.clean
+                }
+            }
+            "#,
+    );
+    assert_eq!(env.nodes.len(), nodes);
+    assert_eq!(env.last_line(), line);
+    assert!(!env.bindings.name_in_use("State.Bimagma.mul1"));
+    assert!(!env.bindings.name_in_use("State.Bimagma.mul2"));
+    env.add("instance State: Bimagma {\n define mul1(self, other: State) -> State { self }\n define mul2(self, other: State) -> State { other }\n}");
+}
