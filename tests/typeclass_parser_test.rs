@@ -254,3 +254,18 @@ fn instance_keyword_preserves_identifier_boundaries_and_completion_order() {
     assert_eq!(tokens[2].token_type, TokenType::Identifier);
     assert_eq!(TokenType::Instance.generate().text(), "instance");
 }
+
+#[test]
+fn argument_free_typeclass_conditions_preserve_exact_formatting() {
+    let source = indoc::indoc! {"
+        typeclass T: MyTypeclass {
+            two_nonequal {
+                exists(x: T, y: T) { x != y }
+            }
+            always_a_third(x: T, y: Y) {
+                exists(z: T) { x != z and y != z }
+            }
+        }"};
+    let statement = Statement::parse_str(source).unwrap();
+    assert_eq!(statement.to_string(), source);
+}
