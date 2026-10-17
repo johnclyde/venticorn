@@ -265,7 +265,7 @@ impl Normalizer {
                             }
                         }
                     } else {
-                        self.constant_map.add_constant_key(c.key(), local)
+                        self.constant_map.add_constant_named(c.name.clone(), local)
                     };
                     Ok(Term::new(type_id, type_id, constant_atom, vec![]))
                 } else {
