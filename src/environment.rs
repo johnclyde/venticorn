@@ -185,7 +185,11 @@ impl Environment {
             return;
         };
 
-        let constant_type_clone = self.bindings.get_type_for_identifier(name).unwrap().clone();
+        let constant_type_clone = self
+            .bindings
+            .get_type_for_constant_name(name)
+            .unwrap()
+            .clone();
         let param_names = self.bindings.get_params(name);
 
         let params = param_names.into_iter().map(AcornType::Variable).collect();
@@ -1437,7 +1441,7 @@ impl Environment {
         self.add_other_lines(statement);
         let potential = self
             .bindings
-            .get_potential_type_for_name(&cs.name)
+            .get_type_for_typename(&cs.name)
             .cloned()
             .ok_or_else(|| {
                 cs.name_token
@@ -1766,7 +1770,7 @@ impl Environment {
         let name = instance.type_name.text();
         let potential = self
             .bindings
-            .get_potential_type_for_name(name)
+            .get_type_for_typename(name)
             .cloned()
             .ok_or_else(|| {
                 instance
