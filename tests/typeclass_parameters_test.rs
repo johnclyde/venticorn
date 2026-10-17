@@ -171,3 +171,111 @@ fn invalid_bounds_and_erased_theorem_formals_reject_without_publication() {
         assert_eq!(env.nodes.len(), nodes);
     }
 }
+
+#[test]
+fn evaluated_parameter_lists_keep_order_canonical_bounds_and_locations() {
+    use venticorn::project::Project;
+    let mut project = Project::new_mock();
+    for module in ["left", "right"] {
+        project.mock(
+            &format!("/mock/{module}.ac"),
+            "typeclass M: Magma {\n mul: (M, M) -> M\n}",
+        );
+    }
+    project.mock(
+        "/mock/main.ac",
+        "import left\nimport right\nlet occupied: Bool = true",
+    );
+    let id = project.expect_ok("main");
+    let bindings = &project.get_env_by_id(id).unwrap().bindings;
+    let declaration = Statement::parse_str(
+        "define choose<T: left.Magma, U: right.Magma, V>(value: T) -> T { value }",
+    )
+    .unwrap();
+    let StatementInfo::Define(definition) = declaration.statement else {
+        panic!()
+    };
+    let params = bindings
+        .evaluate_type_params(&project, &definition.type_params)
+        .unwrap();
+    assert_eq!(
+        params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        ["T", "U", "V"]
+    );
+    assert_ne!(params[0].typeclass, params[1].typeclass);
+    assert_eq!(params[0].typeclass.as_ref().unwrap().name, "Magma");
+    assert_eq!(params[1].typeclass.as_ref().unwrap().name, "Magma");
+    assert!(params[2].typeclass.is_none());
+    for (source, message, bound_error) in [
+        (
+            "define bad<T, T>(x: T) -> T { x }",
+            "duplicate type parameter",
+            false,
+        ),
+        (
+            "define bad<T, occupied>(x: T) -> T { x }",
+            "already defined",
+            false,
+        ),
+        (
+            "define bad<T, U: Bool>(x: T) -> T { x }",
+            "expected a typeclass",
+            true,
+        ),
+        (
+            "define bad<T, U: missing>(x: T) -> T { x }",
+            "unknown identifier",
+            true,
+        ),
+    ] {
+        let statement = Statement::parse_str(source).unwrap();
+        let StatementInfo::Define(definition) = statement.statement else {
+            panic!()
+        };
+        let last = definition.type_params.last().unwrap();
+        let expected = if bound_error {
+            last.typeclass.as_ref().unwrap().range()
+        } else {
+            last.name.range()
+        };
+        let error = bindings
+            .evaluate_type_params(&project, &definition.type_params)
+            .unwrap_err();
+        assert!(error.message().contains(message), "{source}: {error}");
+        assert_eq!(error.range(), expected);
+    }
+    for name in ["T", "U", "V", "bad", "choose"] {
+        assert!(!bindings.name_in_use(name));
+    }
+}
+
+#[test]
+fn invalid_parameter_lists_leave_no_partial_scope_bindings() {
+    use venticorn::environment::Environment;
+    use venticorn::project::Project;
+    let mut env = Environment::new_test();
+    env.add("typeclass M: Magma {\n mul: (M, M) -> M\n}\nstructure Pair<T, U> {\n first: T\n second: U\n}");
+    for source in [
+        "define bad<T, U: Bool>(x: T) -> T { x }",
+        "define bad<T, T>(x: T) -> T { x }",
+        "structure Bad<T, U: Bool> {\n first: T\n second: U\n}",
+        "structure Bad<T, T> {\n first: T\n}",
+        "structure Bad<Bad> {\n first: Bad\n}",
+        "class Pair<T, U: Bool> { define bad(self) -> T { self.first } }",
+        "class Pair<T, T> { define bad(self) -> T { self.first } }",
+    ] {
+        let nodes = env.nodes.len();
+        let statement = Statement::parse_str(source).unwrap();
+        assert!(
+            env.add_statement(&mut Project::new_mock(), &statement)
+                .is_err(),
+            "{source}"
+        );
+        assert_eq!(env.nodes.len(), nodes);
+        for name in ["T", "U", "Bad", "bad", "Pair.bad"] {
+            assert!(!env.bindings.name_in_use(name), "{source}: {name}");
+        }
+    }
+    env.add("define identity<T: Magma, U>(x: T, unused: U) -> T { x }");
+    env.add("class Pair<A, B> { define first_value(self) -> A { self.first } }");
+}

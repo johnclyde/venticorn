@@ -2129,6 +2129,38 @@ impl BindingMap {
         }
     }
 
+    // Validate a complete parameter list before introducing any temporary bindings.
+    // Bounds retain the canonical typeclass identity and declaration order.
+    pub fn evaluate_type_params(
+        &self,
+        project: &Project,
+        expressions: &[TypeParamExpr],
+    ) -> compilation::Result<Vec<TypeParam>> {
+        let mut seen = HashSet::with_capacity(expressions.len());
+        let mut params = Vec::with_capacity(expressions.len());
+        for expression in expressions {
+            let name = expression.name.text();
+            if self.name_in_use(name) {
+                return Err(expression
+                    .name
+                    .error("type parameter already defined in this scope"));
+            }
+            if !seen.insert(name) {
+                return Err(expression.name.error("duplicate type parameter"));
+            }
+            let typeclass = expression
+                .typeclass
+                .as_ref()
+                .map(|bound| self.evaluate_typeclass(project, bound))
+                .transpose()?;
+            params.push(TypeParam {
+                name: name.to_string(),
+                typeclass,
+            });
+        }
+        Ok(params)
+    }
+
     // Evaluate an expression that creates a new scope for the value inside it.
     // It has declarations, introducing new variables and types that exist just for this value,
     // and it has the value itself, which can use those declarations.
@@ -2197,24 +2229,10 @@ impl BindingMap {
         Option<AcornValue>,
         AcornType,
     )> {
-        // Bind all the type parameters and arguments
-        let mut type_param_names: Vec<TypeParam> = vec![];
-        for param in type_params {
-            if self.name_in_use(param.name.text()) {
-                return Err(param
-                    .name
-                    .error("cannot redeclare a type in a generic type list"));
-            }
-            let class = param
-                .typeclass
-                .as_ref()
-                .map(|expression| self.evaluate_typeclass(project, expression))
-                .transpose()?;
-            self.add_type_variable(param.name.text(), class.clone());
-            type_param_names.push(TypeParam {
-                name: param.name.text().to_string(),
-                typeclass: class,
-            });
+        // Bind only after the entire list and its bounds have been validated.
+        let type_param_names = self.evaluate_type_params(project, type_params)?;
+        for param in &type_param_names {
+            self.add_type_variable(&param.name, param.typeclass.clone());
         }
         let mut stack = Stack::new();
         let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_type)?;
