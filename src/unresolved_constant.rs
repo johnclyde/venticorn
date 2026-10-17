@@ -43,7 +43,7 @@ impl UnresolvedConstant {
             .map(|(formal, actual)| (formal.name.clone(), actual.clone()))
             .collect::<Vec<_>>();
         let instance_type = self.generic_type.instantiate(&substitutions);
-        Ok(AcornValue::new_constant(
+        Ok(AcornValue::constant(
             self.module_id,
             self.name.clone(),
             actuals,

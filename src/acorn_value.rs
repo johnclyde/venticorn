@@ -340,7 +340,7 @@ impl AcornValue {
     }
 
     // Construct an application if we have arguments, but omit it otherwise.
-    pub fn new_apply(function: AcornValue, args: Vec<AcornValue>) -> AcornValue {
+    pub fn apply(function: AcornValue, args: Vec<AcornValue>) -> AcornValue {
         if args.is_empty() {
             function
         } else {
@@ -351,8 +351,13 @@ impl AcornValue {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_apply(function: AcornValue, args: Vec<AcornValue>) -> AcornValue {
+        Self::apply(function, args)
+    }
+
     // Construct a lambda if we have arguments, but omit it otherwise.
-    pub fn new_lambda(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
+    pub fn lambda(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         if args.is_empty() {
             value
         } else {
@@ -360,8 +365,13 @@ impl AcornValue {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_lambda(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
+        Self::lambda(args, value)
+    }
+
     // Construct a forall if we have arguments, but omit it otherwise.
-    pub fn new_forall(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
+    pub fn forall(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         if args.is_empty() {
             value
         } else {
@@ -369,8 +379,13 @@ impl AcornValue {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_forall(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
+        Self::forall(args, value)
+    }
+
     // Construct an exists if we have arguments, but omit it otherwise.
-    pub fn new_exists(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
+    pub fn exists(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         if args.is_empty() {
             value
         } else {
@@ -378,28 +393,58 @@ impl AcornValue {
         }
     }
 
-    pub fn new_implies(left: AcornValue, right: AcornValue) -> AcornValue {
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_exists(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
+        Self::exists(args, value)
+    }
+
+    pub fn implies(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::Implies, Box::new(left), Box::new(right))
     }
 
-    pub fn new_equals(left: AcornValue, right: AcornValue) -> AcornValue {
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_implies(left: AcornValue, right: AcornValue) -> AcornValue {
+        Self::implies(left, right)
+    }
+
+    pub fn equals(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::Equals, Box::new(left), Box::new(right))
     }
 
-    pub fn new_not_equals(left: AcornValue, right: AcornValue) -> AcornValue {
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_equals(left: AcornValue, right: AcornValue) -> AcornValue {
+        Self::equals(left, right)
+    }
+
+    pub fn not_equals(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::NotEquals, Box::new(left), Box::new(right))
     }
 
-    pub fn new_and(left: AcornValue, right: AcornValue) -> AcornValue {
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_not_equals(left: AcornValue, right: AcornValue) -> AcornValue {
+        Self::not_equals(left, right)
+    }
+
+    pub fn and(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::And, Box::new(left), Box::new(right))
     }
 
-    pub fn new_or(left: AcornValue, right: AcornValue) -> AcornValue {
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_and(left: AcornValue, right: AcornValue) -> AcornValue {
+        Self::and(left, right)
+    }
+
+    pub fn or(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_or(left: AcornValue, right: AcornValue) -> AcornValue {
+        Self::or(left, right)
+    }
+
     // Construct an instance whose ordered arguments and effective type are resolved.
-    pub fn new_constant(
+    pub fn constant(
         module_id: ModuleId,
         name: String,
         params: Vec<AcornType>,
@@ -411,6 +456,16 @@ impl AcornValue {
             params,
             instance_type,
         })
+    }
+
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_constant(
+        module_id: ModuleId,
+        name: String,
+        params: Vec<AcornType>,
+        instance_type: AcornType,
+    ) -> AcornValue {
+        Self::constant(module_id, name, params, instance_type)
     }
 
     pub fn is_lambda(&self) -> bool {
@@ -477,21 +532,15 @@ impl AcornValue {
                 AcornValue::Binary(BinaryOp::Equals, x, y)
             }
             AcornValue::Binary(BinaryOp::Or, x, y) => {
-                AcornValue::new_and(x.pretty_negate(), y.pretty_negate())
+                AcornValue::and(x.pretty_negate(), y.pretty_negate())
             }
             AcornValue::Binary(BinaryOp::And, x, y) => {
-                AcornValue::new_or(x.pretty_negate(), y.pretty_negate())
+                AcornValue::or(x.pretty_negate(), y.pretty_negate())
             }
-            AcornValue::Binary(BinaryOp::Implies, x, y) => {
-                AcornValue::new_and(*x, y.pretty_negate())
-            }
+            AcornValue::Binary(BinaryOp::Implies, x, y) => AcornValue::and(*x, y.pretty_negate()),
             AcornValue::Bool(b) => AcornValue::Bool(!b),
-            AcornValue::ForAll(quants, value) => {
-                AcornValue::new_exists(quants, value.pretty_negate())
-            }
-            AcornValue::Exists(quants, value) => {
-                AcornValue::new_forall(quants, value.pretty_negate())
-            }
+            AcornValue::ForAll(quants, value) => AcornValue::exists(quants, value.pretty_negate()),
+            AcornValue::Exists(quants, value) => AcornValue::forall(quants, value.pretty_negate()),
             _ => AcornValue::Not(Box::new(self)),
         }
     }
@@ -1120,9 +1169,9 @@ impl AcornValue {
     // doesn't use if-then-else nodes.
     fn new_if_replacement(a: AcornValue, b: AcornValue, c: AcornValue) -> AcornValue {
         let (a, b, c) = (a.replace_if(), b.replace_if(), c.replace_if());
-        let not_a_imp_c = AcornValue::new_implies(a.clone().negate(), c);
-        let a_imp_b = AcornValue::new_implies(a, b);
-        AcornValue::new_and(a_imp_b, not_a_imp_c)
+        let not_a_imp_c = AcornValue::implies(a.clone().negate(), c);
+        let a_imp_b = AcornValue::implies(a, b);
+        AcornValue::and(a_imp_b, not_a_imp_c)
     }
 
     // Replaces all "if" nodes by extracting them into boolean values and then replacing them.
@@ -1318,14 +1367,14 @@ impl AcornValue {
                 let mut conjuncts = Vec::with_capacity(cases.len());
                 for (vars, pattern, result) in cases {
                     let count = vars.len() as AtomId;
-                    let condition = AcornValue::new_equals(
+                    let condition = AcornValue::equals(
                         scrutinee.clone().insert_stack(stack_size, count),
                         pattern,
                     );
-                    let implication = AcornValue::new_implies(condition, result)
+                    let implication = AcornValue::implies(condition, result)
                         .expand_lambdas(stack_size + count)
                         .replace_match(stack_size + count)?;
-                    conjuncts.push(AcornValue::new_forall(vars, implication));
+                    conjuncts.push(AcornValue::forall(vars, implication));
                 }
                 Ok(AcornValue::reduce(BinaryOp::And, conjuncts))
             }
