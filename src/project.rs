@@ -1000,6 +1000,7 @@ impl Project {
                 dependency
                     .nodes
                     .iter()
+                    .filter(|node| node.claim.source.importable)
                     .map(|n| (n, crate::proof_step::Truthiness::Factual, false))
             })
             .chain(
@@ -2373,3 +2374,6 @@ mod theorem_hint_tests;
 
 #[cfg(test)]
 mod scope_cache_tests;
+
+#[cfg(test)]
+mod source_visibility_tests;
