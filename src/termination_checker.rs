@@ -31,7 +31,8 @@ impl TerminationChecker {
         checker
     }
 
-    pub(crate) fn new_named(function_name: GlobalConstantName, num_args: usize) -> Self {
+    /// Check recursion against a complete canonical identity, without guessing its owner.
+    pub fn new_named(function_name: GlobalConstantName, num_args: usize) -> Self {
         Self {
             function_name,
             substructure_map: (0..num_args).map(|i| Some(i as AtomId)).collect(),
