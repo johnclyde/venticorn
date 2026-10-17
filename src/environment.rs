@@ -447,7 +447,7 @@ impl Environment {
     fn add_define_statement(
         &mut self,
         project: &Project,
-        class_name: Option<&str>,
+        constant_name: LocalConstantName,
         self_type: Option<&AcornType>,
         class_params: &[String],
         ds: &DefineStatement,
@@ -463,12 +463,13 @@ impl Environment {
             return Err(ds.type_params[0]
                 .error("generic class members cannot declare additional type parameters"));
         }
-        let name = match (class_name, self_type) {
-            (Some(name), Some(AcornType::Data(..))) => format!("{}.{}", name, ds.name),
-            (None, None) => ds.name.clone(),
+        match self_type {
+            Some(AcornType::Data(..)) if constant_name.is_qualified() => {}
+            None if !constant_name.is_qualified() => {}
             _ => return Err(ds.name_token.error("class type must be a data type")),
-        };
-        if self.bindings.name_in_use(&name) {
+        }
+        let name = constant_name.to_string();
+        if self.bindings.constant_name_in_use(&constant_name) {
             return Err(ds.name_token.error(&format!(
                 "function name '{}' already defined in this scope",
                 name
@@ -1492,7 +1493,7 @@ impl Environment {
                 StatementInfo::Define(ds) => {
                     self.add_define_statement(
                         project,
-                        Some(&cs.name),
+                        LocalConstantName::attribute(&cs.name, &ds.name),
                         Some(&class_type),
                         &param_names,
                         ds,
@@ -1857,7 +1858,7 @@ impl Environment {
                     }
                     self.add_define_statement(
                         project,
-                        Some(&scope_name),
+                        LocalConstantName::instance(&class, &ds.name, name),
                         Some(&target),
                         &[],
                         ds,
@@ -2047,7 +2048,14 @@ impl Environment {
 
             StatementInfo::Define(ds) => {
                 self.add_other_lines(statement);
-                self.add_define_statement(project, None, None, &[], ds, statement.range())
+                self.add_define_statement(
+                    project,
+                    LocalConstantName::unqualified(&ds.name),
+                    None,
+                    &[],
+                    ds,
+                    statement.range(),
+                )
             }
 
             StatementInfo::Theorem(ts) => self.add_theorem_statement(project, statement, ts),
