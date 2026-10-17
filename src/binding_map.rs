@@ -2962,13 +2962,18 @@ impl BindingMap {
         Ok(expr.to_string())
     }
 
-    // Until the expression API itself is typed, validate the complete canonical
-    // instance owner before passing its spelling to the compatibility renderer.
-    fn constant_name_to_expr(&self, name: &GlobalConstantName) -> Result<Expression, CodeGenError> {
+    // Render a canonical name without reconstructing its identity from display text.
+    fn name_to_expr(&self, name: &GlobalConstantName) -> Result<Expression, CodeGenError> {
+        let module = name.module_id;
         let spelling = name.local_name.to_string();
-        match &name.local_name {
+        if module == self.module && self.hidden_codegen_names.contains(&spelling) {
+            return Err(CodeGenError::UnhandledValue(
+                "name is declared after the selected goal".into(),
+            ));
+        }
+        let parts: Vec<&str> = match &name.local_name {
             LocalConstantName::Instance(class, member, target) => {
-                let registered = if name.module_id == self.module {
+                let registered = if module == self.module {
                     self.instance_scope(target, class).is_some_and(|scope| {
                         self.get_constant_value(scope).is_none()
                             && spelling == format!("{}.{}", scope, member)
@@ -2976,7 +2981,7 @@ impl BindingMap {
                     })
                 } else {
                     self.imported_instance_members
-                        .get(&(name.module_id, spelling.clone()))
+                        .get(&(module, spelling.clone()))
                         == Some(class)
                 };
                 if !registered {
@@ -2984,25 +2989,37 @@ impl BindingMap {
                         "unregistered canonical instance namespace".into(),
                     ));
                 }
+                vec![target, &class.name, member]
             }
-            LocalConstantName::Attribute(owner, member)
-                if owner.contains('.') || member.contains('.') =>
-            {
-                return Err(CodeGenError::UnhandledValue(
-                    "attribute components cannot impersonate an instance".into(),
+            _ => name.local_name.name_chain().ok_or_else(|| {
+                CodeGenError::UnhandledValue("invalid structured constant name".into())
+            })?,
+        };
+        if let LocalConstantName::Attribute(owner, member) = &name.local_name {
+            if !member.is_empty() && member.chars().all(|ch| ch.is_ascii_digit()) {
+                let numeral = TokenType::Numeral.new_token(member);
+                if self
+                    .default
+                    .as_ref()
+                    .is_some_and(|(m, t)| *m == module && t == owner)
+                {
+                    return Ok(Expression::Singleton(numeral));
+                }
+                let numeric_type = self.name_to_expr(&GlobalConstantName::new(
+                    module,
+                    LocalConstantName::unqualified(owner),
+                ))?;
+                return Ok(Expression::Binary(
+                    Box::new(numeric_type),
+                    TokenType::Dot.generate(),
+                    Box::new(Expression::Singleton(numeral)),
                 ));
             }
-            LocalConstantName::Unqualified(raw) if raw.contains('.') => {
-                return Err(CodeGenError::UnhandledValue(
-                    "opaque constant spelling is not a qualified identity".into(),
-                ));
-            }
-            _ => {}
         }
-        if let Some(alias) = self
-            .canonical_to_alias
-            .get(&(name.module_id, spelling.clone()))
-        {
+        if module == self.module {
+            return Ok(Expression::generate_identifier_chain(&parts));
+        }
+        if let Some(alias) = self.canonical_to_alias.get(&(module, spelling.clone())) {
             if let Some(info) = self.constant_info.get(alias) {
                 if Self::value_name(&info.value) != Some(name) {
                     return Err(CodeGenError::UnhandledValue(
@@ -3010,113 +3027,38 @@ impl BindingMap {
                     ));
                 }
             }
-        }
-        self.name_to_expr(name.module_id, &spelling)
-    }
-
-    // Given a module and a name, find an expression that refers to the name.
-    // Note that:
-    //   module, the canonical module of the entity we are trying to express
-    // is different from
-    //   self.module, the module we are trying to express the name in
-    fn name_to_expr(&self, module: ModuleId, name: &str) -> Result<Expression, CodeGenError> {
-        if module == self.module && self.hidden_codegen_names.contains(name) {
-            return Err(CodeGenError::UnhandledValue(
-                "name is declared after the selected goal".into(),
-            ));
-        }
-        let mut parts = name.split('.').collect::<Vec<_>>();
-
-        // Handle numeric literals
-        if parts.len() == 2 && parts[1].chars().all(|ch| ch.is_ascii_digit()) {
-            let numeral = TokenType::Numeral.new_token(parts[1]);
-
-            // If it's the default type, we don't need to scope it
-            if let Some((default_module, default_type_name)) = &self.default {
-                if *default_module == module && default_type_name == parts[0] {
-                    return Ok(Expression::Singleton(numeral));
-                }
-            }
-
-            // Otherwise, we need to scope it by the type
-            let numeric_type = self.name_to_expr(module, parts[0])?;
-            return Ok(Expression::Binary(
-                Box::new(numeric_type),
-                TokenType::Dot.generate(),
-                Box::new(Expression::Singleton(numeral)),
-            ));
-        }
-
-        if parts.len() > 2 {
-            let scope = parts[..2].join(".");
-            let registered = parts.len() == 3
-                && if module == self.module {
-                    self.instance_scope_in_use(&scope)
-                        && self.get_constant_value(&scope).is_none()
-                        && self.get_constant_value(name).is_some()
-                } else {
-                    self.imported_instance_members
-                        .contains_key(&(module, name.to_string()))
-                };
-            if !registered {
-                return Err(CodeGenError::UnhandledValue(
-                    "unregistered instance namespace".to_string(),
-                ));
-            }
-            if module == self.module {
-                return Ok(Expression::generate_identifier_chain(&parts));
-            }
-            let data_type = AcornType::Data(module, parts[0].to_string(), vec![]);
-            if let Some(alias) = self.type_to_typename.get(&data_type) {
-                return Ok(Expression::generate_identifier_chain(&[
-                    alias, parts[1], parts[2],
-                ]));
-            }
-            let module_name = self
-                .module_to_name
-                .get(&module)
-                .ok_or_else(|| CodeGenError::UnimportedModule(module, name.to_string()))?;
-            parts.insert(0, module_name);
-            return Ok(Expression::generate_identifier_chain(&parts));
-        }
-
-        // Handle local constants
-        if module == self.module {
-            // TODO: this generates an identifier token with a dot, which is wrong
-            return Ok(Expression::generate_identifier(name));
-        }
-
-        // Check if there's a local alias for this constant.
-        let key = (module, name.to_string());
-        if let Some(alias) = self.canonical_to_alias.get(&key) {
             return Ok(Expression::generate_identifier(alias));
         }
-
-        // If it's a member function, check if there's a local alias for its struct.
-        if parts.len() == 2 {
-            if let Some(alias) = self.canonical_to_alias.get(&(module, parts[0].to_string())) {
-                return Ok(Expression::generate_identifier_chain(&[alias, parts[1]]));
+        match &name.local_name {
+            LocalConstantName::Instance(class, member, target) => {
+                let data_type = AcornType::Data(module, target.clone(), vec![]);
+                if let Some(alias) = self.type_to_typename.get(&data_type) {
+                    return Ok(Expression::generate_identifier_chain(&[
+                        alias,
+                        &class.name,
+                        member,
+                    ]));
+                }
             }
-            let data_type = AcornType::Data(module, parts[0].to_string(), vec![]);
-            if let Some(type_alias) = self.type_to_typename.get(&data_type) {
-                let lhs = Expression::generate_identifier(type_alias);
-                let rhs = Expression::generate_identifier(parts[1]);
-                return Ok(Expression::Binary(
-                    Box::new(lhs),
-                    TokenType::Dot.generate(),
-                    Box::new(rhs),
-                ));
+            LocalConstantName::Attribute(owner, member) => {
+                if let Some(alias) = self.canonical_to_alias.get(&(module, owner.clone())) {
+                    return Ok(Expression::generate_identifier_chain(&[alias, member]));
+                }
+                let data_type = AcornType::Data(module, owner.clone(), vec![]);
+                if let Some(alias) = self.type_to_typename.get(&data_type) {
+                    return Ok(Expression::generate_identifier_chain(&[alias, member]));
+                }
             }
+            _ => {}
         }
-
-        // Refer to this constant using its module
-        match self.module_to_name.get(&module) {
-            Some(module_name) => {
-                parts.insert(0, module_name);
-                Ok(Expression::generate_identifier_chain(&parts))
-            }
-            None => Err(CodeGenError::UnimportedModule(module, name.to_string())),
-        }
+        let module_name = self
+            .module_to_name
+            .get(&module)
+            .ok_or_else(|| CodeGenError::UnimportedModule(module, spelling))?;
+        let mut qualified = Vec::with_capacity(parts.len() + 1);
+        qualified.push(module_name.as_str());
+        qualified.extend(parts);
+        Ok(Expression::generate_identifier_chain(&qualified))
     }
 
     // If use_x is true we use x-variables; otherwise we use k-variables.
@@ -3287,7 +3229,7 @@ impl BindingMap {
                         if !c.params.is_empty()
                             && self.can_infer_type_arguments(c, fa.args.len()) =>
                     {
-                        self.constant_name_to_expr(&c.name)?
+                        self.name_to_expr(&c.name)?
                     }
                     _ => self.value_to_expr(&fa.function, var_names, next_x, next_k)?,
                 };
@@ -3339,7 +3281,7 @@ impl BindingMap {
                 Ok(Expression::Singleton(token))
             }
             AcornValue::Constant(c) => {
-                let name = self.constant_name_to_expr(&c.name)?;
+                let name = self.name_to_expr(&c.name)?;
                 if c.params.is_empty() {
                     return Ok(name);
                 }
@@ -4309,5 +4251,48 @@ mod structured_lookup_tests {
         bindings.add_instance_scope("State", class, "State.Marked".into());
         assert!(bindings.get_constant_value("State.Marked.flag").is_some());
         assert!(bindings.get_constant_value_named(&local).is_none());
+    }
+}
+
+#[cfg(test)]
+mod structured_expression_tests {
+    use super::*;
+
+    #[test]
+    fn local_member_names_have_real_member_expression_nodes() {
+        let bindings = BindingMap::new(FIRST_NORMAL);
+        let name =
+            GlobalConstantName::new(FIRST_NORMAL, LocalConstantName::attribute("Count", "step"));
+        let expression = bindings.name_to_expr(&name).unwrap();
+        assert_eq!(expression.to_string(), "Count.step");
+        let Expression::Binary(left, dot, right) = expression else {
+            panic!("expected member node")
+        };
+        assert_eq!(dot.token_type, TokenType::Dot);
+        assert_eq!(left.to_string(), "Count");
+        assert_eq!(right.to_string(), "step");
+        assert!(matches!(*left, Expression::Singleton(_)));
+        assert!(matches!(*right, Expression::Singleton(_)));
+    }
+
+    #[test]
+    fn numeric_members_keep_numeral_nodes_and_visible_default_rules() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        let name =
+            GlobalConstantName::new(FIRST_NORMAL, LocalConstantName::attribute("Count", "0"));
+        let explicit = bindings.name_to_expr(&name).unwrap();
+        assert_eq!(explicit.to_string(), "Count.0");
+        let Expression::Binary(_, _, right) = explicit else {
+            panic!("expected scoped numeral")
+        };
+        assert!(
+            matches!(*right, Expression::Singleton(ref token) if token.token_type == TokenType::Numeral)
+        );
+        bindings.set_default(FIRST_NORMAL, "Count".into());
+        let defaulted = bindings.name_to_expr(&name).unwrap();
+        assert_eq!(defaulted.to_string(), "0");
+        assert!(
+            matches!(defaulted, Expression::Singleton(ref token) if token.token_type == TokenType::Numeral)
+        );
     }
 }
