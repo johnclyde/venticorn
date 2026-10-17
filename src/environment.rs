@@ -443,7 +443,7 @@ impl Environment {
     fn add_define_statement(
         &mut self,
         project: &Project,
-        class_info: Option<(&AcornType, &[String])>,
+        class_info: Option<(&str, &AcornType, &[String])>,
         ds: &DefineStatement,
         range: Range,
     ) -> compilation::Result<()> {
@@ -453,18 +453,18 @@ impl Environment {
                 ds.name
             )));
         }
-        let (class_type, class_params) = match class_info {
-            Some((class_type, params)) => (Some(class_type), params),
-            None => (None, &[][..]),
+        let (class_name, class_type, class_params) = match class_info {
+            Some((name, class_type, params)) => (Some(name), Some(class_type), params),
+            None => (None, None, &[][..]),
         };
         if !class_params.is_empty() && !ds.type_params.is_empty() {
             return Err(ds.type_params[0]
                 .error("generic class members cannot declare additional type parameters"));
         }
-        let name = match class_type {
-            Some(AcornType::Data(_, name, _)) => format!("{}.{}", name, ds.name),
-            Some(_) => return Err(ds.name_token.error("class type must be a data type")),
-            None => ds.name.clone(),
+        let name = match (class_name, class_type) {
+            (Some(name), Some(AcornType::Data(..))) => format!("{}.{}", name, ds.name),
+            (None, None) => ds.name.clone(),
+            _ => return Err(ds.name_token.error("class type must be a data type")),
         };
         if self.bindings.name_in_use(&name) {
             return Err(ds.name_token.error(&format!(
@@ -1492,7 +1492,7 @@ impl Environment {
                 StatementInfo::Define(ds) => {
                     self.add_define_statement(
                         project,
-                        Some((&class_type, &param_names)),
+                        Some((&cs.name, &class_type, &param_names)),
                         ds,
                         substatement.range(),
                     )?;
@@ -1536,13 +1536,112 @@ impl Environment {
 
     fn add_instance_statement(
         &mut self,
-        _project: &mut Project,
+        project: &mut Project,
         statement: &Statement,
-        _instance: &crate::statement::InstanceStatement,
+        instance: &crate::statement::InstanceStatement,
     ) -> compilation::Result<()> {
-        Err(statement
-            .first_token
-            .error("instance declarations are not supported yet"))
+        if !self.top_level {
+            return Err(statement
+                .first_token
+                .error("instance declarations are only supported at the top level"));
+        }
+        let name = instance.type_name.text();
+        let target = match self.bindings.get_potential_type_for_name(name) {
+            Some(PotentialType::Resolved(AcornType::Data(module, canonical, actuals)))
+                if *module == self.module_id && canonical == name && actuals.is_empty() =>
+            {
+                AcornType::Data(*module, canonical.clone(), vec![])
+            }
+            Some(_) => {
+                return Err(instance.type_name.error(
+                    "instance target must be a canonical nongeneric data type in this module",
+                ))
+            }
+            None => {
+                return Err(instance
+                    .type_name
+                    .error(&format!("undefined type name '{}'", name)))
+            }
+        };
+        let class = self
+            .bindings
+            .evaluate_typeclass(project, &instance.typeclass)?;
+        if self.bindings.instance_scope(name, &class).is_some() {
+            return Err(instance.typeclass.error("instance already defined"));
+        }
+        let scope_name = format!("{}.{}", name, class.name);
+        if self.bindings.instance_scope_in_use(&scope_name) {
+            return Err(instance
+                .typeclass
+                .error("instance namespace conflicts with a different typeclass"));
+        }
+        let class_bindings = if class.module_id == self.module_id {
+            &self.bindings
+        } else {
+            project.get_bindings(class.module_id).ok_or_else(|| {
+                instance
+                    .typeclass
+                    .error("could not load bindings for typeclass module")
+            })?
+        };
+        let mut required = class_bindings
+            .instance_member_types(&class, &target)
+            .ok_or_else(|| {
+                instance
+                    .typeclass
+                    .error("invalid typeclass member metadata")
+            })?;
+        for member in &instance.body.statements {
+            let (member_name, member_token) = match &member.statement {
+                StatementInfo::Let(ls) => (&ls.name, &ls.name_token),
+                StatementInfo::Define(ds) => (&ds.name, &ds.name_token),
+                _ => {
+                    return Err(member
+                        .error("only let and define statements are allowed in instance bodies"))
+                }
+            };
+            let expected = required
+                .remove(member_name)
+                .ok_or_else(|| member_token.error("unknown or duplicate instance member"))?;
+            match &member.statement {
+                StatementInfo::Let(ls) => {
+                    self.add_let_statement(project, Some((&scope_name, &[])), ls, member.range())?;
+                }
+                StatementInfo::Define(ds) => {
+                    if !ds.type_params.is_empty() {
+                        return Err(ds.type_params[0]
+                            .error("instance members cannot declare type parameters"));
+                    }
+                    self.add_define_statement(
+                        project,
+                        Some((&scope_name, &target, &[])),
+                        ds,
+                        member.range(),
+                    )?;
+                }
+                _ => unreachable!(),
+            }
+            let full_name = format!("{}.{}", scope_name, member_name);
+            let actual = self
+                .bindings
+                .get_constant_value(&full_name)
+                .and_then(|value| value.resolved());
+            if actual.as_ref().map(AcornValue::get_type).as_ref() != Some(&expected) {
+                return Err(member_token.error(&format!(
+                    "instance member '{}' must have type {}",
+                    member_name, expected
+                )));
+            }
+        }
+        if let Some(missing) = required.keys().next() {
+            return Err(instance.typeclass.error(&format!(
+                "instance is missing required member '{}'",
+                missing
+            )));
+        }
+        self.bindings.add_instance_scope(name, class, scope_name);
+        self.add_other_lines(statement);
+        Ok(())
     }
 
     // Adds a statement to the environment.
@@ -1555,7 +1654,7 @@ impl Environment {
     ) -> compilation::Result<()> {
         if !matches!(
             statement.statement,
-            StatementInfo::Structure(_) | StatementInfo::Class(_)
+            StatementInfo::Structure(_) | StatementInfo::Class(_) | StatementInfo::Instance(_)
         ) {
             return self.add_statement_inner(project, statement);
         }

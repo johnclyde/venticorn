@@ -1,7 +1,6 @@
 use venticorn::environment::Environment;
 
 #[test]
-#[ignore = "concrete instance admission is not implemented yet"]
 fn concrete_magma_instance_is_admitted() {
     let mut env = Environment::new_test();
     env.add(
@@ -94,7 +93,7 @@ fn malformed_and_truncated_instance_declarations_return_diagnostics() {
 }
 
 #[test]
-fn unsupported_instance_admission_is_located_and_publishes_nothing() {
+fn undefined_instance_target_is_located_and_publishes_nothing() {
     use venticorn::builder::BuildStatus;
     use venticorn::project::Project;
     use venticorn::statement::Statement;
@@ -107,10 +106,12 @@ fn unsupported_instance_admission_is_located_and_publishes_nothing() {
     let error = env
         .add_statement(&mut Project::new_mock(), &statement)
         .unwrap_err();
-    assert!(error
-        .message()
-        .contains("instance declarations are not supported yet"));
-    assert_eq!(error.range(), statement.first_token.range());
+    assert_eq!(error.message(), "undefined type name 'State'");
+    use tower_lsp::lsp_types::{Position, Range};
+    assert_eq!(
+        error.range(),
+        Range::new(Position::new(0, 9), Position::new(0, 14))
+    );
     assert_eq!(env.nodes.len(), nodes);
     assert_eq!(env.last_line(), line);
     assert!(env.bindings.name_in_use("kept"));
@@ -136,4 +137,202 @@ fn instance_declaration_exact_format_round_trip() {
         }"};
     let statement = venticorn::statement::Statement::parse_str(source).unwrap();
     assert_eq!(statement.to_string(), source);
+}
+
+#[test]
+fn instance_preparation_rolls_back_members_facts_and_declaration_identity() {
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let setup =
+        "typeclass T: Marked {\n value: T\n keep: T -> T\n}\ninductive State {\n clean\n dirty\n}";
+    let valid = "instance State: Marked {\n let value: State = State.clean\n define keep(self) -> State { self }\n}";
+    for (body, reason) in [
+        (
+            "let value: State = State.clean",
+            "missing required member 'keep'",
+        ),
+        (
+            "let value: State = State.clean\n let extra: Bool = true",
+            "unknown or duplicate",
+        ),
+        (
+            "let value: State = State.clean\n define extra(self) -> State { self }",
+            "unknown or duplicate",
+        ),
+        (
+            "let value: State = State.clean\n let value: State = State.dirty",
+            "unknown or duplicate",
+        ),
+        (
+            "let value: Bool = true\n define keep(self) -> State { self }",
+            "must have type State",
+        ),
+        (
+            "let value: State = State.clean\n define keep(self) -> Bool { true }",
+            "must have type State -> State",
+        ),
+        (
+            "let value: State = State.clean\n define keep<U>(self) -> State { self }",
+            "cannot declare type parameters",
+        ),
+        (
+            "let value: State = State.clean\n theorem { true }",
+            "only let and define",
+        ),
+    ] {
+        let mut env = Environment::new_test();
+        env.add(setup);
+        let nodes = env.nodes.len();
+        let line = env.last_line();
+        let error = env
+            .add_statement(
+                &mut Project::new_mock(),
+                &Statement::parse_str(&format!("instance State: Marked {{\n{body}\n}}")).unwrap(),
+            )
+            .unwrap_err();
+        assert!(error.message().contains(reason), "{error}");
+        assert_eq!(env.nodes.len(), nodes);
+        assert_eq!(env.last_line(), line);
+        for name in [
+            "State.Marked.value",
+            "State.Marked.keep",
+            "State.Marked.extra",
+        ] {
+            assert!(!env.bindings.name_in_use(name), "{name}");
+        }
+        env.add(valid);
+        let nodes = env.nodes.len();
+        let error = env
+            .add_statement(
+                &mut Project::new_mock(),
+                &Statement::parse_str(valid).unwrap(),
+            )
+            .unwrap_err();
+        assert_eq!(error.message(), "instance already defined");
+        assert_eq!(env.nodes.len(), nodes);
+    }
+}
+
+#[test]
+fn instance_targets_are_local_canonical_nongeneric_types() {
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    for target in ["Bool", "Alias", "Box"] {
+        let mut env = Environment::new_test();
+        env.add("typeclass T: Empty {\n flag: Bool\n}\ninductive State {\n clean\n}\ntype Alias: State\nstructure Box<T> {\n value: T\n}");
+        let nodes = env.nodes.len();
+        let error = env
+            .add_statement(
+                &mut Project::new_mock(),
+                &Statement::parse_str(&format!("instance {target}: Empty {{}}")).unwrap(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "instance target must be a canonical nongeneric data type in this module"
+        );
+        assert_eq!(env.nodes.len(), nodes);
+        env.add("instance State: Empty {\n let flag: Bool = true\n}");
+        env.bad("instance State: Empty {\n let flag: Bool = true\n}");
+    }
+    let mut project = Project::new_mock();
+    project.mock("/mock/foreign.ac", "inductive State {\n clean\n}");
+    project.mock(
+        "/mock/main.ac",
+        "from foreign import State\ntypeclass T: Empty {\n flag: Bool\n}\ninstance State: Empty {}",
+    );
+    assert!(project
+        .errors()
+        .iter()
+        .any(|(_, error)| error.message().contains("canonical nongeneric")));
+    let mut parent = Environment::new_test();
+    parent.add("typeclass T: Empty {\n flag: Bool\n}\ninductive State {\n clean\n}");
+    let mut child = parent.child(0, false);
+    let nodes = child.nodes.len();
+    let error = child
+        .add_statement(
+            &mut Project::new_mock(),
+            &Statement::parse_str("instance State: Empty {}").unwrap(),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.message(),
+        "instance declarations are only supported at the top level"
+    );
+    assert_eq!(child.nodes.len(), nodes);
+    parent.add("instance State: Empty {\n let flag: Bool = true\n}");
+}
+
+#[test]
+fn instance_class_lookup_is_canonical_and_display_collisions_are_rejected() {
+    use venticorn::project::Project;
+    use venticorn::statement::Statement;
+    let mut project = Project::new_mock();
+    project.mock("/mock/left.ac", "typeclass T: Marked {\n flag: Bool\n}");
+    project.mock("/mock/right.ac", "typeclass T: Marked {\n flag: T\n}");
+    project.mock("/mock/main.ac", "import left\nimport right\ninductive State {\n clean\n}\ninstance State: left.Marked {\n let flag: Bool = true\n}");
+    let module = project.expect_ok("main");
+    let mut env = project.get_env_by_id(module).unwrap().child(0, false);
+    env.top_level = true;
+    let nodes = env.nodes.len();
+    let statement =
+        Statement::parse_str("instance State: right.Marked {\n let flag: State = State.clean\n}")
+            .unwrap();
+    let error = env.add_statement(&mut project, &statement).unwrap_err();
+    assert_eq!(
+        error.message(),
+        "instance namespace conflicts with a different typeclass"
+    );
+    assert_eq!(env.nodes.len(), nodes);
+    assert_eq!(
+        env.bindings
+            .get_constant_value("State.Marked.flag")
+            .unwrap()
+            .get_type(),
+        venticorn::acorn_type::AcornType::Bool
+    );
+    let error = env
+        .add_statement(
+            &mut project,
+            &Statement::parse_str("instance State: Missing {}").unwrap(),
+        )
+        .unwrap_err();
+    assert!(error.message().contains("unknown identifier"), "{error}");
+    assert_eq!(env.nodes.len(), nodes);
+}
+
+#[test]
+fn admitted_implementations_do_not_grant_unchecked_concrete_bounds() {
+    let mut env = Environment::new_test();
+    env.add("typeclass T: Marked {\n flag: Bool\n}\ninductive State {\n clean\n}\ninstance State: Marked {\n let flag: Bool = true\n}");
+    env.bad("let invalid: Bool = Marked.flag<State>");
+    env.add("define generic<T: Marked>(value: T) -> Bool { Marked.flag<T> }");
+    env.bad("let invalid: Bool = generic(State.clean)");
+}
+
+#[test]
+fn concrete_instance_implementation_body_is_admitted() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+
+            inductive State {
+                clean
+                dirty
+            }
+
+            instance State: Magma {
+                define mul(self, other: State) -> State {
+                    if self = State.clean and other = State.clean {
+                        State.clean
+                    } else {
+                        State.dirty
+                    }
+                }
+            }
+            "#,
+    );
 }
