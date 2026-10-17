@@ -120,12 +120,14 @@ impl ConstantMap {
     /// Record an equality alias only if the new identity is unused and the target exists.
     /// Rejected proposals leave the atom inventory unchanged.
     pub fn maybe_add_alias(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) -> bool {
-        if self.has_constant_named(new) || !self.has_constant_named(old) {
+        let new_key = ConstantKey::from_name(new.clone());
+        if self.keymap.contains_key(&new_key) {
             return false;
         }
-        let new_key = ConstantKey::from_name(new.clone());
         let old_key = ConstantKey::from_name(old.clone());
-        let atom = self.keymap[&old_key];
+        let Some(&atom) = self.keymap.get(&old_key) else {
+            return false;
+        };
         self.keymap.insert(new_key, atom);
         true
     }
