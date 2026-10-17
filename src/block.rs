@@ -457,7 +457,9 @@ impl Node {
                 .collect();
             Some(definition.instantiate(&pairs).insert_stack(0, depth))
         });
-        let claim = proposition.with_value(value);
+        let mut claim = proposition.with_value(value);
+        // A nested declaration stays local even when it has a reusable source name.
+        claim.source.importable &= env.top_level;
         Node {
             codegen_position: env.bindings.codegen_position(),
             proof_scope: env.bindings.proof_scope().clone(),

@@ -662,6 +662,9 @@ impl Environment {
         // Stage only the new binding and range. Existing proof nodes are not cloned.
         // A malformed body must not leave an axiom-like theorem name behind.
         let mut staged = self.child(statement.first_line(), true);
+        // This transaction stays in the caller's lexical scope. Actual proof
+        // blocks still create child environments with top_level set to false.
+        staged.top_level = self.top_level;
         if let Some(name) = &ts.name {
             if arg_names.contains(name) || type_params.iter().any(|p| &p.name == name) {
                 return Err(statement.error("theorem name conflicts with a parameter"));
@@ -1558,6 +1561,9 @@ impl Environment {
         }
         let (scope, members) = self.prepare_typeclass(project, ts)?;
         let mut staged = self.child(statement.first_line(), true);
+        // This transaction stays in the caller's lexical scope. Actual proof
+        // blocks still create child environments with top_level set to false.
+        staged.top_level = self.top_level;
         staged.bindings = scope;
         let param = match staged.bindings.get_type_for_name(ts.instance_name.text()) {
             Some(AcornType::Arbitrary(param)) => param.clone(),
@@ -1721,12 +1727,12 @@ impl Environment {
         let specific_claim =
             self.bindings
                 .evaluate_value(project, &vss.condition, Some(&AcornType::Bool))?;
-        self.add_node(
-            project,
-            true,
-            Proposition::anonymous(specific_claim, self.module_id, statement.range()),
-            None,
-        );
+        let mut condition =
+            Proposition::anonymous(specific_claim, self.module_id, statement.range());
+        // The named witness has no value definition: this condition is its public
+        // declaration contract. Node admission still restricts nested declarations.
+        condition.source.importable = true;
+        self.add_node(project, true, condition, None);
 
         Ok(())
     }
