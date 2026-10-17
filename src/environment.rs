@@ -62,7 +62,7 @@ pub struct Environment {
     pub nodes: Vec<Node>,
 
     // The region in the source document where a name was defined
-    definition_ranges: HashMap<String, Range>,
+    definition_ranges: HashMap<LocalConstantName, Range>,
 
     // Whether a plain "false" is anywhere in this environment.
     // This indicates that the environment is supposed to have contradictory facts.
@@ -183,26 +183,31 @@ impl Environment {
         let Some(definition) = self.bindings.get_definition(name).cloned() else {
             return;
         };
-        self.add_definition_identity_props(project, name, definition);
+        let stored_name = self
+            .bindings
+            .stored_constant_name(name)
+            .expect("a canonical definition must have a stored name")
+            .clone();
+        self.add_definition_identity_props(project, &stored_name, definition);
     }
 
     pub fn add_identity_props_named(&mut self, project: &Project, name: &LocalConstantName) {
         let Some(definition) = self.bindings.get_definition_named(name).cloned() else {
             return;
         };
-        self.add_definition_identity_props(project, &name.to_string(), definition);
+        self.add_definition_identity_props(project, name, definition);
     }
 
     fn add_definition_identity_props(
         &mut self,
         project: &Project,
-        name: &str,
+        name: &LocalConstantName,
         definition: AcornValue,
     ) {
         // A canonical definition may be prepared before its instance scope is published.
         let constant = self
             .bindings
-            .get_constant_value(name)
+            .get_constant_value(&name.to_string())
             .expect("a stored definition must have a declaration value")
             .to_generic_value();
 
@@ -280,8 +285,17 @@ impl Environment {
     ) -> Option<Vec<CompletionItem>> {
         self.bindings
             .get_completions_visible(project, prefix, false, &|name| {
+                // The spelling index returns the actual inserted constant key.
+                // Types and modules have explicitly unqualified range entries.
+                let unqualified;
+                let key = if let Some(stored) = self.bindings.stored_constant_name(name) {
+                    stored
+                } else {
+                    unqualified = LocalConstantName::unqualified(name);
+                    &unqualified
+                };
                 self.definition_ranges
-                    .get(name)
+                    .get(key)
                     .map_or(true, |range| range.start.line <= line)
             })
     }
@@ -427,7 +441,7 @@ impl Environment {
                 definition,
                 None,
             );
-            self.definition_ranges.insert(name.clone(), range);
+            self.definition_ranges.insert(constant_name.clone(), range);
             self.add_identity_props_named(project, &constant_name);
             return Ok(());
         }
@@ -447,14 +461,14 @@ impl Environment {
                         PotentialValue::Resolved(value.clone()),
                     );
                 }
-                self.definition_ranges.insert(name.clone(), range);
+                self.definition_ranges.insert(constant_name.clone(), range);
                 return Ok(());
             }
         }
 
         self.bindings
             .add_constant_named(&constant_name, vec![], acorn_type, value, None);
-        self.definition_ranges.insert(name.clone(), range);
+        self.definition_ranges.insert(constant_name.clone(), range);
         self.add_identity_props_named(project, &constant_name);
         Ok(())
     }
@@ -577,7 +591,7 @@ impl Environment {
             None,
         );
 
-        self.definition_ranges.insert(name.clone(), range);
+        self.definition_ranges.insert(constant_name.clone(), range);
         self.add_identity_props_named(project, &constant_name);
         Ok(())
     }
@@ -660,7 +674,9 @@ impl Environment {
                 Some(lambda_claim),
                 None,
             );
-            staged.definition_ranges.insert(name.clone(), range);
+            staged
+                .definition_ranges
+                .insert(LocalConstantName::unqualified(name), range);
         }
 
         let already_proven = ts.axiomatic || is_citation;
@@ -702,7 +718,8 @@ impl Environment {
         }
         if let Some(name) = &ts.name {
             self.bindings = staged.bindings;
-            self.definition_ranges.insert(name.clone(), range);
+            self.definition_ranges
+                .insert(LocalConstantName::unqualified(name), range);
         }
         let index = self.nodes.len();
         self.nodes.push(node);
@@ -737,7 +754,7 @@ impl Environment {
             end: fss.satisfy_token.end_pos(),
         };
         self.definition_ranges
-            .insert(fss.name.clone(), definition_range);
+            .insert(LocalConstantName::unqualified(&fss.name), definition_range);
 
         let (_, mut arg_names, mut arg_types, condition, _) =
             self.bindings.evaluate_scoped_value_named(
@@ -927,7 +944,7 @@ impl Environment {
             .add_type_family(&ss.name, formals)
             .resolve(arbitrary_params.clone(), &ss.name_token)?;
         self.definition_ranges
-            .insert(ss.name.clone(), statement.range());
+            .insert(LocalConstantName::unqualified(&ss.name), statement.range());
         let mut member_fns = vec![];
         for (member_fn_name, field_type) in member_fn_names.into_iter().zip(&field_types) {
             let member_fn_type =
@@ -1362,7 +1379,7 @@ impl Environment {
             None,
         );
         self.definition_ranges
-            .insert(is.name.clone(), statement.range());
+            .insert(LocalConstantName::unqualified(&is.name), statement.range());
 
         Ok(())
     }
@@ -1639,7 +1656,9 @@ impl Environment {
                     range,
                 },
             );
-            staged.definition_ranges.insert(full_name, range);
+            staged
+                .definition_ranges
+                .insert(constant_name.clone(), range);
             staged.nodes.push(node);
         }
         staged.bindings.add_typeclass_info(
@@ -1692,8 +1711,10 @@ impl Environment {
                 None,
                 None,
             );
-            self.definition_ranges
-                .insert(quant_name.clone(), statement.range());
+            self.definition_ranges.insert(
+                LocalConstantName::unqualified(quant_name),
+                statement.range(),
+            );
         }
 
         // We can then assume the specific existence claim with the named constants
@@ -2058,7 +2079,7 @@ impl Environment {
                     self.bindings.add_potential_type_alias(&ts.name, potential);
                 };
                 self.definition_ranges
-                    .insert(ts.name.clone(), statement.range());
+                    .insert(LocalConstantName::unqualified(&ts.name), statement.range());
                 Ok(())
             }
 
@@ -2217,14 +2238,18 @@ impl Environment {
                 self.bindings.import_module(local_name, module_id);
                 self.bindings
                     .import_instance_members(project.get_bindings(module_id).unwrap());
-                self.definition_ranges
-                    .insert(local_name.clone(), statement.range());
+                self.definition_ranges.insert(
+                    LocalConstantName::unqualified(local_name),
+                    statement.range(),
+                );
 
                 // Bring the imported names into this environment
                 for name in &is.names {
                     self.bindings.import_name(project, module_id, name)?;
-                    self.definition_ranges
-                        .insert(name.text().to_string(), statement.range());
+                    self.definition_ranges.insert(
+                        LocalConstantName::unqualified(name.text()),
+                        statement.range(),
+                    );
                 }
 
                 Ok(())
@@ -2678,5 +2703,40 @@ impl Environment {
         let def1 = self.bindings.get_definition(name1).unwrap();
         let def2 = self.bindings.get_definition(name2).unwrap();
         assert_ne!(def1, def2);
+    }
+}
+
+#[cfg(test)]
+mod definition_range_tests {
+    use super::*;
+
+    #[test]
+    fn failed_member_admission_restores_the_complete_typed_range_map() {
+        let mut env = Environment::new_test();
+        env.add(
+            "inductive State {
+ clean
+}",
+        );
+        let before = env.definition_ranges.clone();
+        env.bad(
+            "class State {
+ let temporary: Bool = true
+ let invalid: Missing = axiom
+}",
+        );
+        assert_eq!(env.definition_ranges, before);
+        assert!(!env.bindings.has_constant_name("State.temporary"));
+        env.add(
+            "class State {
+ let temporary: Bool = true
+}",
+        );
+        assert!(env
+            .definition_ranges
+            .contains_key(&LocalConstantName::attribute("State", "temporary")));
+        assert!(!env
+            .definition_ranges
+            .contains_key(&LocalConstantName::unqualified("State.temporary")));
     }
 }
