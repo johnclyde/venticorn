@@ -852,3 +852,39 @@ fn instance_statement_accepts_by_block_865() {
         "#,
     );
 }
+
+#[test]
+fn explicit_instance_constant_arguments_are_admitted() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass P: PointedSet {
+                basepoint: P
+            }
+
+            inductive Z2 {
+                zero
+                one
+            }
+
+            instance Z2: PointedSet {
+                let basepoint: Z2 = Z2.zero
+            }
+
+            theorem goal {
+                Z2.zero = PointedSet.basepoint<Z2>
+            }
+            "#,
+    );
+    let target = env.bindings.get_type_for_name("Z2").unwrap();
+    let goal = env.get_node_by_name("goal");
+    let mut members = vec![];
+    goal.current().claim.value.find_constants(
+        &|constant| constant.name == "PointedSet.basepoint",
+        &mut members,
+    );
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].module_id, env.module_id);
+    assert_eq!(members[0].params, [target.clone()]);
+    assert_eq!(members[0].instance_type, *target);
+}
