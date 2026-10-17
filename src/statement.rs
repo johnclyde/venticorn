@@ -220,6 +220,13 @@ pub struct TypeclassStatement {
     pub conditions: Vec<TypeclassCondition>,
 }
 
+// A declaration supplies the members required by a type's typeclass instance.
+pub struct InstanceStatement {
+    pub type_name: Token,
+    pub typeclass: Expression,
+    pub body: Body,
+}
+
 // Acorn is a statement-based language. There are several types.
 // Each type has its own struct.
 pub struct Statement {
@@ -254,6 +261,7 @@ pub enum StatementInfo {
     Problem(Body),
     Match(MatchStatement),
     Typeclass(TypeclassStatement),
+    Instance(InstanceStatement),
 }
 
 const ONE_INDENT: &str = "    ";
@@ -923,6 +931,28 @@ fn parse_typeclass_statement(keyword: Token, tokens: &mut TokenIter) -> Result<S
     Err(keyword.error("unterminated typeclass statement"))
 }
 
+fn parse_instance_statement(keyword: Token, tokens: &mut TokenIter) -> Result<Statement> {
+    let type_name = tokens.expect_type_name()?;
+    tokens.expect_type(TokenType::Colon)?;
+    let (typeclass, left_brace) =
+        Expression::parse_type(tokens, Terminator::Is(TokenType::LeftBrace))?;
+    let (statements, right_brace) = parse_block(tokens)?;
+    let body = Body {
+        left_brace,
+        statements,
+        right_brace: right_brace.clone(),
+    };
+    Ok(Statement {
+        first_token: keyword,
+        last_token: right_brace,
+        statement: StatementInfo::Instance(InstanceStatement {
+            type_name,
+            typeclass,
+            body,
+        }),
+    })
+}
+
 fn write_type_params<T: fmt::Display>(f: &mut fmt::Formatter, type_params: &[T]) -> fmt::Result {
     if type_params.len() == 0 {
         return Ok(());
@@ -1151,6 +1181,11 @@ impl Statement {
                 write!(f, "{}}}", indentation)
             }
 
+            StatementInfo::Instance(instance) => {
+                write!(f, "instance {}: {}", instance.type_name, instance.typeclass)?;
+                write_block(f, &instance.body.statements, indentation)
+            }
+
             StatementInfo::Match(ms) => {
                 let case_indentation = add_indent(indentation);
                 write!(f, "match {} {{", ms.scrutinee)?;
@@ -1286,6 +1321,11 @@ impl Statement {
                         let keyword = tokens.next().unwrap();
                         let s = parse_typeclass_statement(keyword, tokens)?;
                         return Ok((Some(s), None));
+                    }
+                    TokenType::Instance => {
+                        let keyword = tokens.next().unwrap();
+                        let statement = parse_instance_statement(keyword, tokens)?;
+                        return Ok((Some(statement), None));
                     }
                     TokenType::Match => {
                         let keyword = tokens.next().unwrap();
