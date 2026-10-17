@@ -108,7 +108,7 @@ pub struct BindingMap {
     // entirety of this environment.
     // Aliases retain their canonical values in the same records, without ownership.
     // Includes "<datatype>.<constant>" for members.
-    constant_info: BTreeMap<String, ConstantInfo>,
+    constant_info: HashMap<String, ConstantInfo>,
 
     // Ordered member spellings for completion, separate from canonical class requirements.
     member_names: HashMap<String, BTreeMap<String, ()>>,
@@ -206,7 +206,7 @@ impl BindingMap {
             instance_scopes: HashMap::new(),
             proof_scope: ProofScope::default(),
             imported_instance_members: HashMap::new(),
-            constant_info: BTreeMap::new(),
+            constant_info: HashMap::new(),
             member_names: HashMap::new(),
             unqualified_names: BTreeMap::new(),
             canonical_to_alias: HashMap::new(),
@@ -1018,15 +1018,21 @@ impl BindingMap {
 
     pub(crate) fn import_instance_members(&mut self, owner: &BindingMap) {
         self.proof_scope.include_memberships(&owner.proof_scope);
-        for ((_, class), scope) in &owner.instance_scopes {
-            if owner.get_constant_value(scope).is_some() {
+        let mut scopes = owner.instance_scopes.iter().collect::<Vec<_>>();
+        scopes.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+        for ((_, class), scope) in scopes {
+            if owner.constant_info.contains_key(scope) {
                 continue;
             }
-            for name in keys_with_prefix(&owner.constant_info, &format!("{}.", scope)) {
-                if !owner.is_constant(name) {
+            let Some(members) = owner.member_names.get(scope) else {
+                continue;
+            };
+            for member in members.keys() {
+                let name = format!("{}.{}", scope, member);
+                if !owner.is_constant(&name) {
                     continue;
                 }
-                let key = (owner.module, name.clone());
+                let key = (owner.module, name);
                 if !self.instance_member_positions.contains_key(&key) {
                     self.position += 1;
                     self.instance_member_positions
@@ -3561,7 +3567,8 @@ mod name_insertion_tests {
         let module_reverse = bindings.module_to_name.clone();
         let scope = bindings.proof_scope.clone();
         let records = |b: &BindingMap| {
-            b.constant_info
+            let mut records = b
+                .constant_info
                 .iter()
                 .map(|(name, info)| {
                     (
@@ -3573,7 +3580,9 @@ mod name_insertion_tests {
                         info.constructor.clone(),
                     )
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            records.sort_by(|left, right| left.0.cmp(&right.0));
+            records
         };
         let constant_info = records(bindings);
         assert!(catch_unwind(AssertUnwindSafe(|| add(bindings))).is_err());
@@ -4023,5 +4032,83 @@ mod unqualified_index_tests {
         );
         assert!(!earlier.is_constant("alpha"));
         assert!(earlier.member_names.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod constant_storage_tests {
+    use super::*;
+
+    #[test]
+    fn imported_member_positions_are_independent_of_hash_and_insertion_order() {
+        let owner = |reverse: bool| {
+            let mut bindings = BindingMap::new(FIRST_NORMAL);
+            let class = Typeclass {
+                module_id: FIRST_NORMAL + 1,
+                name: "Marked".into(),
+            };
+            let targets = if reverse {
+                ["Zeta", "Alpha"]
+            } else {
+                ["Alpha", "Zeta"]
+            };
+            for target in targets {
+                bindings.add_data_type(target);
+                for member in ["zeta", "alpha"] {
+                    bindings.add_constant_named(
+                        &LocalConstantName::instance(&class, member, target),
+                        vec![],
+                        AcornType::Bool,
+                        None,
+                        None,
+                    );
+                }
+                bindings.add_instance_scope(target, class.clone(), format!("{}.Marked", target));
+                bindings.add_alias(
+                    &format!("{}.Marked.alias", target),
+                    FIRST_NORMAL,
+                    format!("{}.Marked.alpha", target),
+                    bindings
+                        .get_constant_value(&format!("{}.Marked.alpha", target))
+                        .unwrap(),
+                );
+            }
+            bindings
+        };
+        let mut first = BindingMap::new(FIRST_NORMAL + 2);
+        first.import_instance_members(&owner(false));
+        let mut second = BindingMap::new(FIRST_NORMAL + 2);
+        second.import_instance_members(&owner(true));
+        assert_eq!(
+            first.instance_member_positions,
+            second.instance_member_positions
+        );
+        assert_eq!(
+            first.imported_instance_members,
+            second.imported_instance_members
+        );
+        let mut names = first
+            .instance_member_positions
+            .iter()
+            .map(|((_, name), position)| (*position, name.as_str()))
+            .collect::<Vec<_>>();
+        names.sort();
+        assert_eq!(
+            names.iter().map(|(_, name)| *name).collect::<Vec<_>>(),
+            [
+                "Alpha.Marked.alpha",
+                "Alpha.Marked.zeta",
+                "Zeta.Marked.alpha",
+                "Zeta.Marked.zeta"
+            ]
+        );
+        let earlier = first.for_codegen_at(names[1].0, &first.proof_scope);
+        assert_eq!(earlier.imported_instance_members.len(), 2);
+        assert!(earlier
+            .imported_instance_members
+            .contains_key(&(FIRST_NORMAL, "Alpha.Marked.zeta".into())));
+        assert!(!earlier
+            .imported_instance_members
+            .contains_key(&(FIRST_NORMAL, "Zeta.Marked.alpha".into())));
     }
 }
