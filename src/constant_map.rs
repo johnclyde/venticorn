@@ -11,6 +11,15 @@ pub struct ConstantKey {
     pub name: LocalConstantName,
 }
 
+impl ConstantKey {
+    pub fn from_name(name: GlobalConstantName) -> Self {
+        Self {
+            module: name.module_id,
+            name: name.local_name,
+        }
+    }
+}
+
 // In the Acorn language a constant is uniquely identified by its module id and name.
 // The low-level prover, on the other hand, just wants each constant to have a
 // numerical id.
@@ -42,16 +51,18 @@ impl ConstantMap {
 
     // Assigns an id to this (module, name) pair if it doesn't already have one.
     pub fn add_constant(&mut self, module: ModuleId, name: &str, local: bool) -> Atom {
-        self.add_constant_key(
-            ConstantKey {
-                module,
-                name: LocalConstantName::from_legacy(name),
-            },
+        self.add_constant_named(
+            GlobalConstantName::new(module, LocalConstantName::from_legacy(name)),
             local,
         )
     }
 
-    pub(crate) fn add_constant_key(&mut self, key: ConstantKey, local: bool) -> Atom {
+    /// Intern a complete canonical name without reparsing its display spelling.
+    pub fn add_constant_named(&mut self, name: GlobalConstantName, local: bool) -> Atom {
+        self.add_constant_key(ConstantKey::from_name(name), local)
+    }
+
+    fn add_constant_key(&mut self, key: ConstantKey, local: bool) -> Atom {
         assert_ne!(
             key.module, SKOLEM,
             "skolem constants should not be stored in the ConstantMap"
