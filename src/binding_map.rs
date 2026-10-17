@@ -1344,6 +1344,19 @@ impl BindingMap {
         Ok(value)
     }
 
+    // Resolve canonical ownership without assuming that every loaded module has bindings.
+    fn bindings_for_module<'a>(
+        &'a self,
+        project: &'a Project,
+        module: ModuleId,
+    ) -> Option<&'a BindingMap> {
+        if module == self.module {
+            Some(self)
+        } else {
+            project.get_bindings(module)
+        }
+    }
+
     // Evaluates a name scoped by a type name, like MyClass.foo
     fn evaluate_type_attribute(
         &self,
@@ -1352,11 +1365,7 @@ impl BindingMap {
         type_name: &str,
         var_name: &str,
     ) -> Option<PotentialValue> {
-        let bindings = if module == self.module {
-            &self
-        } else {
-            project.get_bindings(module)?
-        };
+        let bindings = self.bindings_for_module(project, module)?;
         let constant_name = format!("{}.{}", type_name, var_name);
         bindings.get_constant_value(&constant_name)
     }
@@ -1404,13 +1413,9 @@ impl BindingMap {
                 )))
             }
         };
-        let bindings = if module == self.module {
-            self
-        } else {
-            project
-                .get_bindings(module)
-                .ok_or_else(|| source.error("could not load bindings for attribute module"))?
-        };
+        let bindings = self
+            .bindings_for_module(project, module)
+            .ok_or_else(|| source.error("could not load bindings for attribute module"))?;
         let constant_name = format!("{}.{}", type_name, name);
         let function = bindings
             .get_constant_value(&constant_name)
@@ -1456,11 +1461,7 @@ impl BindingMap {
                         return Ok(NamedEntity::Value(value));
                     }
                     let attribute = self.evaluate_type_attribute(project, module, &type_name, name);
-                    let owner = if module == self.module {
-                        Some(self)
-                    } else {
-                        project.get_bindings(module)
-                    };
+                    let owner = self.bindings_for_module(project, module);
                     let scope = owner.and_then(|bindings| {
                         bindings
                             .instance_scopes
