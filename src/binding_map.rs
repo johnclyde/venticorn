@@ -350,8 +350,8 @@ impl BindingMap {
                         Some((c.name.module_id, c.name.local_name.to_string()))
                     }
                     PotentialValue::Resolved(v) => v
-                        .as_simple_constant()
-                        .map(|(id, name)| (id, name.to_owned())),
+                        .simple_constant_name()
+                        .map(|name| (name.module_id, name.local_name.to_string())),
                 };
                 if let Some((module, canonical)) = canonical {
                     if module != result.module {
@@ -1110,10 +1110,7 @@ impl BindingMap {
 
     // Whether this value is calling a theorem on some arguments.
     pub fn is_citation(&self, project: &Project, claim: &AcornValue) -> bool {
-        let AcornValue::Application(app) = claim else {
-            return false;
-        };
-        let Some(name) = app.function.constant_name() else {
+        let Some(name) = claim.named_function_name() else {
             return false;
         };
         let bindings = if name.module_id == self.module {
