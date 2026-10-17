@@ -844,10 +844,30 @@ impl BindingMap {
             .as_ref()
     }
 
+    /// Read definition metadata only for this exact canonical declaration identity.
+    /// Prepared instance definitions do not require published membership here.
+    pub fn get_definition_named(&self, name: &LocalConstantName) -> Option<&AcornValue> {
+        if !self.canonical_name_matches(&GlobalConstantName::new(self.module, name.clone())) {
+            return None;
+        }
+        self.get_definition(&name.to_string())
+    }
+
     // Returns the defined value and its parameters in declaration order.
     pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[TypeParam])> {
         let info = self.constant_info.get(name).filter(|info| info.canonical)?;
         Some((info.definition.as_ref()?, info.value.unresolved_params()))
+    }
+
+    /// Read the complete declared formal order together with the canonical definition.
+    pub fn get_definition_and_params_named(
+        &self,
+        name: &LocalConstantName,
+    ) -> Option<(&AcornValue, &[TypeParam])> {
+        if !self.canonical_name_matches(&GlobalConstantName::new(self.module, name.clone())) {
+            return None;
+        }
+        self.get_definition_and_params(&name.to_string())
     }
 
     // All other modules that we directly depend on, besides this one.
@@ -1055,6 +1075,11 @@ impl BindingMap {
             .is_some_and(|info| info.theorem)
     }
 
+    pub fn is_theorem_named(&self, name: &LocalConstantName) -> bool {
+        self.canonical_name_matches(&GlobalConstantName::new(self.module, name.clone()))
+            && self.is_theorem(&name.to_string())
+    }
+
     // Data types that come from type parameters get removed when they go out of scope.
     pub fn remove_data_type(&mut self, name: &str) {
         self.name_positions.remove(name);
@@ -1121,7 +1146,7 @@ impl BindingMap {
             };
             bindings
         };
-        bindings.canonical_name_matches(name) && bindings.is_theorem(&name.local_name.to_string())
+        bindings.is_theorem_named(&name.local_name)
     }
 
     // Members are looked up through the type's canonical defining module.
