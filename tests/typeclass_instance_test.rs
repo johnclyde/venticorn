@@ -397,3 +397,36 @@ fn imported_class_requirements_come_from_the_canonical_defining_module() {
         }
     }
 }
+
+#[test]
+fn instance_rejects_undeclared_members() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+
+            inductive State {
+                clean
+                dirty
+            }
+            "#,
+    );
+    let nodes = env.nodes.len();
+    env.bad(
+        r#"
+            instance State: Magma {
+                define mul(self, other: State) -> State {
+                    State.clean
+                }
+                define add(self, other: State) -> State {
+                    State.clean
+                }
+            }
+            "#,
+    );
+    assert_eq!(env.nodes.len(), nodes);
+    assert!(!env.bindings.name_in_use("State.Magma.mul"));
+    assert!(!env.bindings.name_in_use("State.Magma.add"));
+}
