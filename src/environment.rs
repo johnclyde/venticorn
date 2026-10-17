@@ -1,6 +1,6 @@
 // Modified for Venticorn.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, Range};
 
@@ -1774,6 +1774,7 @@ impl Environment {
                     .typeclass
                     .error("invalid typeclass member metadata")
             })?;
+        let mut checked_members = BTreeMap::new();
         for member in &instance.body.statements {
             let (member_name, member_token) = match &member.statement {
                 StatementInfo::Let(ls) => (&ls.name, &ls.name_token),
@@ -1783,7 +1784,7 @@ impl Environment {
                         .error("only let and define statements are allowed in instance bodies"))
                 }
             };
-            let expected = required
+            required
                 .remove(member_name)
                 .ok_or_else(|| member_token.error("unknown or duplicate instance member"))?;
             match &member.statement {
@@ -1804,12 +1805,24 @@ impl Environment {
                 }
                 _ => unreachable!(),
             }
-            self.bindings.typecheck_instance_attribute(
+            let owner = if class.module_id == self.module_id {
+                &self.bindings
+            } else {
+                project.get_bindings(class.module_id).ok_or_else(|| {
+                    instance
+                        .typeclass
+                        .error("could not load bindings for typeclass module")
+                })?
+            };
+            let pair = self.bindings.check_instance_attribute(
                 member_token,
+                owner,
+                &class,
+                &target,
                 &scope_name,
                 member_name,
-                &expected,
             )?;
+            checked_members.insert(member_name.clone(), pair);
         }
         if let Some(missing) = required.keys().next() {
             return Err(instance.typeclass.error(&format!(
@@ -1874,68 +1887,11 @@ impl Environment {
         // These definitions are available only after the obligation boundary.
         // The proof block was already captured under its own denied membership;
         // neither these facts nor this widened outer scope can enter that block.
-        let bridges = {
-            let owner = if class.module_id == self.module_id {
-                &self.bindings
-            } else {
-                project.get_bindings(class.module_id).ok_or_else(|| {
-                    instance
-                        .typeclass
-                        .error("could not load bindings for typeclass module")
-                })?
-            };
-            if owner.get_typeclass_for_name(&class.name) != Some(&class)
-                || info.instance_param.typeclass.as_ref() != Some(&class)
-            {
-                return Err(instance
-                    .typeclass
-                    .error("invalid canonical typeclass metadata"));
-            }
-            let substitution = [(info.instance_param.name.clone(), target.clone())];
-            let mut bridges = Vec::with_capacity(info.attributes.len());
-            for (member, template_type) in &info.attributes {
-                let generic_name = format!("{}.{}", class.name, member);
-                if owner.get_params(&generic_name) != [info.instance_param.clone()]
-                    || owner.get_type_for_identifier(&generic_name) != Some(template_type)
-                    || !matches!(
-                        owner.get_constant_value(&generic_name),
-                        Some(PotentialValue::Unresolved(_))
-                    )
-                {
-                    return Err(instance
-                        .typeclass
-                        .error("invalid canonical class member metadata"));
-                }
-                let expected_type = template_type.instantiate(&substitution);
-                let implementation = self
-                    .bindings
-                    .get_constant_value(&format!("{}.{}", scope_name, member))
-                    .and_then(PotentialValue::resolved)
-                    .ok_or_else(|| {
-                        instance
-                            .typeclass
-                            .error("invalid instance implementation metadata")
-                    })?;
-                if implementation.get_type() != expected_type {
-                    return Err(instance
-                        .typeclass
-                        .error("invalid instance bridge signature"));
-                }
-                let generic_member = AcornValue::new_constant(
-                    class.module_id,
-                    generic_name,
-                    vec![target.clone()],
-                    expected_type,
-                );
-                let claim = AcornValue::new_equals(generic_member, implementation);
-                claim
-                    .validate()
-                    .map_err(|error| instance.typeclass.error(&error))?;
-                bridges.push((member.clone(), claim));
-            }
-            bridges
-        };
-        for (member, claim) in bridges {
+        for (member, (generic, implementation)) in checked_members {
+            let claim = AcornValue::new_equals(generic, implementation);
+            claim
+                .validate()
+                .map_err(|error| instance.typeclass.error(&error))?;
             self.add_node(
                 project,
                 true,
