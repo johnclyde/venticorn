@@ -99,7 +99,7 @@ impl FunctionType {
         }
     }
 
-    fn new_partial(&self, remove_args: usize) -> FunctionType {
+    fn remove_args(&self, remove_args: usize) -> FunctionType {
         assert!(remove_args < self.arg_types.len());
         FunctionType {
             arg_types: self.arg_types[remove_args..].to_vec(),
@@ -121,7 +121,7 @@ impl FunctionType {
         if num_args == self.arg_types.len() {
             *self.return_type.clone()
         } else {
-            AcornType::Function(self.new_partial(num_args))
+            AcornType::Function(self.remove_args(num_args))
         }
     }
 }
@@ -233,12 +233,17 @@ impl AcornType {
 
     // Create the type, in non-curried form, for a function with the given arguments and return type.
     // arg_types can be empty.
-    pub fn new_functional(arg_types: Vec<AcornType>, return_type: AcornType) -> AcornType {
+    pub fn functional(arg_types: Vec<AcornType>, return_type: AcornType) -> AcornType {
         if arg_types.is_empty() {
             return_type
         } else {
             AcornType::Function(FunctionType::new(arg_types, return_type))
         }
+    }
+
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_functional(arg_types: Vec<AcornType>, return_type: AcornType) -> AcornType {
+        Self::functional(arg_types, return_type)
     }
 
     // Whether this type contains the named generic variable.
@@ -355,7 +360,7 @@ impl AcornType {
             AcornType::Arbitrary(param) if type_names.contains(&param.name) => {
                 AcornType::Variable(param.clone())
             }
-            AcornType::Function(function_type) => AcornType::new_functional(
+            AcornType::Function(function_type) => AcornType::functional(
                 function_type
                     .arg_types
                     .iter()
@@ -400,7 +405,7 @@ impl AcornType {
                 }
                 self.clone()
             }
-            AcornType::Function(function_type) => AcornType::new_functional(
+            AcornType::Function(function_type) => AcornType::functional(
                 function_type
                     .arg_types
                     .iter()
@@ -502,7 +507,7 @@ impl AcornType {
                 actuals.iter().map(AcornType::to_arbitrary).collect(),
             ),
             AcornType::Variable(param) => AcornType::Arbitrary(param.clone()),
-            AcornType::Function(ftype) => AcornType::new_functional(
+            AcornType::Function(ftype) => AcornType::functional(
                 ftype.arg_types.iter().map(|t| t.to_arbitrary()).collect(),
                 ftype.return_type.to_arbitrary(),
             ),
@@ -519,7 +524,7 @@ impl AcornType {
                 actuals.iter().map(AcornType::to_generic).collect(),
             ),
             AcornType::Arbitrary(param) => AcornType::Variable(param.clone()),
-            AcornType::Function(ftype) => AcornType::new_functional(
+            AcornType::Function(ftype) => AcornType::functional(
                 ftype.arg_types.iter().map(|t| t.to_generic()).collect(),
                 ftype.return_type.to_generic(),
             ),

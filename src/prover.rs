@@ -180,7 +180,7 @@ impl Prover {
             Normalization::Clauses(clauses) => clauses,
             Normalization::Impossible => {
                 // We have a false assumption, so we're done already.
-                self.final_step = Some(ProofStep::new_assumption(
+                self.final_step = Some(ProofStep::assumption(
                     Clause::impossible(),
                     fact.truthiness,
                     &fact.source,
@@ -195,7 +195,7 @@ impl Prover {
         };
         let mut steps = vec![];
         for clause in clauses {
-            let step = ProofStep::new_assumption(clause, fact.truthiness, &fact.source, defined);
+            let step = ProofStep::assumption(clause, fact.truthiness, &fact.source, defined);
             steps.push(step);
         }
         self.passive_set.push_batch(steps);
@@ -576,7 +576,7 @@ impl Prover {
                 continue;
             }
             new_clauses.insert(clause.clone());
-            let step = ProofStep::new_specialization_with_inspiration(
+            let step = ProofStep::specialization_with_inspiration(
                 rewrite_info.pattern_id,
                 rewrite_info.inspiration_id,
                 rewrite_step,
@@ -591,7 +591,7 @@ impl Prover {
         active_ids.sort();
         active_ids.dedup();
 
-        self.final_step = Some(ProofStep::new_multiple_rewrite(
+        self.final_step = Some(ProofStep::multiple_rewrite(
             contradiction.inequality_id,
             active_ids,
             passive_ids,
@@ -606,7 +606,7 @@ impl Prover {
             passive_step.printable = false;
             self.useful_passive.push(passive_step);
         }
-        self.final_step = Some(ProofStep::new_passive_contradiction(&self.useful_passive));
+        self.final_step = Some(ProofStep::passive_contradiction(&self.useful_passive));
     }
 
     // Activates the next clause from the queue, unless we're already done.
