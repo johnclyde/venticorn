@@ -446,11 +446,18 @@ impl Normalizer {
 
     // Converts a value to CNF.
     pub fn normalize(&mut self, value: &AcornValue, local: bool) -> Normalization {
-        // Validate match shape and scope before transformations inspect its type.
-        if value.contains_match() {
-            if let Err(error) = value.validate() {
-                return Normalization::Error(error);
-            }
+        // Validate every value before transformations inspect application or match types.
+        if let Err(error) = value.validate() {
+            return Normalization::Error(format!(
+                "validation error: {} while normalizing: {}",
+                error, value
+            ));
+        }
+        if value.get_type() != AcornType::Bool {
+            return Normalization::Error(format!(
+                "normalization requires a Boolean value, got {}",
+                value.get_type()
+            ));
         }
         if let AcornValue::Binary(BinaryOp::Equals, left, right) = &value {
             // Check for the sort of functional equality that can be represented as a literal.
