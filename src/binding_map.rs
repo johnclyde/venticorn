@@ -111,15 +111,9 @@ pub struct BindingMap {
     // Maps the name of a constant defined in this scope to information about it.
     // Doesn't handle variables defined on the stack, only ones that will be in scope for the
     // entirety of this environment.
-    // Aliases are stored separately and resolve to their canonical constant.
+    // Aliases retain their canonical values in the same records, without ownership.
     // Includes "<datatype>.<constant>" for members.
     constant_info: BTreeMap<String, ConstantInfo>,
-
-    // The canonical identifier of a constant is the first place it is defined.
-    // There may be other names in this environment that refer to the same thing.
-    // When we create an AcornValue, we want to use the canonical name.
-    // Preserve unresolved declarations as well as fully specialized values.
-    aliases: HashMap<String, PotentialValue>,
 
     // Whenever a name from some other scope has a local alias in this one,
     // if we're generating code, we prefer to use the local name.
@@ -163,6 +157,9 @@ pub struct TypeclassInfo {
 struct ConstantInfo {
     // The canonical constant value, retaining complete unresolved formal parameters.
     value: PotentialValue,
+
+    // Only declarations own definitions, constructor metadata, and instance members.
+    canonical: bool,
 
     // The definition of this constant, if it has one.
     definition: Option<AcornValue>,
@@ -213,7 +210,6 @@ impl BindingMap {
             imported_instance_members: HashMap::new(),
             constant_name_to_type: BTreeMap::new(),
             constant_info: BTreeMap::new(),
-            aliases: HashMap::new(),
             canonical_to_alias: HashMap::new(),
             name_to_module: BTreeMap::new(),
             module_to_name: HashMap::new(),
@@ -261,7 +257,6 @@ impl BindingMap {
         result
             .constant_info
             .retain(|name, _| visible.contains_key(name));
-        result.aliases.retain(|name, _| visible.contains_key(name));
         result
             .name_to_module
             .retain(|name, _| visible.contains_key(name));
@@ -317,7 +312,12 @@ impl BindingMap {
                     .entry(class.clone())
                     .or_insert_with(|| name.clone());
             }
-            if let Some(alias) = result.aliases.get(&name) {
+            if let Some(info) = result
+                .constant_info
+                .get(&name)
+                .filter(|info| !info.canonical)
+            {
+                let alias = &info.value;
                 let canonical = match alias {
                     PotentialValue::Unresolved(c) => Some((c.module_id, c.name.clone())),
                     PotentialValue::Resolved(v) => v
@@ -690,10 +690,6 @@ impl BindingMap {
 
     // Look up a constant without treating a pending generic declaration as a proof value.
     pub fn get_constant_value(&self, name: &str) -> Option<PotentialValue> {
-        if let Some(value) = self.aliases.get(name) {
-            return Some(value.clone());
-        }
-
         self.constant_info.get(name).map(|info| info.value.clone())
     }
 
@@ -738,8 +734,8 @@ impl BindingMap {
 
     pub fn unresolved_params(&self, identifier: &str) -> Vec<TypeParam> {
         match self.constant_info.get(identifier) {
-            Some(info) => info.value.unresolved_params().to_vec(),
-            None => vec![],
+            Some(info) if info.canonical => info.value.unresolved_params().to_vec(),
+            _ => vec![],
         }
     }
 
@@ -774,12 +770,16 @@ impl BindingMap {
     // Returns the defined value, if there is a defined value.
     // If there isn't, returns None.
     pub fn get_definition(&self, name: &str) -> Option<&AcornValue> {
-        self.constant_info.get(name)?.definition.as_ref()
+        self.constant_info
+            .get(name)
+            .filter(|info| info.canonical)?
+            .definition
+            .as_ref()
     }
 
     // Returns the defined value and its parameters in declaration order.
     pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[TypeParam])> {
-        let info = self.constant_info.get(name)?;
+        let info = self.constant_info.get(name).filter(|info| info.canonical)?;
         Some((info.definition.as_ref()?, info.value.unresolved_params()))
     }
 
@@ -860,6 +860,7 @@ impl BindingMap {
 
         let info = ConstantInfo {
             value,
+            canonical: true,
             definition,
             constructor,
         };
@@ -887,11 +888,21 @@ impl BindingMap {
                 .entry(canonical.clone())
                 .or_insert(name.to_string());
         }
-        self.aliases.insert(name.to_string(), value);
+        self.constant_info.insert(
+            name.to_string(),
+            ConstantInfo {
+                value,
+                canonical: false,
+                definition: None,
+                constructor: None,
+            },
+        );
     }
 
     pub fn is_constant(&self, name: &str) -> bool {
-        self.constant_info.contains_key(name)
+        self.constant_info
+            .get(name)
+            .is_some_and(|info| info.canonical)
     }
 
     pub fn mark_as_theorem(&mut self, name: &str) {
@@ -931,6 +942,9 @@ impl BindingMap {
                 continue;
             }
             for name in keys_with_prefix(&owner.constant_info, &format!("{}.", scope)) {
+                if !owner.is_constant(name) {
+                    continue;
+                }
                 let key = (owner.module, name.clone());
                 if !self.instance_member_positions.contains_key(&key) {
                     self.position += 1;
@@ -1126,7 +1140,7 @@ impl BindingMap {
             if !visible(name) {
                 continue;
             }
-            if importing && (self.aliases.contains_key(name) || self.theorems.contains(name)) {
+            if importing && (!self.is_constant(name) || self.theorems.contains(name)) {
                 continue;
             }
             if !name.contains('.') {
@@ -1381,6 +1395,7 @@ impl BindingMap {
                 bindings
                     .constant_info
                     .get(name)
+                    .filter(|info| info.canonical)
                     .ok_or_else(|| source.error("constructor metadata is unavailable"))?
             }
             _ => return Err(source.error("invalid pattern")),
@@ -2651,7 +2666,7 @@ impl BindingMap {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Bool(_) => {}
             AcornValue::Constant(c) => {
-                if c.module_id == self.module && !self.constant_info.contains_key(&c.name) {
+                if c.module_id == self.module && !self.is_constant(&c.name) {
                     if !c.params.is_empty() {
                         return Err(format!(
                             "cannot export scoped generic constant '{}' from this block",
@@ -2929,7 +2944,11 @@ impl BindingMap {
     // arguments to infer every formal parameter in a known declaration.
     fn can_infer_type_arguments(&self, constant: &ConstantInstance, supplied: usize) -> bool {
         let (params, signature) = if constant.module_id == self.module {
-            let Some(info) = self.constant_info.get(&constant.name) else {
+            let Some(info) = self
+                .constant_info
+                .get(&constant.name)
+                .filter(|info| info.canonical)
+            else {
                 return false;
             };
             let Some(signature) = self.constant_name_to_type.get(&constant.name) else {
@@ -2943,7 +2962,10 @@ impl BindingMap {
             else {
                 return false;
             };
-            let Some(PotentialValue::Unresolved(declaration)) = self.aliases.get(alias) else {
+            let Some(info) = self.constant_info.get(alias).filter(|info| !info.canonical) else {
+                return false;
+            };
+            let PotentialValue::Unresolved(declaration) = &info.value else {
                 return false;
             };
             (declaration.params.as_slice(), &declaration.generic_type)
@@ -3456,7 +3478,6 @@ mod name_insertion_tests {
         let class_reverse = bindings.typeclass_to_name.clone();
         let modules = bindings.name_to_module.clone();
         let module_reverse = bindings.module_to_name.clone();
-        let value_aliases = bindings.aliases.clone();
         let scope = bindings.proof_scope.clone();
         let records = |b: &BindingMap| {
             b.constant_info
@@ -3464,7 +3485,8 @@ mod name_insertion_tests {
                 .map(|(name, info)| {
                     (
                         name.clone(),
-                        info.value.unresolved_params().to_vec(),
+                        info.value.clone(),
+                        info.canonical,
                         info.definition.clone(),
                         info.constructor.clone(),
                     )
@@ -3483,7 +3505,6 @@ mod name_insertion_tests {
         assert_eq!(bindings.typeclass_to_name, class_reverse);
         assert_eq!(bindings.name_to_module, modules);
         assert_eq!(bindings.module_to_name, module_reverse);
-        assert_eq!(bindings.aliases, value_aliases);
         assert_eq!(bindings.proof_scope, scope);
         assert_eq!(records(bindings), constant_info);
     }
@@ -3683,5 +3704,74 @@ mod constant_metadata_tests {
             .unwrap()
             .1
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod alias_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn aliases_preserve_values_without_owning_declarations_or_instance_members() {
+        let mut owner = BindingMap::new(FIRST_NORMAL);
+        owner.add_data_type("State");
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let params = vec![
+            TypeParam {
+                name: "Z".into(),
+                typeclass: Some(class.clone()),
+            },
+            TypeParam::unconstrained("A"),
+        ];
+        let member = LocalConstantName::instance(&class, "flag", "State");
+        owner.add_constant_named(&member, params.clone(), AcornType::Bool, None, None);
+        owner.add_instance_scope("State", class.clone(), "State.Marked".into());
+        let value = owner.get_constant_value("State.Marked.flag").unwrap();
+        owner.add_alias(
+            "State.Marked.alias",
+            FIRST_NORMAL,
+            "State.Marked.flag".into(),
+            value.clone(),
+        );
+        assert_eq!(owner.get_constant_value("State.Marked.alias"), Some(value));
+        assert!(owner.is_constant("State.Marked.flag"));
+        assert!(!owner.is_constant("State.Marked.alias"));
+        assert!(owner.unresolved_params("State.Marked.alias").is_empty());
+        assert!(owner.get_definition("State.Marked.alias").is_none());
+        assert!(owner
+            .get_definition_and_params("State.Marked.alias")
+            .is_none());
+        assert_eq!(
+            owner
+                .get_constant_value("State.Marked.alias")
+                .unwrap()
+                .unresolved_params(),
+            params
+        );
+        let mut importer = BindingMap::new(FIRST_NORMAL + 2);
+        importer.import_instance_members(&owner);
+        assert_eq!(importer.imported_instance_members.len(), 1);
+        assert!(importer
+            .imported_instance_members
+            .contains_key(&(FIRST_NORMAL, "State.Marked.flag".into())));
+        assert!(!importer
+            .imported_instance_members
+            .contains_key(&(FIRST_NORMAL, "State.Marked.alias".into())));
+        let mut unknown = HashMap::new();
+        owner
+            .find_unknown_local_constants(
+                &AcornValue::constant(
+                    FIRST_NORMAL,
+                    "State.Marked.alias".into(),
+                    vec![],
+                    AcornType::Bool,
+                ),
+                &mut unknown,
+            )
+            .unwrap();
+        assert_eq!(unknown.get("State.Marked.alias"), Some(&AcornType::Bool));
     }
 }
