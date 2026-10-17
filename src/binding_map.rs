@@ -698,21 +698,12 @@ impl BindingMap {
         // Constants defined here
         let constant_type = self.constant_name_to_type.get(name)?.clone();
         let params = self.constant_info.get(name)?.params.clone();
-        if params.is_empty() {
-            Some(PotentialValue::Resolved(AcornValue::new_constant(
-                self.module,
-                name.to_string(),
-                vec![],
-                constant_type,
-            )))
-        } else {
-            Some(PotentialValue::Unresolved(UnresolvedConstant {
-                module_id: self.module,
-                name: name.to_string(),
-                params,
-                generic_type: constant_type,
-            }))
-        }
+        Some(PotentialValue::constant(
+            self.module,
+            name,
+            constant_type,
+            params,
+        ))
     }
 
     // Structured instance names are looked up through their canonical owner.
