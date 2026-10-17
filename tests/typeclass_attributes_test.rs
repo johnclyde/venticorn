@@ -179,3 +179,64 @@ fn bounded_operators_are_admitted_without_asserting_commutativity() {
             "#,
     );
 }
+
+#[test]
+fn static_bounded_attributes_keep_phantom_actuals_and_canonical_owner() {
+    use venticorn::acorn_value::AcornValue;
+    let mut project = Project::new_mock();
+    project.mock("/mock/left.ac", "typeclass F: Flagged {\n flag: Bool\n}");
+    project.mock("/mock/right.ac", "typeclass F: Flagged {\n flag: Bool\n}");
+    project.mock("/mock/main.ac", "import left\nimport right\ndefine left_flag<F: left.Flagged>(value: F) -> Bool { F.flag }\ndefine right_flag<F: right.Flagged>(value: F) -> Bool { F.flag }\ntheorem goal<F: left.Flagged> { F.flag or not F.flag }");
+    let main = project.expect_ok("main");
+    let left = project.expect_ok("left");
+    let right = project.expect_ok("right");
+    let env = project.get_env_by_id(main).unwrap();
+    for (name, owner) in [("left_flag", left), ("right_flag", right)] {
+        let definition = env.bindings.get_definition(name).unwrap();
+        let mut constants = vec![];
+        definition.find_constants(&|c| c.name == "Flagged.flag", &mut constants);
+        assert_eq!(constants.len(), 1);
+        let c = &constants[0];
+        assert_eq!(c.module_id, owner);
+        assert_eq!(c.params.len(), 1);
+        let AcornType::Variable(param) = &c.params[0] else {
+            panic!("{c:?}")
+        };
+        assert_eq!(param.name, "F");
+        assert_eq!(param.typeclass.as_ref().unwrap().module_id, owner);
+        let AcornType::Function(function) = definition.get_type() else {
+            panic!()
+        };
+        assert_eq!(function.applied_type(1), AcornType::Bool);
+    }
+    let node = env.get_node_by_name("goal");
+    let scope = &node.current().block.as_ref().unwrap().env.bindings;
+    let value = scope
+        .evaluate_value(&project, &Expression::expect_value("F.flag"), None)
+        .unwrap();
+    let AcornValue::Constant(c) = &value else {
+        panic!()
+    };
+    assert_eq!(c.params.len(), 1);
+    assert!(
+        matches!(&c.params[0], AcornType::Arbitrary(param) if param.typeclass.as_ref().unwrap().module_id == left)
+    );
+    let code = scope.value_to_code(&value).unwrap();
+    assert_eq!(code, "left.Flagged.flag<F>");
+    assert_eq!(
+        scope
+            .evaluate_value(&project, &Expression::expect_value(&code), None)
+            .unwrap(),
+        value
+    );
+    for bad in ["F.missing", "F.flag<Bool>", "right.Flagged.flag<F>"] {
+        assert!(
+            scope
+                .evaluate_value(&project, &Expression::expect_value(bad), None)
+                .is_err(),
+            "{bad}"
+        );
+    }
+    let mut unbounded = Environment::new_test();
+    unbounded.bad("define bad<T>(value: T) -> Bool { T.flag }");
+}

@@ -661,7 +661,6 @@ fn forbid_instance_on_alias_851() {
 }
 
 #[test]
-#[ignore = "pending bounded type attribute support"]
 fn typechecking_captures_instance_relationships_853() {
     let mut env = Environment::new_test();
     env.add(
@@ -681,7 +680,6 @@ fn typechecking_captures_instance_relationships_853() {
 }
 
 #[test]
-#[ignore = "pending bounded type attribute support"]
 fn arbitrary_type_attributes_854() {
     let mut env = Environment::new_test();
     env.add(
