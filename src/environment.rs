@@ -191,12 +191,12 @@ impl Environment {
             return;
         };
 
-        let constant_type = self.bindings.get_type_for_constant_name(&name).unwrap();
-        let param_names = self.bindings.unresolved_params(&name);
-
-        let params = param_names.into_iter().map(AcornType::Variable).collect();
-        let constant =
-            AcornValue::constant(self.module_id, name.to_string(), params, constant_type);
+        // A canonical definition may be prepared before its instance scope is published.
+        let constant = self
+            .bindings
+            .get_constant_value(&name)
+            .expect("a stored definition must have a declaration value")
+            .to_generic_value();
 
         let claim = if let AcornValue::Lambda(acorn_types, return_value) = definition {
             let args: Vec<_> = acorn_types
