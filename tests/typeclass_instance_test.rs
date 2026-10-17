@@ -635,3 +635,24 @@ fn forbid_class_on_alias_850() {
             "#,
     );
 }
+
+#[test]
+fn forbid_instance_on_alias_851() {
+    let mut env = Environment::new_test();
+    env.add(
+        r#"
+            typeclass F: Flagged {
+                flag: Bool
+            }
+            type Foo: axiom
+            type Bar: Foo
+            "#,
+    );
+    env.bad(
+        r#"
+            instance Bar: Flagged {
+                let flag: Bool = true
+            }
+            "#,
+    );
+}
