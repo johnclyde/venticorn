@@ -7,7 +7,7 @@ use tower_lsp::lsp_types::{CompletionItem, Range};
 use crate::acorn_type::{AcornType, PotentialType, TypeParam, Typeclass};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
-use crate::binding_map::{BindingMap, PotentialValue, Stack};
+use crate::binding_map::{BindingMap, PotentialValue, Stack, TypeclassInfo};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
 use crate::fact::Fact;
@@ -1525,9 +1525,25 @@ impl Environment {
             Some(AcornType::Arbitrary(param)) => param.clone(),
             _ => unreachable!("the staged instance type must exist"),
         }];
+        let info = TypeclassInfo {
+            instance_param: params[0].clone(),
+            attributes: ts
+                .constants
+                .iter()
+                .zip(&members)
+                .map(|((name, _), (_, member_type))| (name.text().to_string(), member_type.clone()))
+                .collect(),
+        };
         for (name, member_type) in members {
             scope.add_constant(&name, params.clone(), member_type, None, None);
         }
+        scope.add_typeclass_info(
+            Typeclass {
+                module_id: self.module_id,
+                name: ts.typeclass_name.text().to_string(),
+            },
+            info,
+        );
         scope.remove_data_type(ts.instance_name.text());
         self.bindings = scope;
         self.add_other_lines(statement);

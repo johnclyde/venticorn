@@ -144,3 +144,44 @@ fn complete_scoped_descriptors_keep_renamed_and_foreign_bounds() {
         AcornType::Arbitrary(TypeParam::unconstrained("Legacy"))
     );
 }
+
+#[test]
+fn class_definition_metadata_keeps_canonical_bounds_and_phantom_attributes() {
+    use venticorn::acorn_type::{AcornType, Typeclass};
+    use venticorn::environment::Environment;
+    let mut env = Environment::new_test();
+    env.add("typeclass T: Marked {\n flag: Bool\n keep: T -> T\n}");
+    let class = env
+        .bindings
+        .get_typeclass_for_name("Marked")
+        .unwrap()
+        .clone();
+    let info = env.bindings.get_typeclass_info(&class).unwrap();
+    assert_eq!(info.instance_param.name, "T");
+    assert_eq!(info.instance_param.typeclass.as_ref(), Some(&class));
+    assert_eq!(info.attributes.len(), 2);
+    assert_eq!(info.attributes["flag"], AcornType::Bool);
+    let formal = AcornType::Variable(info.instance_param.clone());
+    assert_eq!(
+        info.attributes["keep"],
+        AcornType::new_functional(vec![formal.clone()], formal)
+    );
+    assert!(env
+        .bindings
+        .get_typeclass_info(&Typeclass {
+            module_id: class.module_id + 1,
+            name: class.name.clone(),
+        })
+        .is_none());
+    env.bad("typeclass U: Broken {\n good: U\n bad: Missing\n}");
+    assert!(env
+        .bindings
+        .get_typeclass_info(&Typeclass {
+            module_id: env.module_id,
+            name: "Broken".into(),
+        })
+        .is_none());
+    env.add("typeclass U: Broken {\n good: U\n}");
+    let other = env.bindings.get_typeclass_for_name("Broken").unwrap();
+    assert!(env.bindings.get_typeclass_info(other).is_some());
+}
