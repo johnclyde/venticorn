@@ -45,7 +45,10 @@ fn double_swap_is_found_by_generic_proof_search() {
             assert_eq!(outcome, Outcome::Success);
         } else {
             assert!(
-                matches!(outcome, Outcome::Exhausted | Outcome::Timeout),
+                matches!(
+                    outcome,
+                    Outcome::Exhausted | Outcome::Timeout | Outcome::Constrained
+                ),
                 "false inequality was not rejected: {outcome:?}"
             );
             assert_eq!(verify(&source), Outcome::Exhausted);

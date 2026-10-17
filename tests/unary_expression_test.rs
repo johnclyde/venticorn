@@ -1,4 +1,5 @@
 // Modified for Venticorn: distinguish prefix operators from binary subtraction.
+use tower_lsp::lsp_types::{Position, Range};
 use venticorn::expression::Expression;
 use venticorn::token::TokenType;
 
@@ -40,7 +41,11 @@ fn prefix_minus_is_guarded_until_the_operand_supports_negation() {
         )
         .unwrap_err();
     // Syntax is accepted independently of whether the type defines negation.
-    assert!(error.message().contains("no members"), "{error}");
+    assert_eq!(error.message(), "objects of type Bool have no attributes");
+    assert_eq!(
+        error.range(),
+        Range::new(Position::new(0, 0), Position::new(0, 1))
+    );
 }
 
 // A compact tree description checks meaning rather than merely retaining source parentheses.
