@@ -1584,9 +1584,7 @@ impl BindingMap {
                 }
                 _ => return Err(name_exp.error("expected a simple name in pattern")),
             };
-            if self.name_in_use(&name) {
-                return Err(name_exp.error(&format!("name '{}' is already bound", name)));
-            }
+            self.check_unqualified_name_available(name_exp, &name)?;
             if args.iter().any(|(existing, _)| existing == &name) {
                 return Err(name_exp.error("cannot use a name twice in one pattern"));
             }
@@ -2033,12 +2031,7 @@ impl BindingMap {
         module: ModuleId,
         name_token: &Token,
     ) -> compilation::Result<()> {
-        if self.name_in_use(&name_token.text()) {
-            return Err(name_token.error(&format!(
-                "name {} already bound in this module",
-                name_token.text()
-            )));
-        }
+        self.check_unqualified_name_available(name_token, name_token.text())?;
         let bindings = match project.get_bindings(module) {
             Some(b) => b,
             None => {
@@ -2608,11 +2601,7 @@ impl BindingMap {
         let mut params = Vec::with_capacity(expressions.len());
         for expression in expressions {
             let name = expression.name.text();
-            if self.name_in_use(name) {
-                return Err(expression
-                    .name
-                    .error("type parameter already defined in this scope"));
-            }
+            self.check_typename_available(&expression.name, name)?;
             if !seen.insert(name) {
                 return Err(expression.name.error("duplicate type parameter"));
             }
@@ -2875,24 +2864,11 @@ impl BindingMap {
         ))
     }
 
-    // We use variables named x0, x1, x2, etc when new temporary variables are needed.
-    // Find the next one that's available.
-    fn next_x_var(&self, next_x: &mut u32) -> String {
+    // Find an unused generated variable or witness name across every namespace.
+    fn next_indexed_var(&self, prefix: char, next_index: &mut u32) -> String {
         loop {
-            let name = format!("x{}", next_x);
-            *next_x += 1;
-            if !self.name_in_use(&name) {
-                return name;
-            }
-        }
-    }
-
-    // We use variables named k0, k1, k2, etc when new constant names are needed.
-    // Find the next one that's available.
-    fn next_k_var(&self, next_k: &mut u32) -> String {
-        loop {
-            let name = format!("k{}", next_k);
-            *next_k += 1;
+            let name = format!("{}{}", prefix, next_index);
+            *next_index += 1;
             if !self.name_in_use(&name) {
                 return name;
             }
@@ -3031,9 +3007,9 @@ impl BindingMap {
         let mut decls = vec![];
         for arg_type in quants {
             let var_name = if use_x {
-                self.next_x_var(next_x)
+                self.next_indexed_var('x', next_x)
             } else {
-                self.next_k_var(next_k)
+                self.next_indexed_var('k', next_k)
             };
             let name_token = TokenType::Identifier.new_token(&var_name);
             var_names.push(var_name);
@@ -3696,6 +3672,32 @@ mod name_insertion_tests {
             reject_without_name_mutation(&mut bindings, |b| {
                 b.import_module(name, FIRST_NORMAL + 2)
             });
+        }
+    }
+    #[test]
+    fn generated_names_skip_modules_types_classes_and_values() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        for prefix in ['x', 'k'] {
+            bindings.import_module(&format!("{}0", prefix), FIRST_NORMAL + 1);
+            bindings.add_type_alias(&format!("{}1", prefix), AcornType::Bool);
+            bindings.add_typeclass(
+                &format!("{}2", prefix),
+                Typeclass {
+                    module_id: FIRST_NORMAL,
+                    name: format!("{}Class", prefix),
+                },
+            );
+            bindings.add_constant(&format!("{}3", prefix), vec![], AcornType::Bool, None, None);
+            let mut next = 0;
+            assert_eq!(
+                bindings.next_indexed_var(prefix, &mut next),
+                format!("{}4", prefix)
+            );
+            assert_eq!(next, 5);
+            assert_eq!(
+                bindings.next_indexed_var(prefix, &mut next),
+                format!("{}5", prefix)
+            );
         }
     }
 }

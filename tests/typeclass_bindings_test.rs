@@ -44,7 +44,7 @@ fn datatype_declarations_reject_reserved_class_names_without_mutation() {
         ),
         (
             "structure Wrapper<Magma> {\n value: Magma\n}",
-            "type parameter already defined in this scope",
+            "name Magma is already in use",
         ),
         (
             "inductive Magma {\n unit\n}",
