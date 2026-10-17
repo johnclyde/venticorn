@@ -25,6 +25,7 @@ pub mod literal;
 pub mod live_document;
 pub mod module;
 pub mod monomorphizer;
+pub mod names;
 pub mod normalizer;
 #[cfg(feature = "onnx")]
 pub mod ort_model;
