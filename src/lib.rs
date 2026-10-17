@@ -49,5 +49,6 @@ pub mod termination_checker;
 pub mod token;
 pub mod type_map;
 pub mod unifier;
+pub mod unresolved_constant;
 
 pub mod build_info;
