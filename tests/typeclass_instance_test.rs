@@ -596,3 +596,24 @@ fn instance_constant_members_require_the_declared_type() {
     assert!(!env.bindings.name_in_use("Z2.PointedSet.basepoint"));
     assert!(!env.bindings.name_in_use("Z2.PointedSet.other"));
 }
+
+#[test]
+fn forbid_class_on_alias_849() {
+    let mut env = Environment::new_test();
+    let input = r#"
+            type Foo: axiom
+            type Bar: Foo
+            class Bar {
+                let b: Bool = true
+            }
+            "#;
+    let error = env
+        .add_tokens(
+            &mut venticorn::project::Project::new_mock(),
+            venticorn::token::Token::scan(input),
+        )
+        .unwrap_err();
+    assert_eq!(error.message(), "we cannot bind members to type aliases");
+    assert_eq!(error.range().start.line, 3);
+    assert!(!env.bindings.name_in_use("Bar.b"));
+}
