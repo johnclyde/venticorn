@@ -24,7 +24,7 @@ fn normalized_instances_retain_distinct_order_and_complete_roundtrip_metadata() 
     let other = AcornValue::new_constant(10, "other".into(), vec![], original.get_type());
     let other_term = normalizer.term_from_value(&other, false).unwrap();
     let clause = Clause::new(vec![Literal::new(true, term, other_term)]);
-    normalizer.type_map.check_clause(&clause);
+    normalizer.check_clause(&clause);
     let roundtrip = normalizer.denormalize(&clause);
     roundtrip.validate().unwrap();
     let AcornValue::Binary(BinaryOp::Equals, left, right) = roundtrip else {

@@ -103,7 +103,7 @@ pub struct Normalizer {
     // Some of them are just constants, so we store an AcornType rather than a FunctionType
     skolem_types: Vec<AcornType>,
 
-    pub type_map: TypeMap,
+    type_map: TypeMap,
 
     constant_map: ConstantMap,
 }
@@ -115,6 +115,12 @@ impl Normalizer {
             type_map: TypeMap::new(),
             constant_map: ConstantMap::new(),
         }
+    }
+
+    /// Check every literal and term against this normalizer's type state.
+    /// Panics if a clause contains an invalid or inconsistent type ID.
+    pub fn check_clause(&self, clause: &Clause) {
+        self.type_map.check_clause(clause);
     }
 
     fn new_skolem_value(&mut self, acorn_type: AcornType) -> AcornValue {
