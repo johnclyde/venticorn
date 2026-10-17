@@ -20,24 +20,26 @@ pub const BOOL: TypeId = 1;
 // The TypeMap is a mapping between the two.
 #[derive(Clone)]
 pub struct TypeMap {
-    // type_map[acorn_type] is the TypeId
-    type_map: HashMap<AcornType, TypeId>,
+    // type_to_type_id[acorn_type] is the TypeId
+    type_to_type_id: HashMap<AcornType, TypeId>,
 
-    // types[type_id] is the AcornType
-    types: Vec<AcornType>,
+    // type_id_to_type[type_id] is the AcornType
+    type_id_to_type: Vec<AcornType>,
 
-    // One entry for each monomorphization
+    // One entry for each monomorphization.
+    // Maps the rich constant to the AtomId of the monomorph.
     monomorph_map: HashMap<ConstantInstance, AtomId>,
 
-    // For each monomorphization, store how it was created and its type.
+    // Indexed by the AtomId of the monomorph.
+    // Stores the corresponding rich constant and its type ID.
     monomorph_info: Vec<(ConstantInstance, TypeId)>,
 }
 
 impl TypeMap {
     pub fn new() -> TypeMap {
         let mut map = TypeMap {
-            type_map: HashMap::new(),
-            types: vec![],
+            type_to_type_id: HashMap::new(),
+            type_id_to_type: vec![],
             monomorph_info: vec![],
             monomorph_map: HashMap::new(),
         };
@@ -48,20 +50,20 @@ impl TypeMap {
 
     // Returns the id for the new type.
     pub fn add_type(&mut self, acorn_type: &AcornType) -> TypeId {
-        if let Some(type_id) = self.type_map.get(acorn_type) {
+        if let Some(type_id) = self.type_to_type_id.get(acorn_type) {
             return *type_id;
         }
         if !acorn_type.is_normalized() {
             panic!("Type {} is not normalized", acorn_type);
         }
-        self.types.push(acorn_type.clone());
-        let id = (self.types.len() - 1) as TypeId;
-        self.type_map.insert(acorn_type.clone(), id);
+        self.type_id_to_type.push(acorn_type.clone());
+        let id = (self.type_id_to_type.len() - 1) as TypeId;
+        self.type_to_type_id.insert(acorn_type.clone(), id);
         id
     }
 
     pub fn get_type(&self, type_id: TypeId) -> &AcornType {
-        &self.types[type_id as usize]
+        &self.type_id_to_type[type_id as usize]
     }
 
     // Panics if the term has an invalid type id, or one that does not match its type.

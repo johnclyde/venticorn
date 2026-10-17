@@ -15,17 +15,17 @@ pub type ConstantKey = GlobalConstantName;
 #[derive(Clone)]
 pub struct ConstantMap {
     // For global constant i in the prover, global_constants[i] is the corresponding GlobalConstantName.
-    // The AtomId -> GlobalConstantName lookup direction.
+    // Part of the Atom -> GlobalConstantName lookup direction.
     global_constants: Vec<Option<GlobalConstantName>>,
 
     // For local constant i in the prover, local_constants[i] is the corresponding GlobalConstantName.
-    // The AtomId -> GlobalConstantName lookup direction.
+    // Part of the Atom -> GlobalConstantName lookup direction.
     local_constants: Vec<Option<GlobalConstantName>>,
 
     // Inverse map of constants.
-    // The GlobalConstantName -> AtomId lookup direction.
+    // The GlobalConstantName -> Atom lookup direction.
     // Explicit compatibility aliases may share an atom; normalization never adds them.
-    name_to_id: HashMap<GlobalConstantName, Atom>,
+    name_to_atom: HashMap<GlobalConstantName, Atom>,
 }
 
 impl ConstantMap {
@@ -33,7 +33,7 @@ impl ConstantMap {
         ConstantMap {
             global_constants: vec![],
             local_constants: vec![],
-            name_to_id: HashMap::new(),
+            name_to_atom: HashMap::new(),
         }
     }
 
@@ -51,7 +51,7 @@ impl ConstantMap {
             name.module_id, SKOLEM,
             "skolem constants should not be stored in the ConstantMap"
         );
-        if let Some(&atom) = self.name_to_id.get(&name) {
+        if let Some(&atom) = self.name_to_atom.get(&name) {
             return atom;
         }
         let atom = if local {
@@ -63,7 +63,7 @@ impl ConstantMap {
             self.global_constants.push(Some(name.clone()));
             Atom::GlobalConstant(atom_id)
         };
-        self.name_to_id.insert(name, atom);
+        self.name_to_atom.insert(name, atom);
         atom
     }
 
@@ -75,7 +75,7 @@ impl ConstantMap {
     }
 
     pub fn has_constant_named(&self, name: &GlobalConstantName) -> bool {
-        self.name_to_id.contains_key(name)
+        self.name_to_atom.contains_key(name)
     }
 
     // Compatibility operation: explicitly alias a name to an existing atom.
@@ -106,34 +106,44 @@ impl ConstantMap {
     /// This compatibility operation does not establish or record a proof premise.
     /// Rejected proposals leave the atom inventory unchanged.
     pub fn maybe_add_alias(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) -> bool {
-        if self.name_to_id.contains_key(new) {
+        if self.name_to_atom.contains_key(new) {
             return false;
         }
-        let Some(&atom) = self.name_to_id.get(old) else {
+        let Some(&atom) = self.name_to_atom.get(old) else {
             return false;
         };
-        self.name_to_id.insert(new.clone(), atom);
+        self.name_to_atom.insert(new.clone(), atom);
         true
     }
 
-    /// Borrow the canonical identity behind a global atom.
-    pub fn get_global_name(&self, id: AtomId) -> &GlobalConstantName {
+    /// Borrow the canonical name corresponding to a global AtomId.
+    pub fn name_for_global_id(&self, id: AtomId) -> &GlobalConstantName {
         self.global_constants[id as usize].as_ref().unwrap()
     }
 
-    /// Borrow the canonical identity behind a local atom.
-    pub fn get_local_name(&self, id: AtomId) -> &GlobalConstantName {
+    /// Borrow the canonical name corresponding to a local AtomId.
+    pub fn name_for_local_id(&self, id: AtomId) -> &GlobalConstantName {
         self.local_constants[id as usize].as_ref().unwrap()
+    }
+
+    /// Compatibility name for the borrowed global lookup.
+    pub fn get_global_name(&self, id: AtomId) -> &GlobalConstantName {
+        self.name_for_global_id(id)
+    }
+
+    /// Compatibility name for the borrowed local lookup.
+    pub fn get_local_name(&self, id: AtomId) -> &GlobalConstantName {
+        self.name_for_local_id(id)
     }
 
     // Compatibility display accessors. Use the borrowed names for identity.
     pub fn get_global_info(&self, atom_id: AtomId) -> (ModuleId, String) {
-        let name = self.get_global_name(atom_id);
+        let name = self.name_for_global_id(atom_id);
         (name.module_id, name.local_name.to_string())
     }
 
     pub fn get_local_info(&self, atom_id: AtomId) -> (ModuleId, String) {
-        let name = self.get_local_name(atom_id);
+        let name = self.name_for_local_id(atom_id);
         (name.module_id, name.local_name.to_string())
     }
 }
