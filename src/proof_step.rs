@@ -245,7 +245,7 @@ impl fmt::Display for ProofStep {
 impl ProofStep {
     // Construct a new assumption ProofStep that is not dependent on any other steps.
     // Assumptions are always depth zero, but eventually we may have to revisit that.
-    pub fn new_assumption(
+    pub fn assumption(
         clause: Clause,
         truthiness: Truthiness,
         source: &Source,
@@ -267,9 +267,19 @@ impl ProofStep {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_assumption(
+        clause: Clause,
+        truthiness: Truthiness,
+        source: &Source,
+        defined_atom: Option<Atom>,
+    ) -> ProofStep {
+        Self::assumption(clause, truthiness, source, defined_atom)
+    }
+
     // Construct a new ProofStep that is a direct implication of a single activated step,
     // not requiring any other clauses.
-    pub fn new_direct(activated_step: &ProofStep, rule: Rule, clause: Clause) -> ProofStep {
+    pub fn direct(activated_step: &ProofStep, rule: Rule, clause: Clause) -> ProofStep {
         // Direct implication does not add to depth.
         let depth = activated_step.depth;
         let printable = clause.is_printable();
@@ -284,16 +294,30 @@ impl ProofStep {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_direct(activated_step: &ProofStep, rule: Rule, clause: Clause) -> ProofStep {
+        Self::direct(activated_step, rule, clause)
+    }
+
     // Construct a ProofStep that is a specialization of a general pattern.
+    pub fn specialization(
+        pattern_id: usize,
+        pattern_step: &ProofStep,
+        clause: Clause,
+    ) -> ProofStep {
+        Self::specialization_with_inspiration(pattern_id, None, pattern_step, clause)
+    }
+
+    // Compatibility entry point for callers using the original constructor name.
     pub fn new_specialization(
         pattern_id: usize,
         pattern_step: &ProofStep,
         clause: Clause,
     ) -> ProofStep {
-        Self::new_specialization_with_inspiration(pattern_id, None, pattern_step, clause)
+        Self::specialization(pattern_id, pattern_step, clause)
     }
 
-    pub fn new_specialization_with_inspiration(
+    pub fn specialization_with_inspiration(
         pattern_id: usize,
         inspiration_id: Option<usize>,
         pattern_step: &ProofStep,
@@ -313,8 +337,18 @@ impl ProofStep {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_specialization_with_inspiration(
+        pattern_id: usize,
+        inspiration_id: Option<usize>,
+        pattern_step: &ProofStep,
+        clause: Clause,
+    ) -> ProofStep {
+        Self::specialization_with_inspiration(pattern_id, inspiration_id, pattern_step, clause)
+    }
+
     // Construct a new ProofStep via resolution.
-    pub fn new_resolution(
+    pub fn resolution(
         long_id: usize,
         long_step: &ProofStep,
         short_id: usize,
@@ -354,9 +388,20 @@ impl ProofStep {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_resolution(
+        long_id: usize,
+        long_step: &ProofStep,
+        short_id: usize,
+        short_step: &ProofStep,
+        clause: Clause,
+    ) -> ProofStep {
+        Self::resolution(long_id, long_step, short_id, short_step, clause)
+    }
+
     // Create a replacement for this clause that has extra simplification rules.
     // The long step doesn't have an id because it isn't activated.
-    pub fn new_simplified(
+    pub fn simplified(
         long_step: ProofStep,
         short_steps: &[(usize, &ProofStep)],
         clause: Clause,
@@ -385,9 +430,18 @@ impl ProofStep {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_simplified(
+        long_step: ProofStep,
+        short_steps: &[(usize, &ProofStep)],
+        clause: Clause,
+    ) -> ProofStep {
+        Self::simplified(long_step, short_steps, clause)
+    }
+
     // Construct a new ProofStep via rewriting.
     // We are replacing a subterm of the target literal with a new subterm.
-    pub fn new_rewrite(
+    pub fn rewrite(
         pattern_id: usize,
         pattern_step: &ProofStep,
         target_id: usize,
@@ -439,8 +493,29 @@ impl ProofStep {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_rewrite(
+        pattern_id: usize,
+        pattern_step: &ProofStep,
+        target_id: usize,
+        target_step: &ProofStep,
+        target_left: bool,
+        path: &[usize],
+        new_subterm: &Term,
+    ) -> ProofStep {
+        Self::rewrite(
+            pattern_id,
+            pattern_step,
+            target_id,
+            target_step,
+            target_left,
+            path,
+            new_subterm,
+        )
+    }
+
     // A proof step for finding a contradiction via a series of rewrites.
-    pub fn new_multiple_rewrite(
+    pub fn multiple_rewrite(
         inequality_id: usize,
         active_ids: Vec<usize>,
         passive_ids: Vec<u32>,
@@ -465,8 +540,19 @@ impl ProofStep {
         }
     }
 
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_multiple_rewrite(
+        inequality_id: usize,
+        active_ids: Vec<usize>,
+        passive_ids: Vec<u32>,
+        truthiness: Truthiness,
+        depth: u32,
+    ) -> ProofStep {
+        Self::multiple_rewrite(inequality_id, active_ids, passive_ids, truthiness, depth)
+    }
+
     // Assumes the provided steps are indexed by passive id, and that we use all of them.
-    pub fn new_passive_contradiction(passive_steps: &[ProofStep]) -> ProofStep {
+    pub fn passive_contradiction(passive_steps: &[ProofStep]) -> ProofStep {
         let rule = Rule::PassiveContradiction(passive_steps.len() as u32);
         let mut truthiness = Truthiness::Factual;
         let mut depth = 0;
@@ -486,6 +572,11 @@ impl ProofStep {
             depth,
             printable: true,
         }
+    }
+
+    // Compatibility entry point for callers using the original constructor name.
+    pub fn new_passive_contradiction(passive_steps: &[ProofStep]) -> ProofStep {
+        Self::passive_contradiction(passive_steps)
     }
 
     // Construct a ProofStep with fake heuristic data for testing

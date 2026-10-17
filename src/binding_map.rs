@@ -1218,7 +1218,7 @@ impl BindingMap {
                         arg_types.push(self.evaluate_type(project, arg_expr)?);
                     }
                     let return_type = self.evaluate_type(project, right)?;
-                    Ok(PotentialType::Resolved(AcornType::new_functional(
+                    Ok(PotentialType::Resolved(AcornType::functional(
                         arg_types,
                         return_type,
                     )))
@@ -2566,7 +2566,7 @@ impl BindingMap {
             );
         }
         if let Some(name) = function_name {
-            let function_type = AcornType::new_functional(arg_types.clone(), value_type.clone());
+            let function_type = AcornType::functional(arg_types.clone(), value_type.clone());
             self.add_constant(name, type_param_names.clone(), function_type, None, None);
         }
         let value = if value_expr.is_axiom() {
