@@ -811,6 +811,26 @@ impl BindingMap {
         definition: Option<AcornValue>,
         constructor: Option<(AcornType, usize, usize)>,
     ) {
+        self.add_constant_named(
+            &LocalConstantName::unqualified(name),
+            params,
+            constant_type,
+            definition,
+            constructor,
+        );
+    }
+
+    // Structured declaration names do not by themselves grant instance membership.
+    pub fn add_constant_named(
+        &mut self,
+        name: &LocalConstantName,
+        params: Vec<TypeParam>,
+        constant_type: AcornType,
+        definition: Option<AcornValue>,
+        constructor: Option<(AcornType, usize, usize)>,
+    ) {
+        let string_name = name.to_string();
+        let name = string_name.as_str();
         if self.name_in_use(name) {
             panic!("constant name {} already bound", name);
         }
@@ -2511,6 +2531,34 @@ impl BindingMap {
         Option<AcornValue>,
         AcornType,
     )> {
+        let function_name = function_name.map(LocalConstantName::unqualified);
+        self.evaluate_scoped_value_named(
+            project,
+            type_params,
+            args,
+            value_type_expr,
+            value_expr,
+            class_type,
+            function_name.as_ref(),
+        )
+    }
+
+    pub fn evaluate_scoped_value_named(
+        &mut self,
+        project: &Project,
+        type_params: &[TypeParamExpr],
+        args: &[Declaration],
+        value_type_expr: Option<&Expression>,
+        value_expr: &Expression,
+        class_type: Option<&AcornType>,
+        function_name: Option<&LocalConstantName>,
+    ) -> compilation::Result<(
+        Vec<TypeParam>,
+        Vec<String>,
+        Vec<AcornType>,
+        Option<AcornValue>,
+        AcornType,
+    )> {
         let mut scope = self.clone();
         scope.evaluate_scoped_value_in_scope(
             project,
@@ -2531,7 +2579,7 @@ impl BindingMap {
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
         class_type: Option<&AcornType>,
-        function_name: Option<&str>,
+        function_name: Option<&LocalConstantName>,
     ) -> compilation::Result<(
         Vec<TypeParam>,
         Vec<String>,
@@ -2548,7 +2596,7 @@ impl BindingMap {
         let (arg_names, arg_types) = self.bind_args(&mut stack, project, args, class_type)?;
 
         if let Some(name) = function_name {
-            if self.name_in_use(name) {
+            if self.constant_name_in_use(name) {
                 return Err(value_expr.error("function name conflicts with a type parameter"));
             }
         }
@@ -2567,7 +2615,7 @@ impl BindingMap {
         }
         if let Some(name) = function_name {
             let function_type = AcornType::functional(arg_types.clone(), value_type.clone());
-            self.add_constant(name, type_param_names.clone(), function_type, None, None);
+            self.add_constant_named(name, type_param_names.clone(), function_type, None, None);
         }
         let value = if value_expr.is_axiom() {
             None
@@ -3552,5 +3600,39 @@ mod name_insertion_tests {
                 format!("{}5", prefix)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod constant_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn typed_declarations_preserve_phantom_bounds_without_granting_membership() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_data_type("State");
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let params = vec![
+            TypeParam {
+                name: "Z".into(),
+                typeclass: Some(class.clone()),
+            },
+            TypeParam::unconstrained("A"),
+        ];
+        let name = LocalConstantName::instance(&class, "flag", "State");
+        bindings.add_constant_named(&name, params.clone(), AcornType::Bool, None, None);
+        let PotentialValue::Unresolved(value) =
+            bindings.get_constant_value("State.Marked.flag").unwrap()
+        else {
+            panic!("phantom parameters must remain unresolved");
+        };
+        assert_eq!(value.params, params);
+        assert_eq!(value.module_id, FIRST_NORMAL);
+        assert_eq!(value.name, "State.Marked.flag");
+        assert_eq!(value.generic_type, AcornType::Bool);
+        assert!(bindings.get_constant_value_named(&name).is_none());
     }
 }
