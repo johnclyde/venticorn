@@ -561,6 +561,26 @@ impl BindingMap {
         )
     }
 
+    // The caller prepares expected from the canonical complete class descriptor.
+    pub(crate) fn typecheck_instance_attribute(
+        &self,
+        source: &dyn ErrorSource,
+        scope: &str,
+        member: &str,
+        expected: &AcornType,
+    ) -> compilation::Result<()> {
+        let actual = self
+            .get_constant_value(&format!("{}.{}", scope, member))
+            .and_then(PotentialValue::resolved);
+        if actual.as_ref().map(AcornValue::get_type).as_ref() != Some(expected) {
+            return Err(source.error(&format!(
+                "instance member '{}' must have type {}",
+                member, expected
+            )));
+        }
+        Ok(())
+    }
+
     pub(crate) fn instance_scope(&self, target: &str, class: &Typeclass) -> Option<&str> {
         self.instance_scopes
             .get(&(target.to_string(), class.clone()))
