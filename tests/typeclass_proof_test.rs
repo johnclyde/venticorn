@@ -274,3 +274,88 @@ fn function_valued_instance_members_use_checked_implementations() {
     );
     assert_eq!(false_project.cached_build().num_modules(), 0);
 }
+
+#[test]
+fn explicit_instance_constants_prove_after_their_laws() {
+    let text = r#"
+            inductive Z1 {
+                zero
+            }
+
+            typeclass S: Singleton {
+                value: S
+
+                unique(x: S) {
+                    x = S.value
+                }
+            }
+
+            instance Z1: Singleton {
+                let value: Z1 = Z1.zero
+            }
+
+            theorem goal {
+                Z1.zero = Singleton.value<Z1>
+            }
+        "#;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", text);
+    let module = project.expect_ok("main");
+    let env = project.get_env_by_id(module).unwrap();
+    assert_eq!(env.iter_goals().count(), 2);
+    for node in env.iter_goals() {
+        let goal = node.goal_context().unwrap();
+        for shallow in [false, true] {
+            let mut prover = project.prover_for_node(&node, false);
+            prover.set_goal(&goal);
+            let result = if shallow {
+                prover.quick_shallow_search()
+            } else {
+                prover.quick_search()
+            };
+            assert_eq!(result, Outcome::Success);
+        }
+    }
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!(
+        (report.goals_done, report.num_success, report.num_cached),
+        (2, 2, 0)
+    );
+
+    let false_text = text.replace(
+        "Z1.zero = Singleton.value<Z1>",
+        "not (Z1.zero = Singleton.value<Z1>)",
+    );
+    assert_ne!(false_text, text);
+    let mut false_project = Project::new_mock();
+    false_project.mock("/mock/main.ac", &false_text);
+    let false_module = false_project.expect_ok("main");
+    let false_env = false_project.get_env_by_id(false_module).unwrap();
+    assert_eq!(false_env.iter_goals().count(), 2);
+    for (index, node) in false_env.iter_goals().enumerate() {
+        let goal = node.goal_context().unwrap();
+        let mut shallow = false_project.prover_for_node(&node, false);
+        shallow.set_goal(&goal);
+        let mut ordinary = false_project.prover_for_node(&node, false);
+        ordinary.set_goal(&goal);
+        if index == 0 {
+            assert_eq!(shallow.quick_shallow_search(), Outcome::Success);
+            assert_eq!(ordinary.quick_search(), Outcome::Success);
+        } else {
+            assert_eq!(shallow.quick_shallow_search(), Outcome::Exhausted);
+            assert!(matches!(
+                ordinary.quick_search(),
+                Outcome::Exhausted | Outcome::Constrained | Outcome::Timeout
+            ));
+        }
+    }
+    false_project.set_cache_policy(CachePolicy::Disabled);
+    let report = false_project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Warning);
+    assert_eq!(
+        (report.goals_done, report.num_success, report.num_cached),
+        (2, 1, 0)
+    );
+    assert_eq!(false_project.cached_build().num_modules(), 0);
+}
