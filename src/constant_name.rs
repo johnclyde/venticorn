@@ -40,6 +40,17 @@ impl LocalConstantName {
     pub fn instance(class: &Typeclass, attr: &str, target: &str) -> Self {
         Self::Instance(class.clone(), attr.to_string(), target.to_string())
     }
+
+    pub fn is_qualified(&self) -> bool {
+        !matches!(self, Self::Unqualified(_))
+    }
+
+    pub fn as_attribute(&self) -> Option<(&str, &str)> {
+        match self {
+            Self::Attribute(class, attr) => Some((class, attr)),
+            _ => None,
+        }
+    }
 }
 
 /// A constant's defining module together with its structured local identity.

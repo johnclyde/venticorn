@@ -65,3 +65,18 @@ fn constructors_retain_complete_class_and_target_identity() {
         LocalConstantName::Instance(class, "combine".into(), "State".into())
     );
 }
+
+#[test]
+fn instance_names_are_qualified_but_not_data_attributes() {
+    let class = Typeclass {
+        module_id: FIRST_NORMAL,
+        name: "Magma".into(),
+    };
+    assert!(!LocalConstantName::unqualified("x").is_qualified());
+    let attribute = LocalConstantName::attribute("State", "flag");
+    assert!(attribute.is_qualified());
+    assert_eq!(attribute.as_attribute(), Some(("State", "flag")));
+    let instance = LocalConstantName::instance(&class, "flag", "State");
+    assert!(instance.is_qualified());
+    assert_eq!(instance.as_attribute(), None);
+}
