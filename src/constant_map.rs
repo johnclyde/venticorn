@@ -24,7 +24,7 @@ pub struct ConstantMap {
 
     // Inverse map of constants.
     // The GlobalConstantName -> AtomId lookup direction.
-    // Multiple GlobalConstantName can map to the same AtomId, when two constants alias to the same thing.
+    // Explicit compatibility aliases may share an atom; normalization never adds them.
     name_to_id: HashMap<GlobalConstantName, Atom>,
 }
 
@@ -78,7 +78,8 @@ impl ConstantMap {
         self.name_to_id.contains_key(name)
     }
 
-    // Make the new module/name an alias to whatever the old one refers to.
+    // Compatibility operation: explicitly alias a name to an existing atom.
+    // Equality assumptions must instead be retained as proof clauses.
     pub fn add_alias(
         &mut self,
         new_module: ModuleId,
@@ -92,7 +93,8 @@ impl ConstantMap {
         );
     }
 
-    /// Alias one complete identity to an existing atom after an explicit equality.
+    /// Compatibility operation for an explicitly requested atom alias.
+    /// This does not record a proof premise and is not used by normalization.
     pub fn add_alias_named(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) {
         assert!(
             self.maybe_add_alias(new, old),
@@ -100,7 +102,8 @@ impl ConstantMap {
         );
     }
 
-    /// Record an equality alias only if the new identity is unused and the target exists.
+    /// Explicitly alias an unused identity to an existing target.
+    /// This compatibility operation does not establish or record a proof premise.
     /// Rejected proposals leave the atom inventory unchanged.
     pub fn maybe_add_alias(&mut self, new: &GlobalConstantName, old: &GlobalConstantName) -> bool {
         if self.name_to_id.contains_key(new) {

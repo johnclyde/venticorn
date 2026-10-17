@@ -1028,3 +1028,54 @@ mod inspiration_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod equality_provenance_tests {
+    use super::*;
+    use crate::acorn_type::AcornType;
+    use crate::module::FIRST_NORMAL;
+    use crate::proposition::{Source, SourceType};
+
+    #[test]
+    fn equality_assumptions_keep_their_source_truthiness_and_distinct_atoms() {
+        let typ = AcornType::Data(FIRST_NORMAL, "Value".into(), vec![]);
+        let left = AcornValue::new_constant(FIRST_NORMAL, "left".into(), vec![], typ.clone());
+        let right = AcornValue::new_constant(FIRST_NORMAL, "right".into(), vec![], typ);
+        for truthiness in [
+            Truthiness::Factual,
+            Truthiness::Hypothetical,
+            Truthiness::Counterfactual,
+        ] {
+            let project = Project::new_mock();
+            let mut prover = Prover::new(&project, false);
+            let local = truthiness != Truthiness::Factual;
+            let right_term = prover.normalizer.term_from_value(&right, local).unwrap();
+            let source = Source {
+                module: FIRST_NORMAL,
+                source_type: SourceType::Axiom(Some("same".into())),
+                ..Source::mock()
+            };
+            prover.add_fact(Fact {
+                value: AcornValue::new_equals(left.clone(), right.clone()),
+                source: source.clone(),
+                truthiness,
+            });
+            assert!(prover.error.is_none(), "{:?}", prover.error);
+            let steps = prover.passive_set.iter_steps().collect::<Vec<_>>();
+            assert_eq!(steps.len(), 1);
+            let step = steps[0];
+            assert_eq!(step.truthiness, truthiness);
+            let Rule::Assumption(info) = &step.rule else {
+                panic!("equality must retain its assumption rule")
+            };
+            assert_eq!(info.source, source);
+            assert_eq!(step.clause.literals.len(), 1);
+            assert!(step.clause.literals[0].positive);
+            assert_ne!(step.clause.literals[0].left, step.clause.literals[0].right);
+            assert_ne!(
+                prover.normalizer.term_from_value(&left, local).unwrap(),
+                right_term
+            );
+        }
+    }
+}
