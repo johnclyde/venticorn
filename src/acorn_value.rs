@@ -6,8 +6,8 @@ use std::fmt;
 use crate::acorn_type::AcornType;
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
-use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::ModuleId;
+use crate::names::{GlobalName, LocalName};
 use crate::token::TokenType;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -88,7 +88,7 @@ impl fmt::Display for BinaryOp {
 // An instance of a constant. Could be generic or not.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct ConstantInstance {
-    pub name: GlobalConstantName,
+    pub name: GlobalName,
 
     // Actual type arguments in declaration order. Empty for ordinary constants.
     pub params: Vec<AcornType>,
@@ -144,7 +144,7 @@ impl ConstantInstance {
     }
 
     /// Compatibility accessor for callers that need an owned canonical identity.
-    pub fn key(&self) -> GlobalConstantName {
+    pub fn key(&self) -> GlobalName {
         self.name.clone()
     }
 
@@ -447,14 +447,14 @@ impl AcornValue {
         instance_type: AcornType,
     ) -> AcornValue {
         Self::constant_named(
-            GlobalConstantName::new(module_id, LocalConstantName::from_legacy(&name)),
+            GlobalName::new(module_id, LocalName::from_legacy(&name)),
             params,
             instance_type,
         )
     }
 
     pub fn constant_named(
-        name: GlobalConstantName,
+        name: GlobalName,
         params: Vec<AcornType>,
         instance_type: AcornType,
     ) -> AcornValue {
@@ -2036,7 +2036,7 @@ impl AcornValue {
                         },
                         _,
                     ),
-                    LocalConstantName::Attribute(owner, member),
+                    LocalName::Attribute(owner, member),
                 ) = (class, &c.name.local_name)
                 {
                     if *module == c.name.module_id && name == owner {
@@ -2050,7 +2050,7 @@ impl AcornValue {
     }
 
     /// Borrow the complete canonical identity of a constant, including its class owner.
-    pub fn constant_name(&self) -> Option<&GlobalConstantName> {
+    pub fn constant_name(&self) -> Option<&GlobalName> {
         match self {
             Self::Constant(c) => Some(&c.name),
             _ => None,
@@ -2058,7 +2058,7 @@ impl AcornValue {
     }
 
     /// Borrow the identity only when the constant has no type arguments.
-    pub fn simple_constant_name(&self) -> Option<&GlobalConstantName> {
+    pub fn simple_constant_name(&self) -> Option<&GlobalName> {
         match self {
             Self::Constant(c) if c.params.is_empty() => Some(&c.name),
             _ => None,
@@ -2066,7 +2066,7 @@ impl AcornValue {
     }
 
     /// Borrow the canonical identity of a directly applied constant function.
-    pub fn named_function_name(&self) -> Option<&GlobalConstantName> {
+    pub fn named_function_name(&self) -> Option<&GlobalName> {
         match self {
             Self::Application(app) => app.function.constant_name(),
             _ => None,

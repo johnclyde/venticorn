@@ -4,7 +4,6 @@ use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::constant_map::ConstantMap;
-use crate::constant_name::{GlobalConstantName, LocalConstantName};
 #[cfg(test)]
 use crate::display::DisplayClause;
 #[cfg(test)]
@@ -13,6 +12,7 @@ use crate::fact::Fact;
 use crate::literal::Literal;
 use crate::module::SKOLEM;
 use crate::monomorphizer::Monomorphizer;
+use crate::names::{GlobalName, LocalName};
 use crate::proof_scope::ProofScope;
 use crate::proof_step::{ProofStep, Truthiness};
 use crate::proposition::{Proposition, SourceType};
@@ -166,7 +166,7 @@ impl Normalizer {
         // Hacky. Turn the int into an s-name
         let name = format!("s{}", skolem_index);
         AcornValue::constant_named(
-            GlobalConstantName::new(SKOLEM, LocalConstantName::Unqualified(name)),
+            GlobalName::new(SKOLEM, LocalName::Unqualified(name)),
             vec![],
             acorn_type,
         )
@@ -298,7 +298,7 @@ impl Normalizer {
                     let constant_atom = if c.name.module_id == SKOLEM {
                         // Hacky. Turn the s-name back to an int
                         match &c.name.local_name {
-                            LocalConstantName::Unqualified(name) => {
+                            LocalName::Unqualified(name) => {
                                 Atom::Skolem(name[1..].parse().unwrap())
                             }
                             _ => return Err("invalid structured skolem name".into()),
@@ -596,10 +596,7 @@ impl Normalizer {
             Atom::Skolem(i) => {
                 let acorn_type = self.skolem_types[*i as usize].clone();
                 AcornValue::constant_named(
-                    GlobalConstantName::new(
-                        SKOLEM,
-                        LocalConstantName::Unqualified(format!("s{}", i)),
-                    ),
+                    GlobalName::new(SKOLEM, LocalName::Unqualified(format!("s{}", i))),
                     vec![],
                     acorn_type,
                 )

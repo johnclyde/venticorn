@@ -27,6 +27,7 @@ pub mod live_document;
 pub mod module;
 pub mod monomorphizer;
 pub(crate) mod named_entity;
+pub mod names;
 pub mod normalizer;
 #[cfg(feature = "onnx")]
 pub mod ort_model;

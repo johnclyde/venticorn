@@ -1,8 +1,8 @@
 use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
-use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::ModuleId;
+use crate::names::{GlobalName, LocalName};
 use crate::unresolved_constant::UnresolvedConstant;
 
 // A named declaration may still need type arguments before it becomes a proof value.
@@ -20,14 +20,14 @@ impl PotentialValue {
         params: Vec<TypeParam>,
     ) -> Self {
         Self::constant_named(
-            GlobalConstantName::new(module_id, LocalConstantName::from_legacy(name)),
+            GlobalName::new(module_id, LocalName::from_legacy(name)),
             constant_type,
             params,
         )
     }
 
     pub fn constant_named(
-        name: GlobalConstantName,
+        name: GlobalName,
         constant_type: AcornType,
         params: Vec<TypeParam>,
     ) -> Self {
@@ -89,6 +89,7 @@ impl PotentialValue {
 mod tests {
     use super::*;
     use crate::acorn_type::Typeclass;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
     use crate::proof_scope::ProofScope;
     use crate::token::TokenType;
 

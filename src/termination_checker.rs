@@ -1,14 +1,14 @@
 // Modified for Venticorn: reject recursive escapes and inspect every supplied argument.
 use crate::acorn_value::AcornValue;
 use crate::atom::AtomId;
-use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::module::ModuleId;
+use crate::names::{GlobalName, LocalName};
 
 /// Proves termination when one original argument strictly decreases at every recursive use.
 /// This is intentionally conservative: decreasing different arguments in different branches
 /// does not prove termination, and passing the recursive function as a value is rejected.
 pub struct TerminationChecker {
-    function_name: GlobalConstantName,
+    function_name: GlobalName,
     // Each stack variable maps to its original argument ancestor, if known.
     substructure_map: Vec<Option<AtomId>>,
     always_strict_sub: Vec<bool>,
@@ -19,7 +19,7 @@ impl TerminationChecker {
     pub fn new(module: ModuleId, function_name: String, num_args: usize) -> Self {
         let ambiguous = function_name.matches('.').count() > 1;
         let mut checker = Self::new_named(
-            GlobalConstantName::new(module, LocalConstantName::from_legacy(&function_name)),
+            GlobalName::new(module, LocalName::from_legacy(&function_name)),
             num_args,
         );
         // A raw multi-part spelling cannot identify its canonical instance class.
@@ -32,7 +32,7 @@ impl TerminationChecker {
     }
 
     /// Check recursion against a complete canonical identity, without guessing its owner.
-    pub fn new_named(function_name: GlobalConstantName, num_args: usize) -> Self {
+    pub fn new_named(function_name: GlobalName, num_args: usize) -> Self {
         Self {
             function_name,
             substructure_map: (0..num_args).map(|i| Some(i as AtomId)).collect(),
@@ -132,6 +132,7 @@ impl TerminationChecker {
 mod identity_tests {
     use super::*;
     use crate::acorn_type::{AcornType, Typeclass};
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
 
     #[test]
     fn raw_instance_spelling_cannot_bypass_canonical_recursive_identity() {
