@@ -131,9 +131,20 @@ fn proof_outcomes(source: &str) -> Vec<venticorn::prover::Outcome> {
     project.mock("/mock/main.ac", source);
     let id = project.expect_ok("main");
     let env = project.get_env_by_id(id).unwrap();
-    env.nodes
-        .iter()
-        .for_each(|node| node.proposition().unwrap().value.validate().unwrap());
+    fn validate_nodes(env: &venticorn::environment::Environment) {
+        for node in &env.nodes {
+            if let Some(proposition) = node.proposition() {
+                proposition.value.validate().unwrap();
+            }
+            if let Some(block) = node.get_block() {
+                if let Some(goal) = &block.goal {
+                    goal.value().validate().unwrap();
+                }
+                validate_nodes(&block.env);
+            }
+        }
+    }
+    validate_nodes(env);
     env.iter_goals()
         .map(|node| {
             let mut prover = Prover::new(&project, false);

@@ -26,6 +26,8 @@ use crate::token::Token;
 // proved, along with helper statements to express those propositions, but they are not
 // visible to the outside world.
 pub struct Block {
+    // Advice identity does not require an exported Boolean fact.
+    advisory_name: Option<String>,
     // Scope before entering any child; the containing goal uses the final block scope.
     proof_scope: crate::proof_scope::ProofScope,
     // The generic types that this block is polymorphic over.
@@ -99,6 +101,11 @@ pub enum BlockParams<'a> {
 }
 
 impl Block {
+    pub(crate) fn with_advisory_name(mut self, name: String) -> Self {
+        self.advisory_name = Some(name);
+        self
+    }
+
     pub fn entry_scope(&self) -> &crate::proof_scope::ProofScope {
         &self.proof_scope
     }
@@ -279,6 +286,7 @@ impl Block {
             }
         };
         Ok(Block {
+            advisory_name: None,
             proof_scope: env.bindings.proof_scope().clone(),
             type_params: type_params.into_iter().map(|p| p.name).collect(),
             args,
@@ -617,6 +625,12 @@ impl Node {
 
     // All goals in one named declaration contribute to one advisory premise set.
     pub(crate) fn block_name(&self) -> Option<Cow<'_, str>> {
+        if let Some(name) = self
+            .get_block()
+            .and_then(|block| block.advisory_name.as_deref())
+        {
+            return Some(Cow::Borrowed(name));
+        }
         if let Some(name) = self.theorem_name() {
             return Some(Cow::Borrowed(name));
         }

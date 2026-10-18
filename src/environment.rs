@@ -970,8 +970,8 @@ impl Environment {
             ss.first_right_brace.line_number,
         );
         if let Some(block) = constraint_block {
-            let proposition = Proposition::inhabited(self.module_id, &ss.name, statement.range());
-            let index = self.push_node(Node::new_block(project, self, block, Some(proposition)));
+            let block = block.with_advisory_name(format!("{}.constraint", ss.name));
+            let index = self.push_node(Node::new_block(project, self, block, None));
             self.add_node_lines(index, &statement.range());
         }
 
