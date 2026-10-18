@@ -408,7 +408,7 @@ pub struct Node {
     proof_scope: crate::proof_scope::ProofScope,
     // Whether this proposition has already been proved structurally.
     // For example, this could be an axiom, or a definition.
-    pub structural: bool,
+    structural: bool,
 
     // The proposition represented by this tree.
     // If this proposition has a block, this represents the "external claim".
@@ -433,6 +433,10 @@ impl Node {
 
     pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Fact {
         Fact::new(self.claim.clone(), truthiness)
+    }
+
+    pub fn is_structural(&self) -> bool {
+        self.structural
     }
 
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
@@ -526,7 +530,7 @@ impl Node {
 
     // Whether this node corresponds to a goal that needs to be proved.
     pub fn has_goal(&self) -> bool {
-        if self.structural {
+        if self.is_structural() {
             return false;
         }
         match &self.block {
@@ -742,7 +746,7 @@ impl<'a> NodeCursor<'a> {
     // Get a goal context for the current node.
     pub fn goal_context(&self) -> Result<GoalContext, String> {
         let node = self.node();
-        if node.structural {
+        if node.is_structural() {
             return Err(format!(
                 "node {} does not need a proof, so it has no goal context",
                 self

@@ -20,7 +20,7 @@ fn anonymous_theorems_create_goals_without_leaking_parameter_bindings() {
         assert_eq!(env.nodes.len(), i + 1);
         assert_eq!(env.iter_goals().count(), i + 1);
         let node = env.nodes.last().unwrap();
-        assert!(!node.structural);
+        assert!(!node.is_structural());
         assert!(node.claim.name().is_none());
         assert_eq!(node.claim.source.description(), "an anonymous theorem");
         assert!(!env.bindings.has_identifier("a"));
@@ -113,7 +113,7 @@ fn anonymous_axioms_are_explicit_assumptions_with_scoped_parameters() {
         assert_eq!(env.nodes.len(), i + 1);
         assert_eq!(env.iter_goals().count(), 0);
         let node = env.nodes.last().unwrap();
-        assert!(node.structural);
+        assert!(node.is_structural());
         assert!(node.claim.name().is_none());
         assert!(node.claim.source.is_axiom());
         assert_eq!(node.claim.source.description(), "an anonymous axiom");
