@@ -2226,7 +2226,8 @@ impl BindingMap {
         module: ModuleId,
         name_token: &Token,
     ) -> compilation::Result<()> {
-        self.check_unqualified_name_available(name_token, name_token.text())?;
+        let local_name = LocalName::unqualified(name_token.text());
+        self.check_local_name_available(name_token, &local_name)?;
         let bindings = match project.get_bindings(module) {
             Some(b) => b,
             None => {
@@ -2241,7 +2242,7 @@ impl BindingMap {
                 // Add a local alias that mirrors this constant's name in the imported module.
                 if let Some(name) = value.simple_constant_name() {
                     self.add_alias_named(
-                        &LocalName::unqualified(name_token.text()),
+                        &local_name,
                         name.clone(),
                         PotentialValue::Resolved(value),
                     );
@@ -2268,7 +2269,7 @@ impl BindingMap {
             }
             NamedEntity::Unresolved(unresolved) => {
                 self.add_alias_named(
-                    &LocalName::unqualified(name_token.text()),
+                    &local_name,
                     unresolved.name.clone(),
                     PotentialValue::Unresolved(unresolved),
                 );
