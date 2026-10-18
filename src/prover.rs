@@ -195,8 +195,11 @@ impl Prover {
 
         // Block goals already use concrete types from their local environment.
         // Use that same value for fact demand and for the counterfactual assumption.
+        if goal_context.goal.has_generic() {
+            self.error = Some("cannot prove a goal with unresolved generic metadata".into());
+            return;
+        }
         let goal_value = goal_context.goal.value();
-        assert!(!goal_value.is_generic());
         match &goal_context.goal {
             Goal::Prove(prop) => {
                 // Negate the goal and add it as a counterfactual assumption.

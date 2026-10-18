@@ -16,6 +16,14 @@ pub enum Goal {
 }
 
 impl Goal {
+    // Fixed-goal verification must account for phantom declaration metadata too.
+    pub fn has_generic(&self) -> bool {
+        match self {
+            Goal::Prove(proposition) => proposition.has_generic(),
+            Goal::Solve(value, _) => value.is_generic(),
+        }
+    }
+
     pub fn value(&self) -> &AcornValue {
         match self {
             Goal::Prove(p) => &p.value,

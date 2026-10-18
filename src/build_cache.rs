@@ -16,6 +16,8 @@ use tower_lsp::lsp_types::Range;
 // Compatibility callers without a resolver retain conservative raw comparisons.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CachedGoal {
+    // Explicit formals may be absent from the value, so remember eligibility too.
+    fixed_metadata: bool,
     prove: bool,
     value: AcornValue,
     range: Range,
@@ -30,6 +32,7 @@ pub(crate) struct CachedGoal {
 impl CachedGoal {
     pub fn new(goal: &GoalContext) -> Self {
         Self {
+            fixed_metadata: !goal.goal.has_generic(),
             prove: matches!(goal.goal, Goal::Prove(_)),
             value: goal.goal.value().clone(),
             range: goal.goal.range(),
@@ -43,6 +46,9 @@ impl CachedGoal {
     }
 
     fn matches(&self, goal: &GoalContext) -> bool {
+        if !self.fixed_metadata || goal.goal.has_generic() {
+            return false;
+        }
         if self.canonical_context || goal.cache_modules.is_some() {
             return self.canonical_context
                 && goal.cache_modules.is_some()
@@ -355,6 +361,70 @@ mod tests {
             let mut builder = Builder::with_cache(cache, |_| {});
             project.build(&mut builder);
             assert_eq!((builder.num_success, builder.num_cached), (1, 0));
+        }
+    }
+
+    #[test]
+    fn phantom_goal_formals_reject_stored_and_incoming_cache_reuse() {
+        use crate::acorn_type::{TypeParam, Typeclass};
+        use crate::proposition::Proposition;
+
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem identity { true }\n");
+        let completed = project.sync_build_report().cache.unwrap();
+        let module = ModuleRef::Name("main".into());
+        let env = project.get_env_by_ref(&module).unwrap();
+        let node = env.iter_goals().next().unwrap();
+        let hash = project.get_module_hash(env.module_id).unwrap();
+        for canonical in [false, true] {
+            let current = || {
+                if canonical {
+                    project.cache_goal_context(&node)
+                } else {
+                    node.goal_context().unwrap()
+                }
+            };
+            let fixed = current();
+            assert!(!fixed.goal.has_generic());
+            let mut phantom = current();
+            let source = match &phantom.goal {
+                Goal::Prove(proposition) => proposition.source.clone(),
+                _ => panic!("expected a proof goal"),
+            };
+            phantom.goal = Goal::Prove(Proposition::generic(
+                phantom.goal.value().clone(),
+                vec![TypeParam {
+                    name: "Unused".into(),
+                    typeclass: Some(Typeclass {
+                        module_id: env.module_id,
+                        name: "Required".into(),
+                    }),
+                }],
+                source,
+            ));
+            assert!(!phantom.goal.value().is_generic());
+            assert!(phantom.goal.has_generic());
+
+            let mut valid_cache = completed.clone();
+            valid_cache.modules.get_mut(&module).unwrap().goals = vec![CachedGoal::new(&fixed)];
+            let accepts = |cache: &BuildCache, goal: &GoalContext| {
+                let expected = std::slice::from_ref(goal);
+                (
+                    cache.matches(&module, Some(hash), expected),
+                    cache.matches_prefix(&module, hash, goal, 0),
+                    cache.get(&module).unwrap().matches_goals(expected),
+                )
+            };
+            assert_eq!(accepts(&valid_cache, &fixed), (true, true, true));
+            assert_eq!(accepts(&valid_cache, &phantom), (false, false, false));
+            let mut invalid_cache = completed.clone();
+            invalid_cache.modules.get_mut(&module).unwrap().goals = vec![CachedGoal::new(&phantom)];
+            assert_eq!(accepts(&invalid_cache, &fixed), (false, false, false));
+            assert_eq!(accepts(&invalid_cache, &phantom), (false, false, false));
+
+            phantom.goal = fixed.goal.clone();
+            assert_eq!(accepts(&valid_cache, &phantom), (true, true, true));
+            assert_eq!(accepts(&invalid_cache, &phantom), (false, false, false));
         }
     }
 }
