@@ -426,6 +426,15 @@ pub struct Node {
 }
 
 impl Node {
+    // The declaration's proposition with its effective lexical/contextual role.
+    pub fn get_fact(&self) -> Fact {
+        self.get_fact_with_truthiness(self.claim.truthiness())
+    }
+
+    pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Fact {
+        Fact::new(self.claim.clone(), truthiness)
+    }
+
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
         &self.proof_scope
     }
@@ -566,9 +575,14 @@ impl<'a> NodeCursor<'a> {
         self.annotated_path.last().unwrap().0
     }
 
-    pub fn current(&self) -> &'a Node {
+    pub fn node(&self) -> &'a Node {
         let (env, index) = self.annotated_path.last().unwrap();
         &env.nodes[*index]
+    }
+
+    // Compatibility accessor for the selected node.
+    pub fn current(&self) -> &'a Node {
+        self.node()
     }
 
     pub(crate) fn root_node(&self) -> &Node {
@@ -596,7 +610,7 @@ impl<'a> NodeCursor<'a> {
     }
 
     pub fn num_children(&self) -> usize {
-        match self.current().block {
+        match self.node().block {
             Some(ref b) => b.env.nodes.len(),
             None => 0,
         }
@@ -604,7 +618,7 @@ impl<'a> NodeCursor<'a> {
 
     // child_index must be less than num_children
     pub fn descend(&mut self, child_index: usize) {
-        let new_env = match &self.current().block {
+        let new_env = match &self.node().block {
             Some(b) => &b.env,
             None => panic!("descend called on a node without a block"),
         };
@@ -641,7 +655,7 @@ impl<'a> NodeCursor<'a> {
         } else {
             Truthiness::Hypothetical
         };
-        Fact::new(self.current().claim.clone(), truthiness)
+        self.node().get_fact_with_truthiness(truthiness)
     }
 
     // All facts that can be used to prove the current node.
@@ -659,14 +673,14 @@ impl<'a> NodeCursor<'a> {
     }
 
     pub(crate) fn entry_scope(&self) -> &crate::proof_scope::ProofScope {
-        self.current()
+        self.node()
             .block
             .as_ref()
-            .map_or(self.current().proof_scope(), |b| b.entry_scope())
+            .map_or(self.node().proof_scope(), |b| b.entry_scope())
     }
 
     pub fn bindings_for_codegen(&self) -> crate::binding_map::BindingMap {
-        match &self.current().block {
+        match &self.node().block {
             Some(block) => block
                 .env
                 .bindings
@@ -674,17 +688,15 @@ impl<'a> NodeCursor<'a> {
             None => self
                 .env()
                 .bindings
-                .for_codegen_at(self.current().codegen_position, self.goal_scope()),
+                .for_codegen_at(self.node().codegen_position, self.goal_scope()),
         }
     }
 
     pub fn goal_scope(&self) -> &crate::proof_scope::ProofScope {
-        self.current()
+        self.node()
             .block
             .as_ref()
-            .map_or(self.current().proof_scope(), |b| {
-                b.env.bindings.proof_scope()
-            })
+            .map_or(self.node().proof_scope(), |b| b.env.bindings.proof_scope())
     }
 
     pub(crate) fn local_nodes(&self, include_children: bool) -> Vec<(&Node, Truthiness)> {
@@ -698,7 +710,7 @@ impl<'a> NodeCursor<'a> {
             nodes.extend(env.nodes[..*index].iter().map(|n| (n, truthiness)));
         }
         if include_children {
-            if let Some(block) = &self.current().block {
+            if let Some(block) = &self.node().block {
                 nodes.extend(
                     block
                         .env
@@ -722,14 +734,14 @@ impl<'a> NodeCursor<'a> {
         facts.extend(
             self.local_nodes(include_children)
                 .into_iter()
-                .map(|(node, truthiness)| Fact::new(node.claim.clone(), truthiness)),
+                .map(|(node, truthiness)| node.get_fact_with_truthiness(truthiness)),
         );
         facts
     }
 
     // Get a goal context for the current node.
     pub fn goal_context(&self) -> Result<GoalContext, String> {
-        let node = self.current();
+        let node = self.node();
         if node.structural {
             return Err(format!(
                 "node {} does not need a proof, so it has no goal context",
@@ -776,7 +788,7 @@ impl<'a> NodeCursor<'a> {
             self.find_goals(output);
             self.ascend();
         }
-        if self.current().has_goal() {
+        if self.node().has_goal() {
             output.push(self.clone());
         }
     }
