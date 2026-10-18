@@ -19,7 +19,7 @@ fn outcomes(source: &str, shallow: bool) -> Vec<Outcome> {
         } else {
             prover.quick_search()
         };
-        assert_ne!(result, Outcome::Error, "{:?}", prover.error);
+        assert!(!matches!(result, Outcome::Error(_)), "{:?}", prover.error);
         results.push(result);
         true
     });

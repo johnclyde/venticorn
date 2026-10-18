@@ -44,7 +44,7 @@ fn run_search(source: &str, shallow: bool) -> Outcome {
         } else {
             prover.quick_search()
         };
-        assert_ne!(result, Outcome::Error, "{:?}", prover.error);
+        assert!(!matches!(result, Outcome::Error(_)), "{:?}", prover.error);
         if result != Outcome::Success {
             return result;
         }

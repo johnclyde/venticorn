@@ -18,7 +18,12 @@ fn prove_all(source: &str) -> Vec<Outcome> {
         }
         prover.set_goal(&context);
         let outcome = prover.quick_verification_search();
-        assert_ne!(outcome, Outcome::Error, "{:?}\n{}", prover.error, source);
+        assert!(
+            !matches!(outcome, Outcome::Error(_)),
+            "{:?}\n{}",
+            prover.error,
+            source
+        );
         outcomes.push(outcome);
     }
     outcomes

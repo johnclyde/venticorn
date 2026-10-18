@@ -48,7 +48,7 @@ fn later_membership_cannot_retroactively_specialize_an_earlier_fact_demand() {
     for slow in [false, true] {
         let found = outcomes(&p, slow);
         assert_eq!(found.len(), 2);
-        miss(found[0]);
+        miss(found[0].clone());
         assert_eq!(found[1], Outcome::Success);
     }
     for policy in [CachePolicy::ReadWrite, CachePolicy::Disabled] {
@@ -83,10 +83,10 @@ fn import_frontier_changes_rebuild_facts_even_when_memberships_do_not_change() {
     for slow in [false, true] {
         let found = outcomes(&p, slow);
         assert_eq!(found.len(), 4);
-        miss(found[0]);
+        miss(found[0].clone());
         assert_eq!(found[1], Outcome::Success);
         assert_eq!(found[2], Outcome::Success);
-        miss(found[3]);
+        miss(found[3].clone());
     }
     let report = p.sync_build_report();
     assert_eq!(report.status, BuildStatus::Warning);
@@ -167,7 +167,10 @@ fn explicit_scope_mismatch_is_an_error_and_legacy_constructor_never_widens() {
     legacy.set_goal(&goal);
     wrong.set_goal(&goal);
     miss(legacy.quick_search());
-    assert_eq!(wrong.quick_search(), Outcome::Error);
+    assert_eq!(
+        wrong.quick_search(),
+        Outcome::Error("proof scope changed after fact ingestion".into())
+    );
     let mut scoped = p.prover_for_node(&node, false);
     scoped.set_goal(&goal);
     assert_eq!(scoped.quick_search(), Outcome::Success);

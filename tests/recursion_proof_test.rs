@@ -15,7 +15,12 @@ fn prove(text: &str) -> Outcome {
     }
     prover.set_goal(&context);
     let outcome = prover.quick_verification_search();
-    assert_ne!(outcome, Outcome::Error, "{:?}\n{}", prover.error, text);
+    assert!(
+        !matches!(outcome, Outcome::Error(_)),
+        "{:?}\n{}",
+        prover.error,
+        text
+    );
     outcome
 }
 
