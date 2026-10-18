@@ -122,6 +122,20 @@ Member access and function application bind before prefix minus, which binds bef
 
 A library is a directory containing `.ac` files. A compatible mathematical library is included at `vscode/extension/acornlib` and packaged with the editor, including its license and attribution. Select that path with `VENTICORN_LIBRARY` to try the bundled modules, or use your own library directory. Set `VENTICORN_LIBRARY` to choose it explicitly; an absolute path is recommended. Relative values resolve from the process working directory. An empty value or a path that is not a directory is an error.
 
+[Venticornlib](https://github.com/johnclyde/venticornlib) provides a contained, separately maintained foundation: natural numbers, ordered pairs, and GCD. Its exact adopted commit and module hashes are recorded in [venticornlib.lock.json](venticornlib.lock.json). The corresponding three files in the existing bundle match that pin; the other bundled modules remain available. `scripts/check.sh` checks those hashes locally without fetching from GitHub.
+
+To use the contained library by itself, clone the pinned revision and select it explicitly:
+
+```sh
+git clone https://github.com/johnclyde/venticornlib.git ../venticornlib
+library_revision="$(python3 -c 'import json; print(json.load(open("venticornlib.lock.json"))["revision"])')"
+git -C ../venticornlib checkout --detach "$library_revision"
+python3 scripts/check-library-pin.py --library ../venticornlib
+VENTICORN_LIBRARY="$(cd ../venticornlib && pwd)" cargo run --locked --release --bin verify -- --no-cache
+```
+
+The `venticornlib` directory name is not automatically discovered. Use `VENTICORN_LIBRARY` or that repository's verification helper. To adopt a later revision, verify the standalone library, update the vendored core and its pin together, and review them through a pull request.
+
 Without that variable, Venticorn searches the working directory and each ancestor. At each level it accepts the directory itself if its name is `venticorn-library`, `acornlib`, or `acorn-library`; otherwise it checks children with those names in that order. For example, a `venticorn-library` beside this checkout is discovered when commands run from the checkout. Discovery does not use the directory in which the binary was built.
 
 ```sh
