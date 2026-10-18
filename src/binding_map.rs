@@ -77,7 +77,7 @@ pub struct BindingMap {
     position: usize,
     name_positions: HashMap<String, usize>,
     instance_member_positions: HashMap<(ModuleId, String), usize>,
-    default_history: Vec<(usize, ModuleId, String)>,
+    numerals_history: Vec<(usize, Class)>,
     hidden_codegen_names: HashSet<String>,
 
     // Maps the name of a type to the type object.
@@ -130,7 +130,7 @@ pub struct BindingMap {
     module_to_name: HashMap<ModuleId, String>,
 
     // The default data type to use for numeric literals.
-    default: Option<(ModuleId, String)>,
+    numerals: Option<Class>,
 }
 
 // A condition retains a generic, expanded proposition for instance obligations,
@@ -200,7 +200,7 @@ impl BindingMap {
             position: 0,
             name_positions: HashMap::new(),
             instance_member_positions: HashMap::new(),
-            default_history: vec![],
+            numerals_history: vec![],
             hidden_codegen_names: HashSet::new(),
             typename_to_type: BTreeMap::new(),
             type_to_typename: HashMap::new(),
@@ -218,7 +218,7 @@ impl BindingMap {
             canonical_to_alias: HashMap::new(),
             name_to_module: BTreeMap::new(),
             module_to_name: HashMap::new(),
-            default: None,
+            numerals: None,
         };
         answer.add_type_alias("Bool", AcornType::Bool);
         answer
@@ -384,12 +384,12 @@ impl BindingMap {
                 result.module_to_name.insert(*module, name);
             }
         }
-        result.default = self
-            .default_history
+        result.numerals = self
+            .numerals_history
             .iter()
             .rev()
-            .find(|(p, _, _)| *p <= position)
-            .map(|(_, m, n)| (*m, n.clone()));
+            .find(|(p, _)| *p <= position)
+            .map(|(_, class)| class.clone());
         result
     }
 
@@ -917,10 +917,13 @@ impl BindingMap {
     }
 
     pub fn set_default(&mut self, module: ModuleId, type_name: String) {
+        self.set_numerals(Class::new(module, type_name));
+    }
+
+    pub fn set_numerals(&mut self, class: Class) {
         self.position += 1;
-        self.default_history
-            .push((self.position, module, type_name.clone()));
-        self.default = Some((module, type_name));
+        self.numerals_history.push((self.position, class.clone()));
+        self.numerals = Some(class);
     }
 
     // Adds a constant.
@@ -1707,48 +1710,48 @@ impl BindingMap {
     // This function evaluates numbers when we already know what type they are.
     // token is the token to report errors with.
     // s is the string to parse.
-    fn evaluate_number_with_type(
+    fn evaluate_number_with_class(
         &self,
         token: &Token,
         project: &Project,
-        module: ModuleId,
-        type_name: &str,
+        class: &Class,
         s: &str,
     ) -> compilation::Result<AcornValue> {
-        if let Some(potential) = self.evaluate_type_attribute(project, module, type_name, s) {
+        if let Some(potential) =
+            self.evaluate_type_attribute(project, class.module_id, &class.name, s)
+        {
             return match potential {
                 PotentialValue::Resolved(value) => Ok(value),
                 PotentialValue::Unresolved(_) => {
-                    Err(token.error(&format!("number {}.{} has unresolved type", type_name, s)))
+                    Err(token.error(&format!("number {}.{} has unresolved type", class.name, s)))
                 }
             };
         }
 
         if s.len() == 1 {
-            return Err(token.error(&format!("digit {}.{} is not defined", type_name, s)));
+            return Err(token.error(&format!("digit {}.{} is not defined", class.name, s)));
         }
 
         let last_str = &s[s.len() - 1..];
-        let last_num =
-            self.evaluate_number_with_type(token, project, module, type_name, last_str)?;
+        let last_num = self.evaluate_number_with_class(token, project, class, last_str)?;
         let initial_str = &s[..s.len() - 1];
-        let initial_num =
-            self.evaluate_number_with_type(token, project, module, type_name, initial_str)?;
-        let read_fn = match self.evaluate_type_attribute(project, module, type_name, "read") {
-            Some(PotentialValue::Resolved(value)) => value,
-            Some(PotentialValue::Unresolved(_)) => {
-                return Err(token.error(&format!(
-                    "read function {}.read requires type arguments",
-                    type_name
-                )))
-            }
-            None => {
-                return Err(token.error(&format!(
-                    "{}.read must be defined to read numeric literals",
-                    type_name
-                )))
-            }
-        };
+        let initial_num = self.evaluate_number_with_class(token, project, class, initial_str)?;
+        let read_fn =
+            match self.evaluate_type_attribute(project, class.module_id, &class.name, "read") {
+                Some(PotentialValue::Resolved(value)) => value,
+                Some(PotentialValue::Unresolved(_)) => {
+                    return Err(token.error(&format!(
+                        "read function {}.read requires type arguments",
+                        class.name
+                    )))
+                }
+                None => {
+                    return Err(token.error(&format!(
+                        "{}.read must be defined to read numeric literals",
+                        class.name
+                    )))
+                }
+            };
         let value = AcornValue::apply(read_fn, vec![initial_num, last_num]);
         Ok(value)
     }
@@ -1875,36 +1878,35 @@ impl BindingMap {
                         };
                     }
                 }
-                if let AcornType::Data(
-                    Class {
-                        module_id: module,
-                        name: type_name,
-                    },
-                    actuals,
-                ) = t
-                {
+                if let AcornType::Data(data_class, actuals) = t {
                     if name_token.token_type == TokenType::Numeral {
                         if !actuals.is_empty() {
                             return Err(
                                 name_token.error("numeric literals cannot have type parameters")
                             );
                         }
-                        let value = self.evaluate_number_with_type(
+                        let value = self.evaluate_number_with_class(
                             name_token,
                             project,
-                            module,
-                            &type_name,
+                            &data_class,
                             name_token.text(),
                         )?;
                         return Ok(NamedEntity::Value(value));
                     }
-                    let attribute = self.evaluate_type_attribute(project, module, &type_name, name);
-                    let owner = self.bindings_for_module(project, module);
+                    let attribute = self.evaluate_type_attribute(
+                        project,
+                        data_class.module_id,
+                        &data_class.name,
+                        name,
+                    );
+                    let owner = self.bindings_for_module(project, data_class.module_id);
                     let scope = owner.and_then(|bindings| {
                         bindings
                             .instance_scopes
                             .iter()
-                            .find(|((target, class), _)| target == &type_name && class.name == name)
+                            .find(|((target, class), _)| {
+                                target == &data_class.name && class.name == name
+                            })
                             .map(|(_, scope)| scope)
                     });
                     if let Some(scope) = scope {
@@ -1917,7 +1919,7 @@ impl BindingMap {
                             return Err(name_token
                                 .error("concrete instance namespace cannot have type parameters"));
                         }
-                        return Ok(NamedEntity::Instance(module, scope.clone()));
+                        return Ok(NamedEntity::Instance(data_class.module_id, scope.clone()));
                     }
                     match attribute {
                         Some(PotentialValue::Resolved(value)) => {
@@ -1939,8 +1941,10 @@ impl BindingMap {
                                 )?))
                             }
                         }
-                        None => Err(name_token
-                            .error(&format!("{} has no member named '{}'", type_name, name))),
+                        None => Err(name_token.error(&format!(
+                            "{} has no member named '{}'",
+                            data_class.name, name
+                        ))),
                     }
                 } else {
                     Err(name_token.error("expected a data type"))
@@ -2013,18 +2017,17 @@ impl BindingMap {
                         }
                     }
                     TokenType::Numeral => {
-                        let (module, type_name) = match &self.default {
-                            Some((module, type_name)) => (module, type_name),
+                        let class = match &self.numerals {
+                            Some(class) => class,
                             None => {
                                 return Err(name_token
                                     .error("you must set a default type for numeric literals"));
                             }
                         };
-                        let value = self.evaluate_number_with_type(
+                        let value = self.evaluate_number_with_class(
                             name_token,
                             project,
-                            *module,
-                            type_name,
+                            class,
                             name_token.text(),
                         )?;
                         Ok(NamedEntity::Value(value))
@@ -3103,9 +3106,9 @@ impl BindingMap {
             if !member.is_empty() && member.chars().all(|ch| ch.is_ascii_digit()) {
                 let numeral = TokenType::Numeral.new_token(member);
                 if self
-                    .default
+                    .numerals
                     .as_ref()
-                    .is_some_and(|(m, t)| *m == module && t == owner)
+                    .is_some_and(|class| class.module_id == module && &class.name == owner)
                 {
                     return Ok(Expression::Singleton(numeral));
                 }

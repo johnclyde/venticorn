@@ -2283,20 +2283,13 @@ impl Environment {
             StatementInfo::Numerals(ds) => {
                 self.add_other_lines(statement);
                 let acorn_type = self.bindings.evaluate_type(project, &ds.type_expr)?;
-                if let AcornType::Data(
-                    Class {
-                        module_id: module,
-                        name: typename,
-                    },
-                    actuals,
-                ) = acorn_type
-                {
+                if let AcornType::Data(class, actuals) = acorn_type {
                     if !actuals.is_empty() {
                         return Err(ds
                             .type_expr
                             .error("numerals type cannot have type parameters"));
                     }
-                    self.bindings.set_default(module, typename);
+                    self.bindings.set_numerals(class);
                     Ok(())
                 } else {
                     Err(ds.type_expr.error("numerals type must be a data type"))
