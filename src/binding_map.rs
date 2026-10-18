@@ -920,7 +920,7 @@ impl BindingMap {
     // Returns the defined value, if there is a defined value.
     // If there isn't, returns None.
     pub fn get_definition(&self, name: &str) -> Option<&AcornValue> {
-        self.constant_info_by_spelling(name)
+        self.stored_info(self.stored_constant_name(name)?)
             .filter(|info| info.canonical)?
             .definition
             .as_ref()
@@ -932,7 +932,7 @@ impl BindingMap {
         if !self.canonical_name_matches(&GlobalName::new(self.module, name.clone())) {
             return None;
         }
-        self.constant_info.get(name)?.definition.as_ref()
+        self.stored_info(name)?.definition.as_ref()
     }
 
     // Returns the defined value and its parameters in declaration order.
@@ -4834,5 +4834,65 @@ mod instance_metadata_tests {
         assert!(record.definition.is_none() && record.constructor.is_none());
         bindings.add_instance_scope("State", class, "State.Marked".into());
         assert_eq!(bindings.get_constant_value_named(&alias), Some(value));
+    }
+}
+
+#[cfg(test)]
+mod instance_definition_tests {
+    use super::*;
+
+    #[test]
+    fn instance_definitions_remain_available_during_preparation_without_publishing_values() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_data_type("State");
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let local = LocalName::instance(&class, "flag", "State");
+        let param = TypeParam {
+            name: "T".into(),
+            typeclass: Some(class.clone()),
+        };
+        bindings.add_constant_named(
+            &local,
+            vec![param],
+            AcornType::Bool,
+            Some(AcornValue::Bool(true)),
+            None,
+        );
+        assert_eq!(
+            bindings.get_definition(&local.to_string()),
+            Some(&AcornValue::Bool(true))
+        );
+        assert_eq!(
+            bindings.get_definition_named(&local),
+            Some(&AcornValue::Bool(true))
+        );
+        assert!(bindings.get_constant_value_named(&local).is_none());
+        let foreign = LocalName::instance(
+            &Typeclass {
+                module_id: FIRST_NORMAL + 2,
+                name: class.name.clone(),
+            },
+            "flag",
+            "State",
+        );
+        assert!(bindings.get_definition_named(&foreign).is_none());
+        let unknown = LocalName::instance(&class, "unknown", "State");
+        bindings.add_constant_named(&unknown, vec![], AcornType::Bool, None, None);
+        assert!(bindings.get_definition_named(&unknown).is_none());
+        let alias = LocalName::instance(&class, "alias", "State");
+        let target = GlobalName::new(FIRST_NORMAL + 2, LocalName::unqualified("known"));
+        bindings.add_checked_instance_alias(
+            &alias,
+            target.clone(),
+            PotentialValue::constant_named(target, AcornType::Bool, vec![]),
+        );
+        assert!(bindings.get_definition(&alias.to_string()).is_none());
+        assert!(bindings.get_definition_named(&alias).is_none());
+        assert!(!bindings
+            .proof_scope()
+            .has_membership(FIRST_NORMAL, "State", &class));
     }
 }
