@@ -422,7 +422,7 @@ pub struct Node {
     // The body of the proposition, when it has an associated block.
     // When there is a block, proving every proposition in the block implies that the
     // claim is proven as well.
-    pub block: Option<Block>,
+    block: Option<Block>,
 }
 
 impl Node {
@@ -437,6 +437,15 @@ impl Node {
 
     pub fn is_structural(&self) -> bool {
         self.structural
+    }
+
+    pub fn block(&self) -> Option<&Block> {
+        self.block.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn block_mut(&mut self) -> Option<&mut Block> {
+        self.block.as_mut()
     }
 
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
@@ -523,7 +532,7 @@ impl Node {
     // Goal traversal is postorder, so every subtree occupies a contiguous slice.
     pub(crate) fn num_goals(&self) -> usize {
         usize::from(self.has_goal())
-            + self.block.as_ref().map_or(0, |block| {
+            + self.block().map_or(0, |block| {
                 block.env.nodes.iter().map(Node::num_goals).sum::<usize>()
             })
     }
@@ -533,7 +542,7 @@ impl Node {
         if self.is_structural() {
             return false;
         }
-        match &self.block {
+        match self.block() {
             Some(b) => b.goal.is_some(),
             None => true,
         }
@@ -614,7 +623,7 @@ impl<'a> NodeCursor<'a> {
     }
 
     pub fn num_children(&self) -> usize {
-        match self.node().block {
+        match self.node().block() {
             Some(ref b) => b.env.nodes.len(),
             None => 0,
         }
@@ -622,7 +631,7 @@ impl<'a> NodeCursor<'a> {
 
     // child_index must be less than num_children
     pub fn descend(&mut self, child_index: usize) {
-        let new_env = match &self.node().block {
+        let new_env = match self.node().block() {
             Some(b) => &b.env,
             None => panic!("descend called on a node without a block"),
         };
@@ -678,13 +687,12 @@ impl<'a> NodeCursor<'a> {
 
     pub(crate) fn entry_scope(&self) -> &crate::proof_scope::ProofScope {
         self.node()
-            .block
-            .as_ref()
+            .block()
             .map_or(self.node().proof_scope(), |b| b.entry_scope())
     }
 
     pub fn bindings_for_codegen(&self) -> crate::binding_map::BindingMap {
-        match &self.node().block {
+        match self.node().block() {
             Some(block) => block
                 .env
                 .bindings
@@ -698,8 +706,7 @@ impl<'a> NodeCursor<'a> {
 
     pub fn goal_scope(&self) -> &crate::proof_scope::ProofScope {
         self.node()
-            .block
-            .as_ref()
+            .block()
             .map_or(self.node().proof_scope(), |b| b.env.bindings.proof_scope())
     }
 
@@ -714,7 +721,7 @@ impl<'a> NodeCursor<'a> {
             nodes.extend(env.nodes[..*index].iter().map(|n| (n, truthiness)));
         }
         if include_children {
-            if let Some(block) = &self.node().block {
+            if let Some(block) = self.node().block() {
                 nodes.extend(
                     block
                         .env
@@ -753,7 +760,7 @@ impl<'a> NodeCursor<'a> {
             ));
         }
 
-        let mut context = if let Some(block) = &node.block {
+        let mut context = if let Some(block) = node.block() {
             let goal = match &block.goal {
                 Some(goal) => goal,
                 None => return Err(format!("block at {} has no goal", self)),
@@ -774,7 +781,7 @@ impl<'a> NodeCursor<'a> {
                 node.claim.source.range.end.line,
             )
         };
-        if node.block.is_none() {
+        if node.block().is_none() {
             context.proof_scope = node.proof_scope.clone();
         }
         for (env, _) in &self.annotated_path {

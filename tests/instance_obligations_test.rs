@@ -75,7 +75,7 @@ fn implicit_laws_and_explicit_proofs_create_real_scoped_obligations() {
             if proof.is_empty() { 1 } else { 2 }
         );
         let container = env.nodes.iter().find(|node| matches!(&node.claim.source.source_type, SourceType::Instance(name, class) if name == "Unit" && class == "Singleton")).unwrap();
-        let block = container.block.as_ref().unwrap();
+        let block = container.block().unwrap();
         assert_eq!(container.claim.value, AcornValue::Bool(true));
         assert!(!container.is_structural());
         assert!(!block.entry_scope().has_membership(id, "Unit", class));

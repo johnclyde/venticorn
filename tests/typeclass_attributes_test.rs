@@ -213,7 +213,7 @@ fn static_bounded_attributes_keep_phantom_actuals_and_canonical_owner() {
         assert_eq!(function.applied_type(1), AcornType::Bool);
     }
     let node = env.get_node_by_name("goal");
-    let scope = &node.current().block.as_ref().unwrap().env.bindings;
+    let scope = &node.current().block().unwrap().env.bindings;
     let value = scope
         .evaluate_value(&project, &Expression::expect_value("F.flag"), None)
         .unwrap();

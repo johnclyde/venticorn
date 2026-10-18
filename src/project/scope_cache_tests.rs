@@ -50,7 +50,7 @@ fn completed_policy_cannot_be_relabelled_when_publishing_to_disk() {
     let block = env
         .nodes
         .iter_mut()
-        .find_map(|node| node.block.as_mut())
+        .find_map(|node| node.block_mut())
         .unwrap();
     let original_bindings = block.env.bindings.clone();
     // Deliberately alter only the current policy, keeping source, value and ranges
@@ -70,7 +70,7 @@ fn completed_policy_cannot_be_relabelled_when_publishing_to_disk() {
     };
     env.nodes
         .iter_mut()
-        .find_map(|node| node.block.as_mut())
+        .find_map(|node| node.block_mut())
         .unwrap()
         .env
         .bindings = original_bindings;

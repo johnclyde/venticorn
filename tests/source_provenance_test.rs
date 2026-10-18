@@ -222,7 +222,7 @@ fn instance_relationships_keep_stable_names_and_separate_member_sources() {
     assert_eq!(env.iter_goals().count(), 2);
     let relationship = env.nodes.iter().find(|node| matches!(&node.claim.source.source_type, SourceType::Instance(name, class) if name == "Item" && class == "Marked")).unwrap();
     assert_eq!(relationship.claim.value, AcornValue::Bool(true));
-    assert!(relationship.block.as_ref().unwrap().goal.is_some());
+    assert!(relationship.block().unwrap().goal.is_some());
     let names = env
         .nodes
         .iter()
