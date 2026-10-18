@@ -104,14 +104,15 @@ pub struct BindingMap {
     // Formatting metadata only; evaluation always consults the canonical owner.
     imported_instance_members: HashMap<(ModuleId, String), Typeclass>,
 
-    // Maps the name of a constant defined in this scope to information about it.
+    // Ordinary constant declarations and aliases in this scope. Instance member
+    // records are stored separately, with all lookups sharing stored_info.
     // Doesn't handle variables defined on the stack, only ones that will be in scope for the
     // entirety of this environment.
     // Aliases retain their canonical values in the same records, without ownership.
     // Includes "<datatype>.<constant>" for members.
     constant_info: HashMap<LocalName, ConstantInfo>,
     // Complete instance declarations, including definitions, pending formals, and
-    // checked alias provenance. Temporary compatibility records stay synchronized.
+    // checked alias provenance. No duplicate ordinary record is retained.
     instance_info: HashMap<InstanceName, ConstantInfo>,
     // Compatibility and presentation index: stores actual inserted identities.
     constant_spellings: HashMap<String, LocalName>,
@@ -785,24 +786,17 @@ impl BindingMap {
         self.stored_info(name).map(|info| &info.value)
     }
 
-    // Keep metadata mutations coherent while both record stores are populated.
-    fn update_stored_info(&mut self, name: &LocalName, mut update: impl FnMut(&mut ConstantInfo)) {
-        update(
-            self.constant_info
-                .get_mut(name)
-                .expect("stored constant metadata"),
-        );
-        if let Some(key) = self.instance_key(name) {
-            update(
-                self.instance_info
-                    .get_mut(&key)
-                    .expect("stored instance metadata"),
-            );
-        }
+    fn update_stored_info(&mut self, name: &LocalName, update: impl FnOnce(&mut ConstantInfo)) {
+        let info = if let Some(key) = self.instance_key(name) {
+            self.instance_info.get_mut(&key)
+        } else {
+            self.constant_info.get_mut(name)
+        };
+        update(info.expect("stored constant metadata"));
     }
 
     fn constant_info_by_spelling(&self, spelling: &str) -> Option<&ConstantInfo> {
-        self.constant_info.get(self.stored_constant_name(spelling)?)
+        self.stored_info(self.stored_constant_name(spelling)?)
     }
 
     // Look up a constant without treating a pending generic declaration as a proof value.
@@ -829,7 +823,7 @@ impl BindingMap {
             }
             _ => {}
         }
-        let info = self.constant_info.get(name)?;
+        let info = self.stored_info(name)?;
         if info.canonical
             && Self::value_name(&info.value) != Some(&GlobalName::new(self.module, name.clone()))
         {
@@ -842,8 +836,7 @@ impl BindingMap {
     pub(crate) fn canonical_name_matches(&self, name: &GlobalName) -> bool {
         name.module_id == self.module
             && self
-                .constant_info
-                .get(&name.local_name)
+                .stored_info(&name.local_name)
                 .is_some_and(|info| info.canonical && Self::value_name(&info.value) == Some(name))
     }
 
@@ -1078,9 +1071,10 @@ impl BindingMap {
             constructor,
         };
         if let Some(key) = self.instance_key(&local_name) {
-            self.instance_info.insert(key, info.clone());
+            &self.instance_info.entry(key).or_insert(info).value
+        } else {
+            &self.constant_info.entry(local_name).or_insert(info).value
         }
-        &self.constant_info.entry(local_name).or_insert(info).value
     }
 
     // Adds a local alias for an already-existing constant.
@@ -1125,9 +1119,10 @@ impl BindingMap {
             constructor: None,
         };
         if let Some(key) = self.instance_key(local_name) {
-            self.instance_info.insert(key, info.clone());
+            self.instance_info.insert(key, info);
+        } else {
+            self.constant_info.insert(local_name.clone(), info);
         }
-        self.constant_info.insert(local_name.clone(), info);
     }
 
     // Called only after the staged instance member's declared type has been checked.
@@ -1167,10 +1162,7 @@ impl BindingMap {
 
     pub fn is_theorem_named(&self, name: &LocalName) -> bool {
         self.canonical_name_matches(&GlobalName::new(self.module, name.clone()))
-            && self
-                .constant_info
-                .get(name)
-                .is_some_and(|info| info.theorem)
+            && self.stored_info(name).is_some_and(|info| info.theorem)
     }
 
     // Data types that come from type parameters get removed when they go out of scope.
@@ -1676,8 +1668,7 @@ impl BindingMap {
                     return Err(source.error("constructor metadata is unavailable"));
                 }
                 bindings
-                    .constant_info
-                    .get(&name.local_name)
+                    .stored_info(&name.local_name)
                     .filter(|info| info.canonical)
                     .ok_or_else(|| source.error("constructor metadata is unavailable"))?
             }
@@ -3297,8 +3288,7 @@ impl BindingMap {
                 return false;
             }
             let Some(info) = self
-                .constant_info
-                .get(&constant.name.local_name)
+                .stored_info(&constant.name.local_name)
                 .filter(|info| info.canonical)
             else {
                 return false;
@@ -4524,17 +4514,27 @@ mod typed_storage_tests {
     fn check_indexes(bindings: &BindingMap) {
         assert_eq!(
             bindings.constant_spellings.len(),
-            bindings.constant_info.len()
+            bindings.constant_info.len() + bindings.instance_info.len()
         );
         for (spelling, name) in &bindings.constant_spellings {
             assert_eq!(&name.to_string(), spelling);
-            assert!(bindings.constant_info.contains_key(name));
+            assert!(bindings.stored_info(name).is_some());
         }
         for name in bindings.constant_info.keys() {
+            assert!(!matches!(name, LocalName::Instance(..)));
             assert_eq!(
                 bindings.constant_spellings.get(&name.to_string()),
                 Some(name)
             );
+        }
+        for name in bindings.instance_info.keys() {
+            assert_eq!(name.class.module_id, bindings.module);
+            let local = LocalName::instance(&name.typeclass, &name.attribute, &name.class.name);
+            assert_eq!(
+                bindings.constant_spellings.get(&local.to_string()),
+                Some(&local)
+            );
+            assert_eq!(bindings.instance_key(&local).as_ref(), Some(name));
         }
     }
 
@@ -4577,7 +4577,7 @@ mod typed_storage_tests {
             bindings.get_constant_value("State.Marked.flag"),
             Some(original.clone())
         );
-        assert!(!bindings.constant_info.contains_key(&foreign));
+        assert!(bindings.stored_info(&foreign).is_none());
         bindings.add_instance_scope("State", class, "State.Marked".into());
         assert_eq!(bindings.get_constant_value_named(&name), Some(original));
         assert!(bindings
@@ -4807,7 +4807,8 @@ mod instance_metadata_tests {
         bindings.mark_as_theorem(&member.to_string());
         let key = bindings.instance_key(&member).unwrap();
         let record = bindings.instance_info.get(&key).unwrap();
-        assert_eq!(Some(record), bindings.constant_info.get(&member));
+        assert!(!bindings.constant_info.contains_key(&member));
+        assert_eq!(Some(record), bindings.stored_info(&member));
         assert_eq!(record.value.unresolved_params(), [param]);
         assert_eq!(record.definition, Some(AcornValue::Bool(true)));
         assert_eq!(record.constructor, Some((target_type, 0, 1)));
@@ -4828,7 +4829,8 @@ mod instance_metadata_tests {
             .instance_info
             .get(&bindings.instance_key(&alias).unwrap())
             .unwrap();
-        assert_eq!(Some(record), bindings.constant_info.get(&alias));
+        assert!(!bindings.constant_info.contains_key(&alias));
+        assert_eq!(Some(record), bindings.stored_info(&alias));
         assert_eq!(record.value, value);
         assert!(!record.canonical && record.theorem && record.checked_instance_alias);
         assert!(record.definition.is_none() && record.constructor.is_none());
@@ -4955,5 +4957,72 @@ mod instance_formal_tests {
             .is_none());
         assert!(bindings.get_definition_and_params_named(&alias).is_none());
         assert!(bindings.unresolved_params(&alias.to_string()).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod separated_instance_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn separated_records_support_metadata_and_import_consumers_without_new_authority() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_data_type("State");
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let local = LocalName::instance(&class, "flag", "State");
+        let param = TypeParam {
+            name: "T".into(),
+            typeclass: Some(class.clone()),
+        };
+        let before = bindings.codegen_position();
+        bindings.add_constant_named(
+            &local,
+            vec![param.clone()],
+            AcornType::Bool,
+            Some(AcornValue::Bool(true)),
+            None,
+        );
+        bindings.mark_as_theorem(&local.to_string());
+        assert!(bindings.constant_info.is_empty());
+        assert_eq!(
+            bindings.get_type_for_constant_name(&local.to_string()),
+            Some(AcornType::Bool)
+        );
+        assert_eq!(bindings.unresolved_params(&local.to_string()), [param]);
+        assert!(bindings.is_constant(&local.to_string()));
+        assert!(bindings.is_theorem(&local.to_string()));
+        assert!(bindings.is_theorem_named(&local));
+        let global = GlobalName::new(FIRST_NORMAL, local.clone());
+        assert!(bindings.canonical_name_matches(&global));
+        let value = bindings
+            .get_constant_value(&local.to_string())
+            .unwrap()
+            .to_generic_value();
+        let mut unknown = HashMap::new();
+        bindings
+            .find_unknown_local_constants(&value, &mut unknown)
+            .unwrap();
+        assert!(unknown.is_empty());
+        assert!(bindings.get_constant_value_named(&local).is_none());
+        assert!(!bindings
+            .proof_scope()
+            .has_membership(FIRST_NORMAL, "State", &class));
+        bindings.add_instance_scope("State", class.clone(), "State.Marked".into());
+        let mut importer = BindingMap::new(FIRST_NORMAL + 2);
+        importer.import_instance_members(&bindings);
+        assert_eq!(
+            importer
+                .imported_instance_members
+                .get(&(FIRST_NORMAL, local.to_string())),
+            Some(&class)
+        );
+        let earlier = bindings.for_codegen_at(before, bindings.proof_scope());
+        assert!(earlier.get_constant_value(&local.to_string()).is_none());
+        assert!(!earlier.is_constant(&local.to_string()));
+        assert!(!earlier.is_theorem_named(&local));
+        assert!(!earlier.canonical_name_matches(&global));
     }
 }
