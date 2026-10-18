@@ -11,6 +11,10 @@ pub enum Fact {
 }
 
 impl Fact {
+    pub fn is_instance(&self) -> bool {
+        matches!(self, Fact::Instance(..))
+    }
+
     pub fn source(&self) -> &Source {
         match self {
             Fact::Proposition(proposition) => &proposition.source,
