@@ -12,6 +12,7 @@ python3 python/version.py
 python3 tests/version_test.py
 python3 tests/publish_test.py
 python3 tests/crossbuild_test.py
+python3 scripts/check-library-pin.py
 bash -n crossbuild.sh
 
 cargo fmt --all -- --check
