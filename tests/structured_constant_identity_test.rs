@@ -76,10 +76,7 @@ fn generic_demand_does_not_cross_same_spelling_class_owners() {
         vec![AcornType::Variable(TypeParam::unconstrained("T"))],
     );
     monomorphizer.add_fact(Fact::new(
-        venticorn::proposition::Proposition {
-            value: generic,
-            source: Source::mock(),
-        },
+        venticorn::proposition::Proposition::new(generic, Source::mock()),
         Truthiness::Factual,
     ));
     assert!(monomorphizer.take_facts().is_empty());

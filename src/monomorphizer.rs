@@ -57,7 +57,6 @@ impl ConstantParams {
 #[derive(Clone)]
 struct GenericPropInfo {
     proposition: Proposition,
-    truthiness: Truthiness,
     // Partial substitutions from several constants are not combined.
     instantiations: Vec<PropParams>,
 }
@@ -79,7 +78,7 @@ pub struct Monomorphizer {
 
     // Facts that are fully monomorphized.
     // The Monomorphizer only writes to this, never reads.
-    output: Vec<(Proposition, Truthiness)>,
+    output: Vec<Proposition>,
 
     // Facts, goals and definitions request concrete instances in declaration order.
     constant_info: HashMap<GlobalConstantName, GenericConstantInfo>,
@@ -102,8 +101,8 @@ impl Monomorphizer {
     // Adds a fact that could be either generic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
         match fact {
-            Fact::Proposition(proposition, truthiness) => {
-                self.add_proposition(proposition, truthiness);
+            Fact::Proposition(proposition) => {
+                self.add_proposition(proposition);
             }
             Fact::InstanceOf(data, class) => {
                 // Reflections must already belong to the captured lexical scope.
@@ -117,7 +116,7 @@ impl Monomorphizer {
         }
     }
 
-    fn add_proposition(&mut self, proposition: Proposition, truthiness: Truthiness) {
+    fn add_proposition(&mut self, proposition: Proposition) {
         // Directly admitted facts can expose concrete instances needed by definitions.
         self.add_monomorphs(&proposition.value);
 
@@ -133,13 +132,12 @@ impl Monomorphizer {
             }
 
             // There's nothing to monomorphize here. Just output it.
-            self.output.push((proposition, truthiness));
+            self.output.push(proposition);
             return;
         }
 
         self.prop_info.push(GenericPropInfo {
             proposition,
-            truthiness,
             instantiations: vec![],
         });
 
@@ -167,15 +165,26 @@ impl Monomorphizer {
     }
 
     // Extract monomorphic facts from the prover.
-    pub fn take_output(&mut self) -> Vec<(Proposition, Truthiness)> {
+    pub fn take_propositions(&mut self) -> Vec<Proposition> {
         std::mem::take(&mut self.output)
+    }
+
+    // Compatibility output derives each role from the moved proposition.
+    pub fn take_output(&mut self) -> Vec<(Proposition, Truthiness)> {
+        self.take_propositions()
+            .into_iter()
+            .map(|proposition| {
+                let truthiness = proposition.truthiness();
+                (proposition, truthiness)
+            })
+            .collect()
     }
 
     // Compatibility collection; each proposition and role move without cloning.
     pub fn take_facts(&mut self) -> Vec<Fact> {
-        self.take_output()
+        self.take_propositions()
             .into_iter()
-            .map(|(proposition, truthiness)| Fact::Proposition(proposition, truthiness))
+            .map(Fact::Proposition)
             .collect()
     }
 
@@ -258,9 +267,8 @@ impl Monomorphizer {
         self.prop_info[prop_id].instantiations.push(prop_params);
         // Definitions can introduce concrete generic calls needed by the current proof.
         // Record this substitution before following those calls to break repeated demand.
-        let truthiness = self.prop_info[prop_id].truthiness;
         self.add_monomorphs(&monomorphic_prop.value);
-        self.output.push((monomorphic_prop, truthiness));
+        self.output.push(monomorphic_prop);
     }
 
     // Make sure that we are generating any monomorphizations that are used in this value.
@@ -307,16 +315,10 @@ mod membership_fact_tests {
         let predicate =
             |actual| AcornValue::constant(2, "flag".into(), vec![actual], AcornType::Bool);
         let law = Fact::new(
-            Proposition {
-                value: predicate(formal),
-                source: Source::mock(),
-            },
+            Proposition::new(predicate(formal), Source::mock()),
             Truthiness::Factual,
         );
-        let goal = Proposition {
-            value: predicate(actual),
-            source: Source::mock(),
-        };
+        let goal = Proposition::new(predicate(actual), Source::mock());
         let reflection = Fact::InstanceOf(data.clone(), class.clone());
         assert!(reflection.as_proposition().is_none());
         assert!(reflection.truthiness().is_none());

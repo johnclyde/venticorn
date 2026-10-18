@@ -142,9 +142,9 @@ impl Normalizer {
     }
 
     // Return newly usable monomorphic facts without exposing mutable scope authority.
-    pub(crate) fn monomorphize_fact(&mut self, fact: Fact) -> Vec<(Proposition, Truthiness)> {
+    pub(crate) fn monomorphize_fact(&mut self, fact: Fact) -> Vec<Proposition> {
         self.monomorphizer.add_fact(fact);
-        self.monomorphizer.take_output()
+        self.monomorphizer.take_propositions()
     }
 
     pub(crate) fn monomorphize_for_value(&mut self, value: &AcornValue) -> Vec<Fact> {
@@ -488,11 +488,11 @@ impl Normalizer {
 
     fn append_propositions(
         &mut self,
-        propositions: impl IntoIterator<Item = (Proposition, Truthiness)>,
+        propositions: impl IntoIterator<Item = Proposition>,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        for (proposition, truthiness) in propositions {
-            self.normalize_monomorphic_steps(proposition, truthiness, steps)?;
+        for proposition in propositions {
+            self.normalize_monomorphic_steps(proposition, steps)?;
         }
         Ok(())
     }
@@ -505,7 +505,13 @@ impl Normalizer {
         facts: impl IntoIterator<Item = Fact>,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        self.append_propositions(facts.into_iter().filter_map(Fact::into_proposition), steps)
+        self.append_propositions(
+            facts.into_iter().filter_map(|fact| match fact {
+                Fact::Proposition(proposition) => Some(proposition),
+                Fact::InstanceOf(..) => None,
+            }),
+            steps,
+        )
     }
 
     // Compatibility wrapper for callers requesting a fresh collection.
@@ -523,9 +529,7 @@ impl Normalizer {
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
         match fact {
-            Fact::Proposition(proposition, truthiness) => {
-                self.normalize_monomorphic_steps(proposition, truthiness, steps)
-            }
+            Fact::Proposition(proposition) => self.normalize_monomorphic_steps(proposition, steps),
             // Membership statements have no Boolean clause and cannot grant authority.
             Fact::InstanceOf(..) => Ok(()),
         }
@@ -534,9 +538,9 @@ impl Normalizer {
     fn normalize_monomorphic_steps(
         &mut self,
         proposition: Proposition,
-        truthiness: Truthiness,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
+        let truthiness = proposition.truthiness();
         let local = truthiness != Truthiness::Factual;
         let defined = match &proposition.source.source_type {
             SourceType::ConstantDefinition(value, _) => {
@@ -1047,10 +1051,7 @@ mod ownership_tests {
             AcornValue::equals(AcornValue::apply(generic, vec![argument.clone()]), argument),
         );
         let fact = Fact::new(
-            crate::proposition::Proposition {
-                value: law,
-                source: Source::mock(),
-            },
+            crate::proposition::Proposition::new(law, Source::mock()),
             Truthiness::Factual,
         );
         let demand = AcornValue::constant(
@@ -1101,10 +1102,7 @@ mod fact_step_tests {
             let mut normalizer = Normalizer::new();
             let steps = normalizer
                 .normalize_monomorphic_fact(Fact::new(
-                    crate::proposition::Proposition {
-                        value: value.clone(),
-                        source: source.clone(),
-                    },
+                    crate::proposition::Proposition::new(value.clone(), source.clone()),
                     truthiness,
                 ))
                 .unwrap();
@@ -1138,10 +1136,7 @@ mod fact_step_tests {
         ] {
             let steps = Normalizer::new()
                 .normalize_monomorphic_fact(Fact::new(
-                    crate::proposition::Proposition {
-                        value: AcornValue::Bool(false),
-                        source: source.clone(),
-                    },
+                    crate::proposition::Proposition::new(AcornValue::Bool(false), source.clone()),
                     truthiness,
                 ))
                 .unwrap();
@@ -1211,10 +1206,7 @@ mod empty_clause_tests {
         );
         let steps = Normalizer::new()
             .normalize_monomorphic_fact(Fact::new(
-                crate::proposition::Proposition {
-                    value: AcornValue::Bool(false),
-                    source: source.clone(),
-                },
+                crate::proposition::Proposition::new(AcornValue::Bool(false), source.clone()),
                 Truthiness::Factual,
             ))
             .unwrap();
@@ -1244,10 +1236,7 @@ mod append_fact_tests {
             normalizer
                 .append_monomorphic_fact(
                     Fact::new(
-                        crate::proposition::Proposition {
-                            value: AcornValue::Bool(false),
-                            source: source,
-                        },
+                        crate::proposition::Proposition::new(AcornValue::Bool(false), source),
                         Truthiness::Factual,
                     ),
                     &mut steps,
@@ -1272,10 +1261,7 @@ mod append_fact_tests {
         let error = normalizer
             .append_monomorphic_fact(
                 Fact::new(
-                    crate::proposition::Proposition {
-                        value: invalid,
-                        source: Source::mock(),
-                    },
+                    crate::proposition::Proposition::new(invalid, Source::mock()),
                     Truthiness::Factual,
                 ),
                 &mut steps,

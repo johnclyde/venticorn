@@ -138,19 +138,38 @@ pub struct Proposition {
 
     // Where this proposition came from.
     pub source: Source,
+
+    // An explicit proof-context role never changes the declaration source.
+    contextual_truthiness: Option<Truthiness>,
 }
 
 impl Proposition {
-    // Default role of a source in its lexical declaration context.
-    // Explicit roles remain authoritative until the contextual-role migration.
-    pub fn truthiness(&self) -> Truthiness {
-        if matches!(self.source.source_type, SourceType::NegatedGoal) {
-            Truthiness::Counterfactual
-        } else if self.source.depth == 0 {
-            Truthiness::Factual
-        } else {
-            Truthiness::Hypothetical
+    // Construct a proposition with its source's default lexical role.
+    pub fn new(value: AcornValue, source: Source) -> Self {
+        Self {
+            value,
+            source,
+            contextual_truthiness: None,
         }
+    }
+
+    // Supply a role for this proof context without rewriting source provenance.
+    pub fn with_truthiness(mut self, truthiness: Truthiness) -> Self {
+        self.contextual_truthiness = Some(truthiness);
+        self
+    }
+
+    // Effective role in this proof context, falling back to the declaration scope.
+    pub fn truthiness(&self) -> Truthiness {
+        self.contextual_truthiness.unwrap_or_else(|| {
+            if matches!(self.source.source_type, SourceType::NegatedGoal) {
+                Truthiness::Counterfactual
+            } else if self.source.depth == 0 {
+                Truthiness::Factual
+            } else {
+                Truthiness::Hypothetical
+            }
+        })
     }
 
     // Set the declaration location without changing exportability or source identity.
@@ -171,29 +190,29 @@ impl Proposition {
         } else {
             SourceType::Theorem(name)
         };
-        Proposition {
+        Proposition::new(
             value,
-            source: Source {
+            Source {
                 module,
                 range,
                 source_type,
                 importable: true,
                 depth: 0,
             },
-        }
+        )
     }
 
     pub fn anonymous(value: AcornValue, module: ModuleId, range: Range) -> Proposition {
-        Proposition {
+        Proposition::new(
             value,
-            source: Source {
+            Source {
                 module,
                 range,
                 source_type: SourceType::Anonymous,
                 importable: false,
                 depth: 0,
             },
-        }
+        )
     }
 
     // The relationship marker is separate from the block that proves its laws.
@@ -204,16 +223,16 @@ impl Proposition {
         name: String,
         class: String,
     ) -> Proposition {
-        Proposition {
-            value: value.unwrap_or(AcornValue::Bool(true)),
-            source: Source {
+        Proposition::new(
+            value.unwrap_or(AcornValue::Bool(true)),
+            Source {
                 module,
                 range,
                 source_type: SourceType::Instance(name, class),
                 importable: true,
                 depth: 0,
             },
-        }
+        )
     }
 
     // The constraint block proves inhabitation; its exported claim remains vacuous.
@@ -244,16 +263,16 @@ impl Proposition {
         name: String,
         member: String,
     ) -> Proposition {
-        Proposition {
+        Proposition::new(
             value,
-            source: Source {
+            Source {
                 module,
                 range,
                 source_type: SourceType::TypeDefinition(name, member),
                 importable: true,
                 depth: 0,
             },
-        }
+        )
     }
 
     pub fn constant_definition(
@@ -276,49 +295,51 @@ impl Proposition {
         constant: AcornValue,
         name: String,
     ) -> Proposition {
-        Proposition {
+        Proposition::new(
             value,
-            source: Source {
+            Source {
                 module,
                 range,
                 source_type: SourceType::ConstantDefinition(constant, name),
                 importable: true,
                 depth: 0,
             },
-        }
+        )
     }
 
     pub fn premise(value: AcornValue, module: ModuleId, range: Range) -> Proposition {
-        Proposition {
+        Proposition::new(
             value,
-            source: Source {
+            Source {
                 module,
                 range,
                 source_type: SourceType::Premise,
                 importable: false,
                 depth: 0,
             },
-        }
+        )
     }
 
     pub fn with_negated_goal(&self, value: AcornValue) -> Proposition {
-        Proposition {
+        Proposition::new(
             value,
-            source: Source {
+            Source {
                 module: self.source.module,
                 range: self.source.range,
                 source_type: SourceType::NegatedGoal,
                 importable: false,
                 depth: self.source.depth,
             },
-        }
+        )
+        .with_truthiness(Truthiness::Counterfactual)
     }
 
     // Just changes the value while keeping the other stuff intact
     pub fn with_value(&self, value: AcornValue) -> Proposition {
-        Proposition {
+        Self {
             value,
             source: self.source.clone(),
+            contextual_truthiness: self.contextual_truthiness,
         }
     }
 
@@ -345,6 +366,10 @@ impl Proposition {
             },
             _ => self.source.clone(),
         };
-        Proposition { value, source }
+        Self {
+            value,
+            source,
+            contextual_truthiness: self.contextual_truthiness,
+        }
     }
 }

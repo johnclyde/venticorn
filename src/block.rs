@@ -641,7 +641,7 @@ impl<'a> NodeCursor<'a> {
         } else {
             Truthiness::Hypothetical
         };
-        Fact::Proposition(self.current().claim.clone(), truthiness)
+        Fact::new(self.current().claim.clone(), truthiness)
     }
 
     // All facts that can be used to prove the current node.
@@ -722,7 +722,7 @@ impl<'a> NodeCursor<'a> {
         facts.extend(
             self.local_nodes(include_children)
                 .into_iter()
-                .map(|(node, truthiness)| Fact::Proposition(node.claim.clone(), truthiness)),
+                .map(|(node, truthiness)| Fact::new(node.claim.clone(), truthiness)),
         );
         facts
     }

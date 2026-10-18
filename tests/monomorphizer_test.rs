@@ -31,10 +31,7 @@ fn claim(name: &str, actuals: Vec<AcornType>) -> AcornValue {
 fn fact(value: AcornValue, truthiness: Truthiness) -> Fact {
     value.validate().unwrap();
     Fact::new(
-        venticorn::proposition::Proposition {
-            value: value,
-            source: Source::mock(),
-        },
+        venticorn::proposition::Proposition::new(value, Source::mock()),
         truthiness,
     )
 }
