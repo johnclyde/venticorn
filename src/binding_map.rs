@@ -1152,7 +1152,12 @@ impl BindingMap {
             .stored_constant_name(name)
             .expect("only a stored declaration can be marked as a theorem")
             .clone();
-        self.update_stored_info(&name, |info| info.theorem = true);
+        self.mark_as_theorem_named(&name);
+    }
+
+    // Mark the exact stored identity without resolving a display spelling.
+    pub fn mark_as_theorem_named(&mut self, name: &LocalName) {
+        self.update_stored_info(name, |info| info.theorem = true);
     }
 
     pub fn is_theorem(&self, name: &str) -> bool {
@@ -5024,5 +5029,47 @@ mod separated_instance_metadata_tests {
         assert!(!earlier.is_constant(&local.to_string()));
         assert!(!earlier.is_theorem_named(&local));
         assert!(!earlier.canonical_name_matches(&global));
+    }
+}
+
+#[cfg(test)]
+mod typed_theorem_marking_tests {
+    use super::*;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[test]
+    fn theorem_marking_uses_exact_canonical_identity_without_publishing_membership() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_data_type("State");
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let local = LocalName::instance(&class, "flag", "State");
+        bindings.add_constant_named(&local, vec![], AcornType::Bool, None, None);
+        let foreign = LocalName::instance(
+            &Typeclass {
+                module_id: FIRST_NORMAL + 2,
+                name: class.name.clone(),
+            },
+            "flag",
+            "State",
+        );
+        let records = bindings.instance_info.clone();
+        let position = bindings.codegen_position();
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| bindings.mark_as_theorem_named(&foreign))).is_err()
+        );
+        assert_eq!(bindings.instance_info, records);
+        assert_eq!(bindings.codegen_position(), position);
+        assert!(!bindings.is_theorem_named(&local));
+        bindings.mark_as_theorem_named(&local);
+        assert!(bindings.is_theorem_named(&local));
+        assert!(bindings.is_theorem(&local.to_string()));
+        assert!(!bindings.is_theorem_named(&foreign));
+        assert!(bindings.get_constant_value_named(&local).is_none());
+        assert!(!bindings
+            .proof_scope()
+            .has_membership(FIRST_NORMAL, "State", &class));
     }
 }
