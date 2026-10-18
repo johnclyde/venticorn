@@ -2508,13 +2508,9 @@ impl Environment {
             if !node.importable() {
                 continue;
             }
-            if filter.is_some_and(|names| {
-                !node
-                    .claim
-                    .source
-                    .fact_name()
-                    .is_some_and(|name| names.contains(&name))
-            }) {
+            if filter
+                .is_some_and(|names| !node.fact_name().is_some_and(|name| names.contains(&name)))
+            {
                 continue;
             }
             facts.push(node.get_fact_with_truthiness(Truthiness::Factual));
