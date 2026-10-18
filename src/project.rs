@@ -1015,7 +1015,7 @@ impl Project {
         for (selected_node, truthiness, local) in selected {
             let selected = selected_node
                 .source()
-                .and_then(|source| source.qualified_fact_name())
+                .and_then(|source| source.qualified_name())
                 .and_then(|(id, name)| {
                     let module = &self.modules.get(id as usize)?.descriptor;
                     if premises
@@ -1043,9 +1043,8 @@ impl Project {
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
             if let Some(block) = node.get_block() {
                 for child in &block.env.nodes {
-                    if let Some((id, name)) = child
-                        .source()
-                        .and_then(|source| source.qualified_fact_name())
+                    if let Some((id, name)) =
+                        child.source().and_then(|source| source.qualified_name())
                     {
                         if let Some(module) = project.modules.get(id as usize) {
                             if let Some(names) = remaining.get_mut(&module.descriptor) {
@@ -1083,7 +1082,7 @@ impl Project {
 
     fn collect_theorem_premises(&self, prover: &Prover) -> Option<PremiseSet> {
         let mut premises = PremiseSet::new();
-        for (module_id, name) in prover.get_useful_fact_names()? {
+        for (module_id, name) in prover.get_useful_source_names()? {
             let module = self.modules.get(module_id as usize)?.descriptor.clone();
             if module == ModuleRef::Anonymous {
                 return None;

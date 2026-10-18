@@ -498,7 +498,7 @@ impl Prover {
     // Named assumptions reachable from the completed proof, before condensation.
     // None means no proof is available; Some(empty) means it uses no named facts.
     // Callers still decide whether the proof meets their acceptance policy.
-    pub fn get_useful_fact_names(&self) -> Option<BTreeSet<(ModuleId, String)>> {
+    pub fn get_useful_source_names(&self) -> Option<BTreeSet<(ModuleId, String)>> {
         let proof = self.get_uncondensed_proof(true)?;
         Some(
             proof
@@ -510,12 +510,17 @@ impl Prover {
                 .filter(|(_, step)| step.truthiness != Truthiness::Hypothetical)
                 .filter_map(|(_, step)| match &step.rule {
                     Rule::Assumption(info) if info.source.importable => {
-                        info.source.qualified_fact_name()
+                        info.source.qualified_name()
                     }
                     _ => None,
                 })
                 .collect(),
         )
+    }
+
+    // Compatibility name for callers retaining proof premise advice.
+    pub fn get_useful_fact_names(&self) -> Option<BTreeSet<(ModuleId, String)>> {
+        self.get_useful_source_names()
     }
 
     fn report_term_graph_contradiction(&mut self, contradiction: TermGraphContradiction) {

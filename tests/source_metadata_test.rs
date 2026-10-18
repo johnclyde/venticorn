@@ -13,3 +13,34 @@ fn proposition_display_formats_only_the_value() {
         assert_eq!(proposition.truthiness(), Truthiness::Counterfactual);
     }
 }
+
+#[test]
+fn source_names_keep_stable_instance_and_member_identities() {
+    use venticorn::source::SourceType;
+
+    for (source_type, expected) in [
+        (
+            SourceType::Instance("Item".into(), "Marked".into()),
+            Some("Item.instance.Marked"),
+        ),
+        (
+            SourceType::TypeDefinition("Item".into(), "instance.Marked.flag".into()),
+            Some("Item.instance.Marked.flag"),
+        ),
+        (SourceType::Premise, None),
+        (SourceType::NegatedGoal, None),
+    ] {
+        let source = Source {
+            module: 7,
+            source_type,
+            ..Source::mock()
+        };
+        assert_eq!(source.name().as_deref(), expected);
+        assert_eq!(
+            source.qualified_name(),
+            expected.map(|name| (7, name.to_string()))
+        );
+        assert_eq!(source.fact_name(), source.name());
+        assert_eq!(source.qualified_fact_name(), source.qualified_name());
+    }
+}

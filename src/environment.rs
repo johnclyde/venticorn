@@ -2583,7 +2583,7 @@ impl Environment {
                 continue;
             }
             if filter
-                .is_some_and(|names| !node.fact_name().is_some_and(|name| names.contains(&name)))
+                .is_some_and(|names| !node.source_name().is_some_and(|name| names.contains(&name)))
             {
                 continue;
             }
