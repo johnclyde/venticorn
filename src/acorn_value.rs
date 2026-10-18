@@ -3,7 +3,7 @@ use crate::acorn_type::Class;
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::acorn_type::AcornType;
+use crate::acorn_type::{AcornType, Typeclass};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::module::ModuleId;
@@ -449,6 +449,21 @@ impl AcornValue {
         Self::constant_named(
             GlobalName::new(module_id, LocalName::from_legacy(&name)),
             params,
+            instance_type,
+        )
+    }
+
+    /// Construct the generic class-member side of a checked instance relationship.
+    /// This preserves explicit canonical identities and does not grant membership.
+    pub fn instance_constant(
+        class: Typeclass,
+        member: String,
+        target: Class,
+        instance_type: AcornType,
+    ) -> Self {
+        Self::constant_named(
+            GlobalName::new(class.module_id, LocalName::Attribute(class.name, member)),
+            vec![AcornType::Data(target, vec![])],
             instance_type,
         )
     }
