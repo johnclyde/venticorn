@@ -847,7 +847,7 @@ impl Environment {
             fss.name.clone(),
         );
 
-        let index = self.add_node(project, false, prop, Some(block));
+        let index = self.push_node(Node::new_block(project, self, block, prop));
         self.add_node_lines(index, &statement.range());
         Ok(())
     }
@@ -949,7 +949,7 @@ impl Environment {
         );
         if let Some(block) = constraint_block {
             let proposition = Proposition::inhabited(self.module_id, &ss.name, statement.range());
-            let index = self.add_node(project, false, proposition, Some(block));
+            let index = self.push_node(Node::new_block(project, self, block, proposition));
             self.add_node_lines(index, &statement.range());
         }
 
@@ -1029,9 +1029,9 @@ impl Environment {
                     .bind_values(1, 1, &member_args);
             let constraint_claim =
                 AcornValue::ForAll(vec![struct_type.clone()], Box::new(bound_constraint));
-            self.add_node(
+            self.push_node(Node::structural(
                 project,
-                true,
+                self,
                 Proposition::type_member_definition(
                     constraint_claim.parametrize(self.module_id, &param_names),
                     self.module_id,
@@ -1039,8 +1039,7 @@ impl Environment {
                     ss.name.clone(),
                     "constraint".into(),
                 ),
-                None,
-            );
+            ));
         }
 
         // An object can be recreated by new'ing from its members. Ie:
@@ -1057,9 +1056,9 @@ impl Environment {
         let new_claim = AcornValue::ForAll(vec![struct_type], Box::new(new_eq))
             .parametrize(self.module_id, &param_names);
 
-        self.add_node(
+        self.push_node(Node::structural(
             project,
-            true,
+            self,
             Proposition::type_member_definition(
                 new_claim,
                 self.module_id,
@@ -1067,8 +1066,7 @@ impl Environment {
                 ss.name.clone(),
                 "new".into(),
             ),
-            None,
-        );
+        ));
 
         // There are also formulas for new followed by member functions. Ie:
         //   Pair.first(Pair.new(a, b)) = a.
@@ -1109,9 +1107,9 @@ impl Environment {
                 start: field_name_token.start_pos(),
                 end: field_type_expr.last_token().end_pos(),
             };
-            self.add_node(
+            self.push_node(Node::structural(
                 project,
-                true,
+                self,
                 Proposition::type_member_definition(
                     member_claim.parametrize(self.module_id, &param_names),
                     self.module_id,
@@ -1119,8 +1117,7 @@ impl Environment {
                     ss.name.clone(),
                     field_name_token.text().to_string(),
                 ),
-                None,
-            );
+            ));
         }
 
         for name in &param_names {
@@ -1218,9 +1215,9 @@ impl Environment {
                 let mut quantifiers = i_arg_types.clone();
                 quantifiers.extend(j_arg_types.clone());
                 let claim = AcornValue::forall(quantifiers, inequality);
-                self.add_node(
+                self.push_node(Node::structural(
                     project,
-                    true,
+                    self,
                     Proposition::type_member_definition(
                         claim,
                         self.module_id,
@@ -1228,8 +1225,7 @@ impl Environment {
                         is.name.clone(),
                         member_name.as_attribute().unwrap().1.to_string(),
                     ),
-                    None,
-                );
+                ));
             }
         }
 
@@ -1253,9 +1249,9 @@ impl Environment {
         }
         let disjunction = AcornValue::reduce(BinaryOp::Or, disjuncts);
         let claim = AcornValue::forall(vec![inductive_type.clone()], disjunction);
-        self.add_node(
+        self.push_node(Node::structural(
             project,
-            true,
+            self,
             Proposition::type_member_definition(
                 claim,
                 self.module_id,
@@ -1263,8 +1259,7 @@ impl Environment {
                 is.name.clone(),
                 "new".into(),
             ),
-            None,
-        );
+        ));
 
         // The next principle is that each constructor is injective.
         // Ie if Type.construct(x0, x1) = Type.construct(x2, x3) then x0 = x2 and x1 = x3.
@@ -1303,9 +1298,9 @@ impl Environment {
             forall_types.extend_from_slice(&arg_types);
             let claim =
                 AcornValue::forall(forall_types, AcornValue::implies(equality, conjunction));
-            self.add_node(
+            self.push_node(Node::structural(
                 project,
-                true,
+                self,
                 Proposition::type_member_definition(
                     claim,
                     self.module_id,
@@ -1313,8 +1308,7 @@ impl Environment {
                     is.name.clone(),
                     member_name.as_attribute().unwrap().1.to_string(),
                 ),
-                None,
-            );
+            ));
         }
 
         // Structural induction.
@@ -1388,12 +1382,11 @@ impl Environment {
 
         // The forall form is the anonymous truth of induction. We add that as a proposition.
         let forall_claim = AcornValue::forall(vec![hyp_type], unbound_claim);
-        self.add_node(
+        self.push_node(Node::structural(
             project,
-            true,
+            self,
             Proposition::theorem(true, forall_claim, self.module_id, range, Some(name)),
-            None,
-        );
+        ));
         self.definition_ranges
             .insert(LocalConstantName::unqualified(&is.name), statement.range());
 
@@ -1658,12 +1651,10 @@ impl Environment {
                 Some(definition.clone()),
                 None,
             );
-            let node = Node::new(
+            let node = Node::structural(
                 project,
                 &staged,
-                true,
                 Proposition::theorem(true, claim, self.module_id, range, Some(full_name.clone())),
-                None,
             );
             // Inspect the actual exported proposition after theorem-name expansion,
             // exactly as for ordinary bounded theorems. Fact does not retain erased
@@ -1685,7 +1676,7 @@ impl Environment {
             staged
                 .definition_ranges
                 .insert(constant_name.clone(), range);
-            staged.nodes.push(node);
+            staged.push_node(node);
         }
         staged.bindings.add_typeclass_info(
             Typeclass {
