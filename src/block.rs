@@ -172,7 +172,10 @@ impl Block {
                 subenv.push_node(Node::structural(
                     project,
                     &subenv,
-                    Proposition::premise(condition.clone(), env.module_id, range),
+                    Proposition::new(
+                        condition.clone(),
+                        Source::premise(env.module_id, range, subenv.depth),
+                    ),
                 ));
                 None
             }
@@ -195,7 +198,10 @@ impl Block {
                     subenv.push_node(Node::structural(
                         project,
                         &subenv,
-                        Proposition::premise(bound, env.module_id, premise_range),
+                        Proposition::new(
+                            bound,
+                            Source::premise(env.module_id, premise_range, subenv.depth),
+                        ),
                     ));
                 }
 
@@ -204,12 +210,15 @@ impl Block {
                     unbound_goal
                         .instantiate(&param_pairs)
                         .bind_values(0, 0, &internal_args);
-                Some(Goal::Prove(Proposition::theorem(
-                    false,
+                Some(Goal::Prove(Proposition::new(
                     bound_goal,
-                    env.module_id,
-                    theorem_range,
-                    theorem_name.map(|s| s.to_string()),
+                    Source::theorem(
+                        false,
+                        env.module_id,
+                        theorem_range,
+                        goal_depth,
+                        theorem_name.map(|s| s.to_string()),
+                    ),
                 )))
             }
             BlockParams::FunctionSatisfy(unbound_goal, return_type, range) => {
@@ -243,7 +252,10 @@ impl Block {
                 subenv.push_node(Node::structural(
                     project,
                     &subenv,
-                    Proposition::premise(equality, env.module_id, range),
+                    Proposition::new(
+                        equality,
+                        Source::premise(env.module_id, range, subenv.depth),
+                    ),
                 ));
                 None
             }

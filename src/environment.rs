@@ -255,12 +255,15 @@ impl Environment {
         self.push_node(Node::structural(
             project,
             self,
-            Proposition::named_constant_definition(
+            Proposition::new(
                 claim,
-                self.module_id,
-                range,
-                constant,
-                name.to_string(),
+                Source::constant_definition(
+                    self.module_id,
+                    range,
+                    self.depth,
+                    constant,
+                    name.to_string(),
+                ),
             ),
         ));
     }
@@ -729,12 +732,15 @@ impl Environment {
         };
 
         let node = {
-            let proposition = Proposition::theorem(
-                ts.axiomatic,
+            let proposition = Proposition::new(
                 external_claim,
-                self.module_id,
-                range,
-                ts.name.clone(),
+                Source::theorem(
+                    ts.axiomatic,
+                    self.module_id,
+                    range,
+                    self.depth,
+                    ts.name.clone(),
+                ),
             );
             match block {
                 Some(block) => Node::new_block(project, &staged, block, Some(proposition)),
@@ -861,12 +867,15 @@ impl Environment {
         let return_bound = unbound_condition.bind_values(num_args, num_args, &[function_term]);
         let external_condition = AcornValue::ForAll(arg_types, Box::new(return_bound));
 
-        let prop = Proposition::named_constant_definition(
+        let prop = Proposition::new(
             external_condition,
-            self.module_id,
-            definition_range,
-            function_constant,
-            fss.name.clone(),
+            Source::constant_definition(
+                self.module_id,
+                definition_range,
+                self.depth,
+                function_constant,
+                fss.name.clone(),
+            ),
         );
 
         let index = self.push_node(Node::new_block(project, self, block, Some(prop)));
@@ -1054,12 +1063,15 @@ impl Environment {
             self.push_node(Node::structural(
                 project,
                 self,
-                Proposition::type_member_definition(
+                Proposition::new(
                     constraint_claim.parametrize(self.module_id, &param_names),
-                    self.module_id,
-                    range,
-                    ss.name.clone(),
-                    "constraint".into(),
+                    Source::type_definition(
+                        self.module_id,
+                        range,
+                        self.depth,
+                        ss.name.clone(),
+                        "constraint".into(),
+                    ),
                 ),
             ));
         }
@@ -1081,12 +1093,15 @@ impl Environment {
         self.push_node(Node::structural(
             project,
             self,
-            Proposition::type_member_definition(
+            Proposition::new(
                 new_claim,
-                self.module_id,
-                range,
-                ss.name.clone(),
-                "new".into(),
+                Source::type_definition(
+                    self.module_id,
+                    range,
+                    self.depth,
+                    ss.name.clone(),
+                    "new".into(),
+                ),
             ),
         ));
 
@@ -1132,12 +1147,15 @@ impl Environment {
             self.push_node(Node::structural(
                 project,
                 self,
-                Proposition::type_member_definition(
+                Proposition::new(
                     member_claim.parametrize(self.module_id, &param_names),
-                    self.module_id,
-                    range,
-                    ss.name.clone(),
-                    field_name_token.text().to_string(),
+                    Source::type_definition(
+                        self.module_id,
+                        range,
+                        self.depth,
+                        ss.name.clone(),
+                        field_name_token.text().to_string(),
+                    ),
                 ),
             ));
         }
@@ -1240,12 +1258,15 @@ impl Environment {
                 self.push_node(Node::structural(
                     project,
                     self,
-                    Proposition::type_member_definition(
+                    Proposition::new(
                         claim,
-                        self.module_id,
-                        range,
-                        is.name.clone(),
-                        member_name.as_attribute().unwrap().1.to_string(),
+                        Source::type_definition(
+                            self.module_id,
+                            range,
+                            self.depth,
+                            is.name.clone(),
+                            member_name.as_attribute().unwrap().1.to_string(),
+                        ),
                     ),
                 ));
             }
@@ -1274,12 +1295,15 @@ impl Environment {
         self.push_node(Node::structural(
             project,
             self,
-            Proposition::type_member_definition(
+            Proposition::new(
                 claim,
-                self.module_id,
-                range,
-                is.name.clone(),
-                "new".into(),
+                Source::type_definition(
+                    self.module_id,
+                    range,
+                    self.depth,
+                    is.name.clone(),
+                    "new".into(),
+                ),
             ),
         ));
 
@@ -1323,12 +1347,15 @@ impl Environment {
             self.push_node(Node::structural(
                 project,
                 self,
-                Proposition::type_member_definition(
+                Proposition::new(
                     claim,
-                    self.module_id,
-                    range,
-                    is.name.clone(),
-                    member_name.as_attribute().unwrap().1.to_string(),
+                    Source::type_definition(
+                        self.module_id,
+                        range,
+                        self.depth,
+                        is.name.clone(),
+                        member_name.as_attribute().unwrap().1.to_string(),
+                    ),
                 ),
             ));
         }
@@ -1408,7 +1435,10 @@ impl Environment {
         self.push_node(Node::structural(
             project,
             self,
-            Proposition::theorem(true, forall_claim, self.module_id, range, Some(name)),
+            Proposition::new(
+                forall_claim,
+                Source::theorem(true, self.module_id, range, self.depth, Some(name)),
+            ),
         ));
         self.definition_ranges
             .insert(LocalName::unqualified(&is.name), statement.range());
@@ -1677,7 +1707,16 @@ impl Environment {
             let node = Node::structural(
                 project,
                 &staged,
-                Proposition::theorem(true, claim, self.module_id, range, Some(full_name.clone())),
+                Proposition::new(
+                    claim,
+                    Source::theorem(
+                        true,
+                        self.module_id,
+                        range,
+                        self.depth,
+                        Some(full_name.clone()),
+                    ),
+                ),
             );
             // Inspect the actual exported proposition after theorem-name expansion,
             // exactly as for ordinary bounded theorems. Fact does not retain erased
@@ -2114,24 +2153,30 @@ impl Environment {
             self.push_node(Node::structural(
                 project,
                 self,
-                Proposition::type_member_definition(
+                Proposition::new(
                     claim,
-                    self.module_id,
-                    statement.range(),
-                    name.to_string(),
-                    format!("instance.{}.{}", class.name, member),
+                    Source::type_definition(
+                        self.module_id,
+                        statement.range(),
+                        self.depth,
+                        name.to_string(),
+                        format!("instance.{}.{}", class.name, member),
+                    ),
                 ),
             ));
             if let Some(claim) = generic_definition {
                 self.push_node(Node::structural(
                     project,
                     self,
-                    Proposition::type_member_definition(
+                    Proposition::new(
                         claim,
-                        self.module_id,
-                        statement.range(),
-                        name.to_string(),
-                        format!("instance.{}.{}", class.name, member),
+                        Source::type_definition(
+                            self.module_id,
+                            statement.range(),
+                            self.depth,
+                            name.to_string(),
+                            format!("instance.{}.{}", class.name, member),
+                        ),
                     ),
                 ));
             }
