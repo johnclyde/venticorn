@@ -7,10 +7,8 @@ use crate::module::ModuleId;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MembershipKey {
-    pub(crate) data_module: ModuleId,
-    pub(crate) data_name: String,
-    pub(crate) class_module: ModuleId,
-    pub(crate) class_name: String,
+    pub(crate) data: Class,
+    pub(crate) class: Typeclass,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -24,10 +22,8 @@ impl ProofScope {
     // These records describe visible declarations, not proof certificates.
     pub fn has_membership(&self, module: ModuleId, name: &str, class: &Typeclass) -> bool {
         let key = MembershipKey {
-            data_module: module,
-            data_name: name.to_string(),
-            class_module: class.module_id,
-            class_name: class.name.clone(),
+            data: Class::new(module, name.to_string()),
+            class: class.clone(),
         };
         self.memberships.contains(&key) && !self.denied_memberships.contains(&key)
     }
@@ -42,19 +38,15 @@ impl ProofScope {
 
     pub(crate) fn record_instance(&mut self, module: ModuleId, name: &str, class: &Typeclass) {
         Arc::make_mut(&mut self.memberships).insert(MembershipKey {
-            data_module: module,
-            data_name: name.to_string(),
-            class_module: class.module_id,
-            class_name: class.name.clone(),
+            data: Class::new(module, name.to_string()),
+            class: class.clone(),
         });
     }
 
     pub(crate) fn deny_instance(&mut self, module: ModuleId, name: &str, class: &Typeclass) {
         Arc::make_mut(&mut self.denied_memberships).insert(MembershipKey {
-            data_module: module,
-            data_name: name.to_string(),
-            class_module: class.module_id,
-            class_name: class.name.clone(),
+            data: Class::new(module, name.to_string()),
+            class: class.clone(),
         });
     }
 

@@ -270,10 +270,11 @@ mod tests {
         Arc::make_mut(&mut unresolved.proof_scope.imports).push(999);
         assert!(!cached.matches_goals(std::slice::from_ref(&unresolved)));
         let membership = MembershipKey {
-            data_module: env.module_id,
-            data_name: "Item".into(),
-            class_module: env.module_id,
-            class_name: "Magma".into(),
+            data: crate::acorn_type::Class::new(env.module_id, "Item".into()),
+            class: crate::acorn_type::Typeclass {
+                module_id: env.module_id,
+                name: "Magma".into(),
+            },
         };
         for field in 0..5 {
             let mut changed = current_goal();
