@@ -51,22 +51,25 @@ impl ConstantParams {
     }
 }
 
+// A generic fact and the complete substitutions already emitted for it.
+#[derive(Clone)]
+struct GenericFactInfo {
+    fact: Fact,
+    // Partial substitutions from several constants are not combined.
+    instantiations: Vec<FactParams>,
+}
+
 // A helper structure to determine which monomorphs are necessary.
 // Tracks the generic constants used by each fact and the concrete instances needed by proofs.
 #[derive(Clone)]
 pub struct Monomorphizer {
     scope: crate::proof_scope::ProofScope,
     // Generic facts retain their own independent type-variable namespaces.
-    generic_facts: Vec<Fact>,
+    fact_info: Vec<GenericFactInfo>,
 
     // Facts that are fully monomorphized.
     // The Monomorphizer only writes to this, never reads.
     output_facts: Vec<Fact>,
-
-    // The complete substitutions already emitted for each fact.
-    // Combining partial substitutions from several constants is not supported.
-    // Parallel to generic_facts.
-    instantiations_for_fact: Vec<Vec<FactParams>>,
 
     // The concrete constant instances requested by facts, goals, or their definitions.
     // Indexed by constant id.
@@ -86,9 +89,8 @@ impl Monomorphizer {
     pub fn with_scope(scope: crate::proof_scope::ProofScope) -> Self {
         Monomorphizer {
             scope,
-            generic_facts: vec![],
+            fact_info: vec![],
             output_facts: vec![],
-            instantiations_for_fact: vec![],
             instantiations_for_constant: HashMap::new(),
             generic_constants: HashMap::new(),
         }
@@ -99,7 +101,7 @@ impl Monomorphizer {
         // Directly admitted facts can expose concrete instances needed by definitions.
         self.add_monomorphs(&fact.value);
 
-        let i = self.generic_facts.len();
+        let i = self.fact_info.len();
         let mut instances = vec![];
         fact.value
             .find_constants(&|c| !c.params.is_empty() && c.is_generic(), &mut instances);
@@ -114,8 +116,10 @@ impl Monomorphizer {
             return;
         }
 
-        self.generic_facts.push(fact);
-        self.instantiations_for_fact.push(vec![]);
+        self.fact_info.push(GenericFactInfo {
+            fact,
+            instantiations: vec![],
+        });
 
         // Store a reference to our generic instances in the index
         for c in &instances {
@@ -201,7 +205,8 @@ impl Monomorphizer {
         }
 
         // The selected constant may not expose every bound elsewhere in the same fact.
-        if !self.generic_facts[fact_id]
+        if !self.fact_info[fact_id]
+            .fact
             .value
             .accepts_substitution_in_scope(&fact_params, &self.scope)
         {
@@ -209,18 +214,23 @@ impl Monomorphizer {
         }
         let fact_params = FactParams::new(fact_params);
 
-        if self.instantiations_for_fact[fact_id].contains(&fact_params) {
+        if self.fact_info[fact_id]
+            .instantiations
+            .contains(&fact_params)
+        {
             // We already have this monomorph
             return;
         }
 
-        let monomorphic_fact = self.generic_facts[fact_id].instantiate(&fact_params.params);
+        let monomorphic_fact = self.fact_info[fact_id]
+            .fact
+            .instantiate(&fact_params.params);
         if monomorphic_fact.value.is_generic() {
             // Matching one constant may leave other type variables in the fact unresolved.
             // Do not emit or remember an incomplete substitution.
             return;
         }
-        self.instantiations_for_fact[fact_id].push(fact_params);
+        self.fact_info[fact_id].instantiations.push(fact_params);
         // Definitions can introduce concrete generic calls needed by the current proof.
         // Record this substitution before following those calls to break repeated demand.
         self.add_monomorphs(&monomorphic_fact.value);
