@@ -14,7 +14,7 @@ fn declaration_roles_and_lexical_nesting_define_source_importability() {
     let env = project.get_env_by_id(module).unwrap();
     let mut seen = [false; 7];
     for node in &env.nodes {
-        let source = &node.proposition().unwrap().source;
+        let source = node.source().unwrap();
         match &source.source_type {
             SourceType::Anonymous => {
                 seen[0] = true;
@@ -53,10 +53,10 @@ fn declaration_roles_and_lexical_nesting_define_source_importability() {
     assert!(!children.is_empty());
     assert!(children
         .iter()
-        .all(|node| !node.proposition().unwrap().source.importable));
+        .all(|node| !node.source().unwrap().importable));
     let definition = children
         .iter()
-        .find(|node| node.proposition().unwrap().source.fact_name().as_deref() == Some("inner"))
+        .find(|node| node.source().unwrap().fact_name().as_deref() == Some("inner"))
         .unwrap();
     let fact = Fact::new(
         definition.proposition().unwrap().clone(),

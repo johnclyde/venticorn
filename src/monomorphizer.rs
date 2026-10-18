@@ -104,7 +104,7 @@ impl Monomorphizer {
             Fact::Proposition(proposition) => {
                 self.add_proposition(proposition);
             }
-            Fact::InstanceOf(data, class) => {
+            Fact::Instance(data, class, _) => {
                 // Reflections must already belong to the captured lexical scope.
                 // They cannot revive denied or not-yet-visible memberships.
                 if !self.scope.has_class_membership(&data, &class) {
@@ -293,7 +293,7 @@ mod membership_fact_tests {
     use crate::acorn_type::{Class, TypeParam, Typeclass};
     use crate::project::Project;
     use crate::proof_scope::ProofScope;
-    use crate::proposition::Source;
+    use crate::proposition::{Source, SourceType};
     use crate::prover::{Outcome, Prover};
 
     #[test]
@@ -319,7 +319,15 @@ mod membership_fact_tests {
             Truthiness::Factual,
         );
         let goal = Proposition::new(predicate(actual), Source::mock());
-        let reflection = Fact::InstanceOf(data.clone(), class.clone());
+        let reflection = Fact::Instance(
+            data.clone(),
+            class.clone(),
+            Source {
+                module: data.module_id,
+                source_type: SourceType::Instance(data.name.clone(), class.name.clone()),
+                ..Source::mock()
+            },
+        );
         assert!(reflection.as_proposition().is_none());
         assert!(reflection.truthiness().is_none());
         assert!(reflection.clone().into_proposition().is_none());

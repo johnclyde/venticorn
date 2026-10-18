@@ -1,4 +1,3 @@
-use venticorn::acorn_value::AcornValue;
 use venticorn::environment::Environment;
 use venticorn::proposition::SourceType;
 
@@ -17,9 +16,9 @@ fn every_instance_has_a_node_without_changing_real_obligations() {
             .nodes
             .iter()
             .filter(|node| {
-                node.proposition().is_some_and(|prop| {
+                node.source().is_some_and(|source| {
                     matches!(
-                        &prop.source.source_type,
+                        &source.source_type,
                         SourceType::Instance(name, class) if name == "Unit" && class == "Marked"
                     )
                 })
@@ -29,7 +28,7 @@ fn every_instance_has_a_node_without_changing_real_obligations() {
         let node = instances[0];
         assert_eq!(node.is_structural(), structural);
         assert_eq!(node.get_block().is_none(), structural);
-        assert_eq!(node.proposition().unwrap().value, AcornValue::Bool(true));
+        assert!(node.proposition().is_none());
         assert_eq!(node.fact_name().as_deref(), Some("Unit.instance.Marked"));
         assert!(node.importable());
         let class = env.bindings.get_typeclass_for_name("Marked").unwrap();

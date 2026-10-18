@@ -10,7 +10,7 @@ fn check_node_depths(env: &Environment, expected: u32) -> usize {
     let mut total = 0;
     for node in &env.nodes {
         total += 1;
-        assert_eq!(node.proposition().unwrap().source.depth, expected);
+        assert_eq!(node.source().unwrap().depth, expected);
         if let Some(block) = node.block() {
             total += check_node_depths(&block.env, expected + 1);
         }
@@ -30,17 +30,17 @@ fn lexical_depth_survives_same_scope_staging_and_real_children() {
         .nodes
         .iter()
         .find(|n| {
-            matches!(&n.proposition().unwrap().source.source_type,
+            matches!(&n.source().unwrap().source_type,
         SourceType::Axiom(Some(name)) if name == "Marked.reflexive")
         })
         .unwrap();
-    assert_eq!(condition.proposition().unwrap().source.depth, 0);
-    assert!(condition.proposition().unwrap().source.importable);
+    assert_eq!(condition.source().unwrap().depth, 0);
+    assert!(condition.source().unwrap().importable);
     let instance = env
         .nodes
         .iter()
         .find(|n| {
-            matches!(&n.proposition().unwrap().source.source_type,
+            matches!(&n.source().unwrap().source_type,
         SourceType::Instance(name, class) if name == "Item" && class == "Marked")
         })
         .unwrap();
@@ -72,7 +72,7 @@ fn lexical_depth_survives_same_scope_staging_and_real_children() {
         .env
         .nodes
         .iter()
-        .all(|n| !n.proposition().unwrap().source.importable));
+        .all(|n| !n.source().unwrap().importable));
 }
 
 #[test]

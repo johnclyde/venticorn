@@ -1,16 +1,23 @@
 use crate::acorn_type::{AcornType, Class, Typeclass};
 use crate::proof_step::Truthiness;
-use crate::proposition::Proposition;
+use crate::proposition::{Proposition, Source};
 
 // A statement available under a particular proof context.
 #[derive(Clone, Debug)]
 pub enum Fact {
     Proposition(Proposition),
     // A declaration relation, never an independent grant of proof authority.
-    InstanceOf(Class, Typeclass),
+    Instance(Class, Typeclass, Source),
 }
 
 impl Fact {
+    pub fn source(&self) -> &Source {
+        match self {
+            Fact::Proposition(proposition) => &proposition.source,
+            Fact::Instance(_, _, source) => source,
+        }
+    }
+
     // Compatibility constructor records the explicit role on the proposition.
     pub fn new(proposition: Proposition, truthiness: Truthiness) -> Fact {
         Fact::Proposition(proposition.with_truthiness(truthiness))
@@ -19,7 +26,7 @@ impl Fact {
     pub fn as_proposition(&self) -> Option<&Proposition> {
         match self {
             Fact::Proposition(proposition) => Some(proposition),
-            Fact::InstanceOf(..) => None,
+            Fact::Instance(..) => None,
         }
     }
 
@@ -34,7 +41,7 @@ impl Fact {
                 let truthiness = proposition.truthiness();
                 Some((proposition, truthiness))
             }
-            Fact::InstanceOf(..) => None,
+            Fact::Instance(..) => None,
         }
     }
 
@@ -46,7 +53,9 @@ impl Fact {
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> Fact {
         match self {
             Fact::Proposition(proposition) => Fact::Proposition(proposition.instantiate(params)),
-            Fact::InstanceOf(data, class) => Fact::InstanceOf(data.clone(), class.clone()),
+            Fact::Instance(data, class, source) => {
+                Fact::Instance(data.clone(), class.clone(), source.clone())
+            }
         }
     }
 }

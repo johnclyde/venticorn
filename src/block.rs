@@ -16,7 +16,7 @@ use crate::goal::{Goal, GoalContext};
 use crate::names::LocalName;
 use crate::project::{ImportFilter, Project};
 use crate::proof_step::Truthiness;
-use crate::proposition::Proposition;
+use crate::proposition::{Proposition, Source};
 use crate::statement::Body;
 use crate::token::Token;
 
@@ -418,9 +418,9 @@ pub struct Node {
 
 // Private variants prevent constructing a node without its captured scope.
 enum NodeKind {
-    Structural(Proposition),
+    Structural(Fact),
     Claim(Proposition),
-    Block(Block, Option<Proposition>),
+    Block(Block, Option<Fact>),
 }
 
 impl Node {
@@ -465,23 +465,32 @@ impl Node {
     }
 
     pub fn importable(&self) -> bool {
-        self.proposition().is_some_and(|p| p.source.importable)
+        self.source().is_some_and(|source| source.importable)
     }
 
     // Stable premise identity, when this source has one.
     pub fn fact_name(&self) -> Option<String> {
-        self.proposition()?.source.fact_name()
+        self.source()?.fact_name()
     }
 
     pub fn proposition(&self) -> Option<&Proposition> {
         match &self.kind {
-            NodeKind::Structural(proposition) | NodeKind::Claim(proposition) => Some(proposition),
-            NodeKind::Block(_, proposition) => proposition.as_ref(),
+            NodeKind::Structural(fact) => fact.as_proposition(),
+            NodeKind::Claim(proposition) => Some(proposition),
+            NodeKind::Block(_, fact) => fact.as_ref().and_then(Fact::as_proposition),
+        }
+    }
+
+    pub fn source(&self) -> Option<&Source> {
+        match &self.kind {
+            NodeKind::Structural(fact) => Some(fact.source()),
+            NodeKind::Claim(proposition) => Some(&proposition.source),
+            NodeKind::Block(_, fact) => fact.as_ref().map(Fact::source),
         }
     }
 
     pub fn is_axiom(&self) -> bool {
-        self.proposition().is_some_and(|p| p.source.is_axiom())
+        self.source().is_some_and(Source::is_axiom)
     }
 
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
@@ -489,11 +498,23 @@ impl Node {
     }
 
     pub fn structural(project: &Project, env: &Environment, proposition: Proposition) -> Self {
-        Self::from_parts(project, env, true, Some(proposition), None)
+        Self::from_parts(
+            project,
+            env,
+            true,
+            Some(Fact::Proposition(proposition)),
+            None,
+        )
     }
 
     pub fn claim(project: &Project, env: &Environment, proposition: Proposition) -> Self {
-        Self::from_parts(project, env, false, Some(proposition), None)
+        Self::from_parts(
+            project,
+            env,
+            false,
+            Some(Fact::Proposition(proposition)),
+            None,
+        )
     }
 
     pub fn new_block(
@@ -502,7 +523,13 @@ impl Node {
         block: Block,
         proposition: Option<Proposition>,
     ) -> Self {
-        Self::from_parts(project, env, false, proposition, Some(block))
+        Self::from_parts(
+            project,
+            env,
+            false,
+            proposition.map(Fact::Proposition),
+            Some(block),
+        )
     }
 
     // Compatibility constructor; all paths share expansion and metadata capture.
@@ -513,40 +540,63 @@ impl Node {
         proposition: Proposition,
         block: Option<Block>,
     ) -> Self {
-        Self::from_parts(project, env, structural, Some(proposition), block)
+        Self::from_parts(
+            project,
+            env,
+            structural,
+            Some(Fact::Proposition(proposition)),
+            block,
+        )
+    }
+
+    // Relation nodes share the same lexical metadata capture as propositions.
+    pub fn instance(
+        project: &Project,
+        env: &Environment,
+        block: Option<Block>,
+        fact: Fact,
+    ) -> Self {
+        assert!(matches!(fact, Fact::Instance(..)));
+        Self::from_parts(project, env, block.is_none(), Some(fact), block)
     }
 
     fn from_parts(
         project: &Project,
         env: &Environment,
         structural: bool,
-        proposition: Option<Proposition>,
+        fact: Option<Fact>,
         block: Option<Block>,
     ) -> Self {
         if structural {
             assert!(block.is_none());
         }
-        let claim = proposition.map(|proposition| {
-            let mut claim = env.bindings.expand_theorems(project, proposition);
-            // A nested declaration stays local even when it has a reusable source name.
-            claim.source.importable &= env.top_level;
-            claim.source.depth = env.depth;
-            claim
+        let fact = fact.map(|fact| match fact {
+            Fact::Proposition(proposition) => {
+                let mut proposition = env.bindings.expand_theorems(project, proposition);
+                proposition.source.importable &= env.top_level;
+                proposition.source.depth = env.depth;
+                Fact::Proposition(proposition)
+            }
+            Fact::Instance(data, class, mut source) => {
+                source.importable &= env.top_level;
+                source.depth = env.depth;
+                Fact::Instance(data, class, source)
+            }
         });
         Node {
             codegen_position: env.bindings.codegen_position(),
             proof_scope: env.bindings.proof_scope().clone(),
-            kind: match (block, claim) {
-                (Some(block), claim) => NodeKind::Block(block, claim),
-                (None, Some(claim)) if structural => NodeKind::Structural(claim),
-                (None, Some(claim)) => NodeKind::Claim(claim),
-                (None, None) => unreachable!("non-block nodes require a proposition"),
+            kind: match (block, fact) {
+                (Some(block), fact) => NodeKind::Block(block, fact),
+                (None, Some(fact)) if structural => NodeKind::Structural(fact),
+                (None, Some(Fact::Proposition(proposition))) => NodeKind::Claim(proposition),
+                _ => unreachable!("plain claims require a proposition"),
             },
         }
     }
 
     pub(crate) fn theorem_name(&self) -> Option<&str> {
-        match &self.proposition()?.source.source_type {
+        match &self.source()?.source_type {
             crate::proposition::SourceType::Theorem(name) => name.as_deref(),
             _ => None,
         }
@@ -557,7 +607,7 @@ impl Node {
         if let Some(name) = self.theorem_name() {
             return Some(Cow::Borrowed(name));
         }
-        match &self.proposition()?.source.source_type {
+        match &self.source()?.source_type {
             crate::proposition::SourceType::ConstantDefinition(_, name) => {
                 Some(Cow::Borrowed(name))
             }
