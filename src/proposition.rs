@@ -1,4 +1,6 @@
 // Modified for Venticorn: theorem and axiom names are optional source metadata.
+use std::fmt;
+
 use tower_lsp::lsp_types::Range;
 
 use crate::acorn_type::AcornType;
@@ -141,6 +143,12 @@ pub struct Proposition {
 
     // An explicit proof-context role never changes the declaration source.
     contextual_truthiness: Option<Truthiness>,
+}
+
+impl fmt::Display for Proposition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.value.fmt(f)
+    }
 }
 
 impl Proposition {
