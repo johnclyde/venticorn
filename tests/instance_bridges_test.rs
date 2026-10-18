@@ -64,7 +64,7 @@ fn canonical_method_bridges_keep_the_owner_actual_and_signature() {
     for (target_name, class_module) in [("State", left), ("Other", right)] {
         let target = env.bindings.get_type_for_name(target_name).unwrap();
         let bridge = env.nodes.iter().find(|node| matches!(&node.claim.source.source_type, SourceType::TypeDefinition(name, member) if name == target_name && member == "instance.Painted.is_red")).unwrap();
-        assert!(bridge.structural);
+        assert!(bridge.is_structural());
         assert!(bridge.block.is_none());
         let mut references = vec![];
         bridge.claim.value.find_constants(

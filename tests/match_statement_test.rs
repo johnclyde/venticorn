@@ -78,7 +78,7 @@ fn nullary_match_case_blocks_assume_the_constructor_equality() {
     .unwrap();
     assert!(block.goal.is_none());
     assert_eq!(block.env.nodes.len(), 1);
-    assert!(block.env.nodes[0].structural);
+    assert!(block.env.nodes[0].is_structural());
     assert_eq!(
         block.env.nodes[0].claim.value,
         AcornValue::new_equals(value, constructor)
@@ -209,9 +209,9 @@ fn match_case_blocks_keep_variables_local_and_retain_body_goals() {
         block.env.nodes[0].claim.value,
         AcornValue::new_equals(value, AcornValue::new_apply(constructor, vec![local]))
     );
-    assert!(block.env.nodes[0].structural);
+    assert!(block.env.nodes[0].is_structural());
     let goal = block.env.nodes.last().unwrap();
-    assert!(!goal.structural);
+    assert!(!goal.is_structural());
     assert!(goal.has_goal());
     assert_eq!(goal.claim.value, AcornValue::Bool(false));
     assert_eq!(env.nodes.len(), node_count);

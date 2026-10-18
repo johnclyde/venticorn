@@ -33,7 +33,7 @@ fn constrained_structures_create_an_earlier_scoped_existence_obligation() {
     let mut env = Environment::new_test();
     env.add("structure Pair {\n first: Bool\n second: Bool\n} constraint {\n first or second\n} by {\n true or true\n}");
     assert_eq!(env.iter_goals().count(), 2);
-    assert!(!env.nodes[0].structural);
+    assert!(!env.nodes[0].is_structural());
     let block = env.nodes[0].block.as_ref().unwrap();
     assert!(
         matches!(block.goal.as_ref().unwrap().value(), AcornValue::Exists(fields, _) if fields.len() == 2)
@@ -42,7 +42,7 @@ fn constrained_structures_create_an_earlier_scoped_existence_obligation() {
     assert!(!block.env.bindings.has_identifier("Pair.new"));
     assert!(!env.bindings.has_identifier("first"));
     assert!(!env.bindings.has_identifier("second"));
-    assert!(env.nodes.iter().skip(1).all(|node| node.structural));
+    assert!(env.nodes.iter().skip(1).all(|node| node.is_structural()));
     env.check_lines();
 }
 
@@ -109,7 +109,7 @@ fn constrained_projection_equations_are_conditional_and_inputs_need_not_be_injec
     let id = project.expect_ok("main");
     let env = project.get_env_by_id(id).unwrap();
     assert_eq!(env.nodes.iter().filter(|node| {
-        node.structural && matches!(&node.claim.value, AcornValue::ForAll(_, body) if matches!(&**body, AcornValue::Binary(BinaryOp::Implies, _, _)))
+        node.is_structural() && matches!(&node.claim.value, AcornValue::ForAll(_, body) if matches!(&**body, AcornValue::Binary(BinaryOp::Implies, _, _)))
     }).count(), 1);
     let node = env.get_node_by_name("goal");
     let mut prover = Prover::new(&project, false);

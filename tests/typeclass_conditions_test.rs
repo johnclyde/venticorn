@@ -97,7 +97,7 @@ fn generic_conditions_retain_the_bound_source_and_callable_metadata() {
         [AcornType::Variable(info.instance_param.clone())]
     );
     assert_eq!(env.nodes.len(), 1);
-    assert!(env.nodes[0].structural);
+    assert!(env.nodes[0].is_structural());
     assert_eq!(env.nodes[0].claim.value, condition.claim);
     assert_eq!(env.nodes[0].claim.source.range, condition.range);
     assert!(env.iter_goals().next().is_none());
