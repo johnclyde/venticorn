@@ -227,7 +227,11 @@ fn verify_imported_generic(imports: &str, source: &str) -> venticorn::prover::Ou
         }
         prover.set_goal(&node.goal_context().unwrap());
         let outcome = prover.quick_verification_search();
-        assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
+        assert!(
+            !matches!(outcome, Outcome::Error(_)),
+            "{:?}",
+            prover.error()
+        );
         if outcome != Outcome::Success {
             return outcome;
         }

@@ -18,7 +18,7 @@ fn prove(text: &str) -> Outcome {
     assert!(
         !matches!(outcome, Outcome::Error(_)),
         "{:?}\n{}",
-        prover.error,
+        prover.error(),
         text
     );
     outcome

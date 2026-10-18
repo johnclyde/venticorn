@@ -141,7 +141,7 @@ fn chosen_witness_exports_its_condition_after_a_real_existence_obligation() {
                 },
                 Outcome::Success,
                 "{:?}",
-                prover.error
+                prover.error()
             );
         }
     }
@@ -181,7 +181,7 @@ fn exported_witness_condition_cannot_prove_a_false_importer_claim() {
             },
             Outcome::Exhausted,
             "{:?}",
-            prover.error
+            prover.error()
         );
     }
     let premises = PremiseSet::from([(

@@ -128,7 +128,7 @@ fn functional_definitions_and_substitutions_keep_their_original_proofs() {
                 } else {
                     prover.verification_search()
                 };
-                assert_eq!(outcome, Outcome::Success, "{claim}: {:?}", prover.error);
+                assert_eq!(outcome, Outcome::Success, "{claim}: {:?}", prover.error());
             }
         }
     }

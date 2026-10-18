@@ -21,7 +21,7 @@ fn prove(source: &str) -> Outcome {
     assert!(
         !matches!(outcome, Outcome::Error(_)),
         "{:?}\n{source}",
-        prover.error
+        prover.error()
     );
     outcome
 }
@@ -108,7 +108,7 @@ fn qualified_explicit_calls_resolve_in_the_defining_module() {
         prover.quick_verification_search(),
         Outcome::Success,
         "{:?}",
-        prover.error
+        prover.error()
     );
 }
 
@@ -164,7 +164,7 @@ fn qualified_generic_heads_do_not_resolve_to_same_named_local_arguments() {
                 prover.quick_verification_search(),
                 expected,
                 "{:?}",
-                prover.error
+                prover.error()
             );
         }
     }
@@ -210,7 +210,11 @@ fn verify_all(source: &str) -> Outcome {
         }
         prover.set_goal(&node.goal_context().unwrap());
         let outcome = prover.quick_verification_search();
-        assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
+        assert!(
+            !matches!(outcome, Outcome::Error(_)),
+            "{:?}",
+            prover.error()
+        );
         if outcome != Outcome::Success {
             return outcome;
         }

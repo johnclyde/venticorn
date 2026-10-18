@@ -22,7 +22,11 @@ fn search(source: &str, shallow: bool) -> Vec<Outcome> {
         } else {
             prover.quick_search()
         };
-        assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
+        assert!(
+            !matches!(outcome, Outcome::Error(_)),
+            "{:?}",
+            prover.error()
+        );
         outcomes.push(outcome);
         true
     });

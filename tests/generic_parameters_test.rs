@@ -22,7 +22,7 @@ fn prove(source: &str) -> Outcome {
     assert!(
         !matches!(outcome, Outcome::Error(_)),
         "{:?}\n{source}",
-        prover.error
+        prover.error()
     );
     outcome
 }

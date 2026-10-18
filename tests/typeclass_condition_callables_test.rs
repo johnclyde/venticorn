@@ -32,7 +32,7 @@ fn callable_laws_support_explicit_generic_reasoning_and_keep_false_controls() {
         project.for_each_prover_slow(env, &mut |mut prover, goal| {
             let mut shallow = prover.clone();
             let result = prover.quick_search();
-            assert!(!matches!(result, Outcome::Error(_)), "{:?}", prover.error);
+            assert!(!matches!(result, Outcome::Error(_)), "{:?}", prover.error());
             let containing_goal = goal.first_line == 4 && goal.last_line == 9;
             assert_eq!(containing_goal, count == 2);
             if positive || !containing_goal {

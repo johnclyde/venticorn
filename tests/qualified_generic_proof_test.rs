@@ -26,7 +26,7 @@ fn prove_goal(expression: &str, expected: Outcome) {
         prover.quick_verification_search(),
         expected,
         "{expression}: {:?}",
-        prover.error
+        prover.error()
     );
 }
 

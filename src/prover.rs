@@ -56,7 +56,7 @@ pub struct Prover {
     // When this error message is set, it indicates a problem that needs to be reported upstream
     // to the user.
     // It's better to catch errors before proving, but sometimes we don't.
-    pub error: Option<String>,
+    error: Option<String>,
 
     // Number of proof steps activated, not counting Factual ones.
     nonfactual_activations: i32,
@@ -139,6 +139,16 @@ impl Prover {
             nonfactual_activations: 0,
             goal: None,
         }
+    }
+
+    // Read-only compatibility access for diagnostic consumers.
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_error_for_test(&mut self, message: &str) {
+        self.error = Some(message.to_owned());
     }
 
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {

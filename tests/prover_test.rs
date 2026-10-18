@@ -34,7 +34,7 @@ mod prover_test {
         prover.verbose = true;
         let outcome = prover.quick_search();
         if matches!(outcome, Outcome::Error(_)) {
-            panic!("prover error: {}", prover.error.unwrap());
+            panic!("prover error: {}", prover.error().unwrap());
         }
         let code = match prover.get_and_print_proof() {
             Some(proof) => proof.to_code(&env.bindings),
@@ -79,7 +79,7 @@ mod prover_test {
                 if matches!(outcome, Outcome::Error(_)) {
                     println!(
                         "prover error: {}",
-                        prover.error.as_deref().unwrap_or("unknown error")
+                        prover.error().as_deref().unwrap_or("unknown error")
                     );
                 }
                 return outcome;
