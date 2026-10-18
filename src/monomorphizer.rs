@@ -10,11 +10,11 @@ use crate::proposition::Proposition;
 
 // A sorted substitution of type variables belonging to one fact.
 #[derive(PartialEq, Eq, Clone)]
-struct FactParams {
+struct PropParams {
     params: Vec<(String, AcornType)>,
 }
 
-impl FactParams {
+impl PropParams {
     fn new(params: impl IntoIterator<Item = (String, AcornType)>) -> Self {
         let mut params: Vec<_> = params.into_iter().collect();
         params.sort();
@@ -53,12 +53,13 @@ impl ConstantParams {
     }
 }
 
-// A generic fact and the complete substitutions already emitted for it.
+// A generic proposition, its proof role and the complete substitutions already emitted.
 #[derive(Clone)]
-struct GenericFactInfo {
-    fact: Fact,
+struct GenericPropInfo {
+    proposition: Proposition,
+    truthiness: Truthiness,
     // Partial substitutions from several constants are not combined.
-    instantiations: Vec<FactParams>,
+    instantiations: Vec<PropParams>,
 }
 
 // A canonical generic constant's demands and occurrences share one index entry.
@@ -73,8 +74,8 @@ struct GenericConstantInfo {
 #[derive(Clone)]
 pub struct Monomorphizer {
     scope: crate::proof_scope::ProofScope,
-    // Generic facts retain their own independent type-variable namespaces.
-    fact_info: Vec<GenericFactInfo>,
+    // Generic propositions retain their own independent type-variable namespaces.
+    prop_info: Vec<GenericPropInfo>,
 
     // Facts that are fully monomorphized.
     // The Monomorphizer only writes to this, never reads.
@@ -92,7 +93,7 @@ impl Monomorphizer {
     pub fn with_scope(scope: crate::proof_scope::ProofScope) -> Self {
         Monomorphizer {
             scope,
-            fact_info: vec![],
+            prop_info: vec![],
             output: vec![],
             constant_info: HashMap::new(),
         }
@@ -103,7 +104,7 @@ impl Monomorphizer {
         // Directly admitted facts can expose concrete instances needed by definitions.
         self.add_monomorphs(&fact.proposition.value);
 
-        let i = self.fact_info.len();
+        let i = self.prop_info.len();
         let mut instances = vec![];
         fact.proposition
             .value
@@ -119,8 +120,9 @@ impl Monomorphizer {
             return;
         }
 
-        self.fact_info.push(GenericFactInfo {
-            fact,
+        self.prop_info.push(GenericPropInfo {
+            proposition: fact.proposition,
+            truthiness: fact.truthiness,
             instantiations: vec![],
         });
 
@@ -141,7 +143,7 @@ impl Monomorphizer {
             let instance_params = ConstantParams::new(c.type_arguments().cloned().collect());
             if let Some(info) = self.constant_info.get(&constant_key) {
                 for monomorph_params in info.instantiations.clone() {
-                    self.try_to_monomorphize_fact(i, &instance_params, &monomorph_params);
+                    self.try_to_monomorphize_prop(i, &instance_params, &monomorph_params);
                 }
             }
         }
@@ -163,7 +165,7 @@ impl Monomorphizer {
     // Monomorphizes a generic constant.
     // For every fact that uses this constant, we want to monomorphize the fact to use this
     // form of the generic constant.
-    fn monomorphize_matching_facts(
+    fn monomorphize_matching_props(
         &mut self,
         constant_key: &GlobalConstantName,
         monomorph_params: &ConstantParams,
@@ -176,8 +178,8 @@ impl Monomorphizer {
         info.instantiations.push(monomorph_params.clone());
 
         // Clone only this constant's occurrences before recursive demand updates.
-        for (fact_id, instance_params) in info.occurrences.clone() {
-            self.try_to_monomorphize_fact(fact_id, &instance_params, monomorph_params);
+        for (prop_id, instance_params) in info.occurrences.clone() {
+            self.try_to_monomorphize_prop(prop_id, &instance_params, monomorph_params);
         }
     }
 
@@ -187,9 +189,9 @@ impl Monomorphizer {
     // It may or may not be possible to match them up.
     // For example, this may be a fact about foo<bool, T>, and our goal
     // is saying something about foo<Nat, Nat>.
-    fn try_to_monomorphize_fact(
+    fn try_to_monomorphize_prop(
         &mut self,
-        fact_id: usize,
+        prop_id: usize,
         instance_params: &ConstantParams,
         monomorph_params: &ConstantParams,
     ) {
@@ -198,51 +200,50 @@ impl Monomorphizer {
         if instance_params.params.len() != monomorph_params.params.len() {
             return;
         }
-        let mut fact_params = HashMap::new();
+        let mut prop_params = HashMap::new();
         for (instance_type, monomorph_type) in instance_params
             .params
             .iter()
             .zip(monomorph_params.params.iter())
         {
-            if !instance_type.match_instance_in_scope(monomorph_type, &mut fact_params, &self.scope)
+            if !instance_type.match_instance_in_scope(monomorph_type, &mut prop_params, &self.scope)
             {
                 return;
             }
         }
 
         // The selected constant may not expose every bound elsewhere in the same fact.
-        if !self.fact_info[fact_id]
-            .fact
+        if !self.prop_info[prop_id]
             .proposition
             .value
-            .accepts_substitution_in_scope(&fact_params, &self.scope)
+            .accepts_substitution_in_scope(&prop_params, &self.scope)
         {
             return;
         }
-        let fact_params = FactParams::new(fact_params);
+        let prop_params = PropParams::new(prop_params);
 
-        if self.fact_info[fact_id]
+        if self.prop_info[prop_id]
             .instantiations
-            .contains(&fact_params)
+            .contains(&prop_params)
         {
             // We already have this monomorph
             return;
         }
 
-        let monomorphic_fact = self.fact_info[fact_id]
-            .fact
-            .instantiate(&fact_params.params);
-        if monomorphic_fact.proposition.value.is_generic() {
+        let monomorphic_prop = self.prop_info[prop_id]
+            .proposition
+            .instantiate(&prop_params.params);
+        if monomorphic_prop.value.is_generic() {
             // Matching one constant may leave other type variables in the fact unresolved.
             // Do not emit or remember an incomplete substitution.
             return;
         }
-        self.fact_info[fact_id].instantiations.push(fact_params);
+        self.prop_info[prop_id].instantiations.push(prop_params);
         // Definitions can introduce concrete generic calls needed by the current proof.
         // Record this substitution before following those calls to break repeated demand.
-        self.add_monomorphs(&monomorphic_fact.proposition.value);
-        self.output
-            .push((monomorphic_fact.proposition, monomorphic_fact.truthiness));
+        let truthiness = self.prop_info[prop_id].truthiness;
+        self.add_monomorphs(&monomorphic_prop.value);
+        self.output.push((monomorphic_prop, truthiness));
     }
 
     // Make sure that we are generating any monomorphizations that are used in this value.
@@ -253,7 +254,7 @@ impl Monomorphizer {
             &mut monomorphs,
         );
         for c in monomorphs {
-            self.monomorphize_matching_facts(
+            self.monomorphize_matching_props(
                 &c.name,
                 &ConstantParams::new(c.type_arguments().cloned().collect()),
             );
