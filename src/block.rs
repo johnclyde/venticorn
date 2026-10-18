@@ -467,6 +467,11 @@ impl Node {
         self.claim.source.importable
     }
 
+    // Stable premise identity, when this source has one.
+    pub fn fact_name(&self) -> Option<String> {
+        self.claim.source.fact_name()
+    }
+
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
         &self.proof_scope
     }
