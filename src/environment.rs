@@ -394,10 +394,13 @@ impl Environment {
             project,
             self,
             block,
-            Some(Proposition::new(
-                external_claim,
-                Source::anonymous(self.module_id, claim_range, self.depth),
-            )),
+            Some(
+                Proposition::monomorphic(
+                    external_claim,
+                    Source::anonymous(self.module_id, claim_range, self.depth),
+                )
+                .map_err(|error| body.right_brace.error(&error))?,
+            ),
         ));
         self.add_line_types(
             LineType::Node(index),
@@ -878,7 +881,7 @@ impl Environment {
         let return_bound = unbound_condition.bind_values(num_args, num_args, &[function_term]);
         let external_condition = AcornValue::ForAll(arg_types, Box::new(return_bound));
 
-        let prop = Proposition::new(
+        let prop = Proposition::monomorphic(
             external_condition,
             Source::constant_definition(
                 self.module_id,
@@ -887,7 +890,8 @@ impl Environment {
                 function_constant,
                 fss.name.clone(),
             ),
-        );
+        )
+        .map_err(|error| statement.error(&error))?;
 
         let index = self.push_node(Node::new_block(project, self, block, Some(prop)));
         self.add_node_lines(index, &statement.range());
@@ -1798,10 +1802,11 @@ impl Environment {
         let index = self.push_node(Node::claim(
             project,
             self,
-            Proposition::new(
+            Proposition::monomorphic(
                 general_claim,
                 Source::anonymous(self.module_id, statement.range(), self.depth),
-            ),
+            )
+            .map_err(|error| statement.error(&error))?,
         ));
         self.add_node_lines(index, &statement.range());
 
@@ -1822,10 +1827,11 @@ impl Environment {
         let specific_claim =
             self.bindings
                 .evaluate_value(project, &vss.condition, Some(&AcornType::Bool))?;
-        let mut condition = Proposition::new(
+        let mut condition = Proposition::monomorphic(
             specific_claim,
             Source::anonymous(self.module_id, statement.range(), self.depth),
-        );
+        )
+        .map_err(|error| statement.error(&error))?;
         // The named witness has no value definition: this condition is its public
         // declaration contract. Node admission still restricts nested declarations.
         condition.source.importable = true;
@@ -2301,20 +2307,22 @@ impl Environment {
                     self.push_node(Node::structural(
                         project,
                         self,
-                        Proposition::new(
+                        Proposition::monomorphic(
                             claim,
                             Source::anonymous(self.module_id, statement.range(), self.depth),
-                        ),
+                        )
+                        .map_err(|error| statement.error(&error))?,
                     ));
                     self.add_other_lines(statement);
                 } else {
                     let index = self.push_node(Node::claim(
                         project,
                         self,
-                        Proposition::new(
+                        Proposition::monomorphic(
                             claim,
                             Source::anonymous(self.module_id, statement.range(), self.depth),
-                        ),
+                        )
+                        .map_err(|error| statement.error(&error))?,
                     ));
                     self.add_node_lines(index, &statement.range());
                 }
@@ -2351,10 +2359,13 @@ impl Environment {
                     project,
                     self,
                     block,
-                    Some(Proposition::new(
-                        outer_claim,
-                        Source::anonymous(self.module_id, range, self.depth),
-                    )),
+                    Some(
+                        Proposition::monomorphic(
+                            outer_claim,
+                            Source::anonymous(self.module_id, range, self.depth),
+                        )
+                        .map_err(|error| statement.error(&error))?,
+                    ),
                 ));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
@@ -2478,10 +2489,13 @@ impl Environment {
                 let prop = match block.solves(self, &target) {
                     Some((outer_claim, claim_range)) => {
                         block.goal = None;
-                        Some(Proposition::new(
-                            outer_claim,
-                            Source::anonymous(self.module_id, claim_range, self.depth),
-                        ))
+                        Some(
+                            Proposition::monomorphic(
+                                outer_claim,
+                                Source::anonymous(self.module_id, claim_range, self.depth),
+                            )
+                            .map_err(|error| statement.error(&error))?,
+                        )
                     }
                     None => None,
                 };
@@ -2570,10 +2584,13 @@ impl Environment {
                 let last = blocks.len() - 1;
                 for (index, (block, range)) in blocks.into_iter().enumerate() {
                     let proposition = if index == last {
-                        Some(Proposition::new(
-                            exported.take().unwrap(),
-                            Source::anonymous(self.module_id, statement.range(), self.depth),
-                        ))
+                        Some(
+                            Proposition::monomorphic(
+                                exported.take().unwrap(),
+                                Source::anonymous(self.module_id, statement.range(), self.depth),
+                            )
+                            .map_err(|error| statement.error(&error))?,
+                        )
                     } else {
                         None
                     };
