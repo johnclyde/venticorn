@@ -376,10 +376,9 @@ impl Environment {
             project,
             self,
             block,
-            Some(Proposition::anonymous(
+            Some(Proposition::new(
                 external_claim,
-                self.module_id,
-                claim_range,
+                Source::anonymous(self.module_id, claim_range, self.depth),
             )),
         ));
         self.add_line_types(
@@ -1785,7 +1784,10 @@ impl Environment {
         let index = self.push_node(Node::claim(
             project,
             self,
-            Proposition::anonymous(general_claim, self.module_id, statement.range()),
+            Proposition::new(
+                general_claim,
+                Source::anonymous(self.module_id, statement.range(), self.depth),
+            ),
         ));
         self.add_node_lines(index, &statement.range());
 
@@ -1806,8 +1808,10 @@ impl Environment {
         let specific_claim =
             self.bindings
                 .evaluate_value(project, &vss.condition, Some(&AcornType::Bool))?;
-        let mut condition =
-            Proposition::anonymous(specific_claim, self.module_id, statement.range());
+        let mut condition = Proposition::new(
+            specific_claim,
+            Source::anonymous(self.module_id, statement.range(), self.depth),
+        );
         // The named witness has no value definition: this condition is its public
         // declaration contract. Node admission still restricts nested declarations.
         condition.source.importable = true;
@@ -2283,14 +2287,20 @@ impl Environment {
                     self.push_node(Node::structural(
                         project,
                         self,
-                        Proposition::anonymous(claim, self.module_id, statement.range()),
+                        Proposition::new(
+                            claim,
+                            Source::anonymous(self.module_id, statement.range(), self.depth),
+                        ),
                     ));
                     self.add_other_lines(statement);
                 } else {
                     let index = self.push_node(Node::claim(
                         project,
                         self,
-                        Proposition::anonymous(claim, self.module_id, statement.range()),
+                        Proposition::new(
+                            claim,
+                            Source::anonymous(self.module_id, statement.range(), self.depth),
+                        ),
                     ));
                     self.add_node_lines(index, &statement.range());
                 }
@@ -2327,7 +2337,10 @@ impl Environment {
                     project,
                     self,
                     block,
-                    Some(Proposition::anonymous(outer_claim, self.module_id, range)),
+                    Some(Proposition::new(
+                        outer_claim,
+                        Source::anonymous(self.module_id, range, self.depth),
+                    )),
                 ));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
@@ -2451,10 +2464,9 @@ impl Environment {
                 let prop = match block.solves(self, &target) {
                     Some((outer_claim, claim_range)) => {
                         block.goal = None;
-                        Some(Proposition::anonymous(
+                        Some(Proposition::new(
                             outer_claim,
-                            self.module_id,
-                            claim_range,
+                            Source::anonymous(self.module_id, claim_range, self.depth),
                         ))
                     }
                     None => None,
@@ -2544,10 +2556,9 @@ impl Environment {
                 let last = blocks.len() - 1;
                 for (index, (block, range)) in blocks.into_iter().enumerate() {
                     let proposition = if index == last {
-                        Some(Proposition::anonymous(
+                        Some(Proposition::new(
                             exported.take().unwrap(),
-                            self.module_id,
-                            statement.range(),
+                            Source::anonymous(self.module_id, statement.range(), self.depth),
                         ))
                     } else {
                         None
