@@ -81,6 +81,9 @@ pub struct Environment {
 
     // Whether this environment is at the top level of a module.
     pub top_level: bool,
+
+    // Actual lexical block depth; staging a declaration does not create a new scope.
+    pub depth: u32,
 }
 
 impl Environment {
@@ -95,6 +98,7 @@ impl Environment {
             line_types: Vec::new(),
             implicit: false,
             top_level: true,
+            depth: 0,
         }
     }
 
@@ -110,6 +114,7 @@ impl Environment {
             line_types: Vec::new(),
             implicit,
             top_level: false,
+            depth: self.depth + 1,
         }
     }
 
@@ -668,6 +673,7 @@ impl Environment {
         // This transaction stays in the caller's lexical scope. Actual proof
         // blocks still create child environments with top_level set to false.
         staged.top_level = self.top_level;
+        staged.depth = self.depth;
         if let Some(name) = &ts.name {
             if arg_names.contains(name) || type_params.iter().any(|p| &p.name == name) {
                 return Err(statement.error("theorem name conflicts with a parameter"));
@@ -1573,6 +1579,7 @@ impl Environment {
         // This transaction stays in the caller's lexical scope. Actual proof
         // blocks still create child environments with top_level set to false.
         staged.top_level = self.top_level;
+        staged.depth = self.depth;
         staged.bindings = scope;
         let param = match staged.bindings.get_type_for_name(ts.instance_name.text()) {
             Some(AcornType::Arbitrary(param)) => param.clone(),
@@ -1982,6 +1989,8 @@ impl Environment {
                 AcornValue::reduce(BinaryOp::And, conditions)
             };
             let mut proof_env = self.child(statement.first_line(), instance.proof.is_none());
+            // This denied-scope overlay stages the same declaration; Block creates the lexical child.
+            proof_env.depth = self.depth;
             // Permit the concrete implementation namespace in the proof body,
             // while denying every generic use of this provisional membership.
             // Block::new must capture this denied scope before any body children.

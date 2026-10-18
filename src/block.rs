@@ -152,7 +152,14 @@ impl Block {
             }
         }
 
-        let goal = match params {
+        // A theorem's bound goal belongs to its proof scope. Existential and
+        // instance/constraint obligations are declared in the containing scope.
+        let goal_depth = if matches!(&params, BlockParams::Theorem(..)) {
+            subenv.depth
+        } else {
+            env.depth
+        };
+        let mut goal = match params {
             BlockParams::Conditional(condition, range) => {
                 subenv.add_node(
                     project,
@@ -247,6 +254,10 @@ impl Block {
             BlockParams::Solve(target, range) => Some(Goal::Solve(target, range)),
             BlockParams::ForAll | BlockParams::Problem => None,
         };
+
+        if let Some(Goal::Prove(proposition)) = &mut goal {
+            proposition.source.depth = goal_depth;
+        }
 
         match body {
             Some(body) => {
@@ -460,6 +471,7 @@ impl Node {
         let mut claim = proposition.with_value(value);
         // A nested declaration stays local even when it has a reusable source name.
         claim.source.importable &= env.top_level;
+        claim.source.depth = env.depth;
         Node {
             codegen_position: env.bindings.codegen_position(),
             proof_scope: env.bindings.proof_scope().clone(),
