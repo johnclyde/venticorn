@@ -2065,6 +2065,47 @@ impl Environment {
         // The proof block was already captured under its own denied membership;
         // neither these facts nor this widened outer scope can enter that block.
         for (member, (generic, implementation)) in checked_members {
+            // Retain the checked implementation identity. A canonical definition can
+            // also provide its equation at the generic head, avoiding dependence on
+            // search rewriting between two distinct function heads. Alias members
+            // have no owning definition and retain only the original bridge below.
+            let implementation_name = LocalName::instance(&class, &member, name);
+            let generic_definition = if let Some((definition, params)) = self
+                .bindings
+                .get_definition_and_params_named(&implementation_name)
+            {
+                if !params.is_empty()
+                    || implementation.simple_constant_name()
+                        != Some(&crate::names::GlobalName::new(
+                            self.module_id,
+                            implementation_name,
+                        ))
+                    || definition.get_type() != generic.get_type()
+                {
+                    return Err(instance
+                        .typeclass
+                        .error("invalid canonical instance definition metadata"));
+                }
+                let claim = if let AcornValue::Lambda(types, body) = definition {
+                    let args = types
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| AcornValue::Variable(i as AtomId, t.clone()))
+                        .collect();
+                    AcornValue::forall(
+                        types.clone(),
+                        AcornValue::equals(AcornValue::apply(generic.clone(), args), *body.clone()),
+                    )
+                } else {
+                    AcornValue::equals(generic.clone(), definition.clone())
+                };
+                claim
+                    .validate()
+                    .map_err(|error| instance.typeclass.error(&error))?;
+                Some(claim)
+            } else {
+                None
+            };
             let claim = AcornValue::equals(generic, implementation);
             claim
                 .validate()
@@ -2080,6 +2121,19 @@ impl Environment {
                     format!("instance.{}.{}", class.name, member),
                 ),
             ));
+            if let Some(claim) = generic_definition {
+                self.push_node(Node::structural(
+                    project,
+                    self,
+                    Proposition::type_member_definition(
+                        claim,
+                        self.module_id,
+                        statement.range(),
+                        name.to_string(),
+                        format!("instance.{}.{}", class.name, member),
+                    ),
+                ));
+            }
         }
         self.add_other_lines(statement);
         Ok(())
