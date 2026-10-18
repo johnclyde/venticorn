@@ -526,6 +526,8 @@ impl Normalizer {
             Fact::Proposition(proposition, truthiness) => {
                 self.normalize_monomorphic_steps(proposition, truthiness, steps)
             }
+            // Membership statements have no Boolean clause and cannot grant authority.
+            Fact::InstanceOf(..) => Ok(()),
         }
     }
 
