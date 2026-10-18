@@ -1,6 +1,7 @@
 use crate::acorn_type::{AcornType, Class, Typeclass};
 use crate::proof_step::Truthiness;
-use crate::proposition::{Proposition, Source};
+use crate::proposition::Proposition;
+use crate::source::Source;
 
 // A statement available under a particular proof context.
 #[derive(Clone, Debug)]

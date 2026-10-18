@@ -16,7 +16,8 @@ use crate::goal::{Goal, GoalContext};
 use crate::names::LocalName;
 use crate::project::{ImportFilter, Project};
 use crate::proof_step::Truthiness;
-use crate::proposition::{Proposition, Source};
+use crate::proposition::Proposition;
+use crate::source::Source;
 use crate::statement::Body;
 use crate::token::Token;
 
@@ -604,7 +605,7 @@ impl Node {
 
     pub(crate) fn theorem_name(&self) -> Option<&str> {
         match &self.source()?.source_type {
-            crate::proposition::SourceType::Theorem(name) => name.as_deref(),
+            crate::source::SourceType::Theorem(name) => name.as_deref(),
             _ => None,
         }
     }
@@ -615,13 +616,11 @@ impl Node {
             return Some(Cow::Borrowed(name));
         }
         match &self.source()?.source_type {
-            crate::proposition::SourceType::ConstantDefinition(_, name) => {
-                Some(Cow::Borrowed(name))
-            }
-            crate::proposition::SourceType::TypeDefinition(name, member) => {
+            crate::source::SourceType::ConstantDefinition(_, name) => Some(Cow::Borrowed(name)),
+            crate::source::SourceType::TypeDefinition(name, member) => {
                 Some(Cow::Owned(format!("{name}.{member}")))
             }
-            crate::proposition::SourceType::Instance(name, class) => {
+            crate::source::SourceType::Instance(name, class) => {
                 Some(Cow::Owned(format!("{name}.instance.{class}")))
             }
             _ => None,

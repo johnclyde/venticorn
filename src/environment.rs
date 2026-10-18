@@ -16,7 +16,8 @@ use crate::module::ModuleId;
 use crate::names::{DefinedName, GlobalName, LocalName};
 use crate::project::{LoadError, Project};
 use crate::proof_step::Truthiness;
-use crate::proposition::{Proposition, Source, SourceType};
+use crate::proposition::Proposition;
+use crate::source::{Source, SourceType};
 use crate::statement::{
     Body, ClassStatement, DefineStatement, LetStatement, Statement, StatementInfo,
     TypeclassStatement, VariableSatisfyStatement,
