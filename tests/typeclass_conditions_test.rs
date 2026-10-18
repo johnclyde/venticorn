@@ -238,10 +238,28 @@ fn law_bearing_instances_create_a_real_obligation_before_membership_is_usable() 
         .bindings
         .proof_scope()
         .has_membership(env.module_id, "State", class));
+    assert!(node.current().proposition().is_none());
+    let venticorn::fact::Fact::Instance(target, relation_class, source) =
+        node.current().get_fact().unwrap()
+    else {
+        panic!("expected the instance declaration relation");
+    };
     assert_eq!(
-        node.current().proposition().unwrap().value,
-        venticorn::acorn_value::AcornValue::Bool(true)
+        target,
+        venticorn::acorn_type::Class::new(env.module_id, "State".into())
     );
+    assert_eq!(&relation_class, class);
+    assert_eq!(source.module, env.module_id);
+    assert_eq!(
+        source.source_type,
+        venticorn::source::SourceType::Instance("State".into(), "Singleton".into())
+    );
+    assert_eq!(source.depth, 0);
+    assert_eq!(
+        source.range,
+        Range::new(Position::new(0, 0), Position::new(2, 1))
+    );
+    assert!(source.importable);
     assert!(!block.goal.as_ref().unwrap().value().is_generic());
     // A law-free declaration still adds no obligation of its own.
     env.add("typeclass T: Pointed {\n value: T\n}\ninstance State: Pointed {\n let value: State = State.clean\n}");
