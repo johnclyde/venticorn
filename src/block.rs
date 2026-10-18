@@ -161,12 +161,11 @@ impl Block {
         };
         let mut goal = match params {
             BlockParams::Conditional(condition, range) => {
-                subenv.add_node(
+                subenv.push_node(Node::structural(
                     project,
-                    true,
+                    &subenv,
                     Proposition::premise(condition.clone(), env.module_id, range),
-                    None,
-                );
+                ));
                 None
             }
             BlockParams::Theorem(theorem_name, theorem_range, premise, unbound_goal) => {
@@ -185,12 +184,11 @@ impl Block {
                             .instantiate(&param_pairs)
                             .bind_values(0, 0, &internal_args);
 
-                    subenv.add_node(
+                    subenv.push_node(Node::structural(
                         project,
-                        true,
+                        &subenv,
                         Proposition::premise(bound, env.module_id, premise_range),
-                        None,
-                    );
+                    ));
                 }
 
                 // We can prove the goal either in bound or in function form
@@ -234,12 +232,11 @@ impl Block {
                 }
                 let applied = AcornValue::apply(constructor, arg_values);
                 let equality = AcornValue::equals(scrutinee, applied);
-                subenv.add_node(
+                subenv.push_node(Node::structural(
                     project,
-                    true,
+                    &subenv,
                     Proposition::premise(equality, env.module_id, range),
-                    None,
-                );
+                ));
                 None
             }
             BlockParams::Constraint(constraint, range)
@@ -491,11 +488,11 @@ impl Node {
     }
 
     pub fn structural(project: &Project, env: &Environment, proposition: Proposition) -> Self {
-        Self::new(project, env, true, proposition, None)
+        Self::from_parts(project, env, true, proposition, None)
     }
 
     pub fn claim(project: &Project, env: &Environment, proposition: Proposition) -> Self {
-        Self::new(project, env, false, proposition, None)
+        Self::from_parts(project, env, false, proposition, None)
     }
 
     pub fn new_block(
@@ -504,10 +501,21 @@ impl Node {
         block: Block,
         proposition: Proposition,
     ) -> Self {
-        Self::new(project, env, false, proposition, Some(block))
+        Self::from_parts(project, env, false, proposition, Some(block))
     }
 
+    // Compatibility constructor; all paths share expansion and metadata capture.
     pub fn new(
+        project: &Project,
+        env: &Environment,
+        structural: bool,
+        proposition: Proposition,
+        block: Option<Block>,
+    ) -> Self {
+        Self::from_parts(project, env, structural, proposition, block)
+    }
+
+    fn from_parts(
         project: &Project,
         env: &Environment,
         structural: bool,
