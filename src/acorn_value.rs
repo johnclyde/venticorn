@@ -10,13 +10,17 @@ use crate::module::ModuleId;
 use crate::names::{GlobalName, InstanceName, LocalName};
 use crate::token::TokenType;
 
+/// A function together with its ordered argument values.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FunctionApplication {
+    /// The function being applied.
     pub function: Box<AcornValue>,
+    /// Argument values in application order.
     pub args: Vec<AcornValue>,
 }
 
 impl FunctionApplication {
+    /// Return the result type after applying these arguments.
     pub fn get_type(&self) -> AcornType {
         match self.function.get_type() {
             AcornType::Function(ftype) => ftype.applied_type(self.args.len()),
@@ -24,12 +28,14 @@ impl FunctionApplication {
         }
     }
 
+    /// Format the application using its current variable-stack depth.
     fn fmt_helper(&self, f: &mut fmt::Formatter, stack_size: usize) -> fmt::Result {
         write!(f, "{}(", Subvalue::new(&self.function, stack_size))?;
         fmt_values(&self.args, f, stack_size)?;
         write!(f, ")")
     }
 
+    /// Validate function arity and the type of each supplied argument.
     fn typecheck(&self) -> Result<(), String> {
         let function_type = self.function.get_type();
         let AcornType::Function(function) = function_type else {
@@ -58,16 +64,23 @@ impl FunctionApplication {
     }
 }
 
+/// Boolean and equality operators represented directly in values.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum BinaryOp {
+    /// Logical implication.
     Implies,
+    /// Equality.
     Equals,
+    /// Inequality.
     NotEquals,
+    /// Logical conjunction.
     And,
+    /// Logical disjunction.
     Or,
 }
 
 impl BinaryOp {
+    /// Return the corresponding language token.
     pub fn token_type(&self) -> TokenType {
         match self {
             BinaryOp::Implies => TokenType::RightArrow,
@@ -85,15 +98,16 @@ impl fmt::Display for BinaryOp {
     }
 }
 
-// An instance of a constant. Could be generic or not.
+/// An instance of a constant. Could be generic or not.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct ConstantInstance {
+    /// The complete canonical constant identity, including its defining module.
     pub name: GlobalName,
 
-    // Actual type arguments in declaration order. Empty for ordinary constants.
+    /// Actual type arguments in declaration order. Empty for ordinary constants.
     pub params: Vec<AcornType>,
 
-    // The effective type after applying the ordered argument mapping.
+    /// The effective type after applying the ordered argument mapping.
     pub instance_type: AcornType,
 }
 
@@ -109,8 +123,8 @@ impl fmt::Display for ConstantInstance {
 }
 
 impl ConstantInstance {
-    // Substitute types from the surrounding scope. The declaration's formal names
-    // belong to a separate namespace from the actual arguments of a polymorphic instance.
+    /// Substitute types from the surrounding scope. The declaration's formal names
+    /// belong to a separate namespace from the actual arguments of a polymorphic instance.
     pub fn instantiate(&self, substitutions: &[(String, AcornType)]) -> Self {
         Self {
             name: self.name.clone(),
@@ -148,64 +162,64 @@ impl ConstantInstance {
         self.name.clone()
     }
 
-    // Actual arguments in declaration order.
+    /// Actual arguments in declaration order.
     pub fn type_arguments(&self) -> impl ExactSizeIterator<Item = &AcornType> {
         self.params.iter()
     }
 }
 
-// Two AcornValue compare to equal if they are structurally identical.
-// Comparison doesn't do any evaluations.
+/// Two AcornValue compare to equal if they are structurally identical.
+/// Comparison doesn't do any evaluations.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum AcornValue {
-    // A variable that is bound to a value on the stack.
-    // Represented by (stack index, type).
+    /// A variable that is bound to a value on the stack.
+    /// Represented by (stack index, type).
     Variable(AtomId, AcornType),
 
     Application(FunctionApplication),
 
-    // A function definition that introduces variables onto the stack.
+    /// A function definition that introduces variables onto the stack.
     Lambda(Vec<AcornType>, Box<AcornValue>),
 
-    // The boolean binary operators are treated specially during inference
+    /// The boolean binary operators are treated specially during inference
     Binary(BinaryOp, Box<AcornValue>, Box<AcornValue>),
 
     Not(Box<AcornValue>),
 
-    // Quantifiers that introduce variables onto the stack.
+    /// Quantifiers that introduce variables onto the stack.
     ForAll(Vec<AcornType>, Box<AcornValue>),
     Exists(Vec<AcornType>, Box<AcornValue>),
 
-    // A resolved constant instance, with or without generic arguments.
+    /// A resolved constant instance, with or without generic arguments.
     Constant(ConstantInstance),
 
-    // A plain old bool. True or false
+    /// A plain old bool. True or false
     Bool(bool),
 
-    // If-then-else requires all parts: condition, if-value, else-value.
+    /// If-then-else requires all parts: condition, if-value, else-value.
     IfThenElse(Box<AcornValue>, Box<AcornValue>, Box<AcornValue>),
 
-    // The first value is the one being matched. It needs to be evaluated in the outside context.
-    // Each triple represents a case. The types express which variables are getting bound,
-    // the first value is the pattern, and the final value is the result.
+    /// The first value is the one being matched. It needs to be evaluated in the outside context.
+    /// Each triple represents a case. The types express which variables are getting bound,
+    /// the first value is the pattern, and the final value is the result.
     Match(
         Box<AcornValue>,
         Vec<(Vec<AcornType>, AcornValue, AcornValue)>,
     ),
 }
 
-// An AcornValue has an implicit stack size that determines what index new stack variables
-// will have.
-// The Subvalue includes this implicit stack size.
-// The stack size of a "root" AcornValue is always zero.
+/// An AcornValue has an implicit stack size that determines what index new stack variables
+/// will have.
+/// The Subvalue includes this implicit stack size.
+/// The stack size of a "root" AcornValue is always zero.
 struct Subvalue<'a> {
     value: &'a AcornValue,
     stack_size: usize,
 }
 
-// This is a formatting helper, doing a "best effort" that should always display *something*
-// but should not be used for generating usable code.
-// It may reuse temporary variable names, or use constants that have not been imported.
+/// This is a formatting helper, doing a "best effort" that should always display *something*
+/// but should not be used for generating usable code.
+/// It may reuse temporary variable names, or use constants that have not been imported.
 impl fmt::Display for Subvalue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.value {
@@ -335,7 +349,7 @@ impl AcornValue {
         }
     }
 
-    // Construct an application if we have arguments, but omit it otherwise.
+    /// Construct an application if we have arguments, but omit it otherwise.
     pub fn apply(function: AcornValue, args: Vec<AcornValue>) -> AcornValue {
         if args.is_empty() {
             function
@@ -347,12 +361,12 @@ impl AcornValue {
         }
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_apply(function: AcornValue, args: Vec<AcornValue>) -> AcornValue {
         Self::apply(function, args)
     }
 
-    // Construct a lambda if we have arguments, but omit it otherwise.
+    /// Construct a lambda if we have arguments, but omit it otherwise.
     pub fn lambda(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         if args.is_empty() {
             value
@@ -361,12 +375,12 @@ impl AcornValue {
         }
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_lambda(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         Self::lambda(args, value)
     }
 
-    // Construct a forall if we have arguments, but omit it otherwise.
+    /// Construct a forall if we have arguments, but omit it otherwise.
     pub fn forall(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         if args.is_empty() {
             value
@@ -375,12 +389,12 @@ impl AcornValue {
         }
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_forall(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         Self::forall(args, value)
     }
 
-    // Construct an exists if we have arguments, but omit it otherwise.
+    /// Construct an exists if we have arguments, but omit it otherwise.
     pub fn exists(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         if args.is_empty() {
             value
@@ -389,57 +403,62 @@ impl AcornValue {
         }
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_exists(args: Vec<AcornType>, value: AcornValue) -> AcornValue {
         Self::exists(args, value)
     }
 
+    /// Construct logical implication.
     pub fn implies(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::Implies, Box::new(left), Box::new(right))
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_implies(left: AcornValue, right: AcornValue) -> AcornValue {
         Self::implies(left, right)
     }
 
+    /// Construct equality.
     pub fn equals(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::Equals, Box::new(left), Box::new(right))
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_equals(left: AcornValue, right: AcornValue) -> AcornValue {
         Self::equals(left, right)
     }
 
+    /// Construct inequality.
     pub fn not_equals(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::NotEquals, Box::new(left), Box::new(right))
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_not_equals(left: AcornValue, right: AcornValue) -> AcornValue {
         Self::not_equals(left, right)
     }
 
+    /// Construct logical conjunction.
     pub fn and(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::And, Box::new(left), Box::new(right))
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_and(left: AcornValue, right: AcornValue) -> AcornValue {
         Self::and(left, right)
     }
 
+    /// Construct logical disjunction.
     pub fn or(left: AcornValue, right: AcornValue) -> AcornValue {
         AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_or(left: AcornValue, right: AcornValue) -> AcornValue {
         Self::or(left, right)
     }
 
-    // Construct an instance whose ordered arguments and effective type are resolved.
+    /// Construct an instance whose ordered arguments and effective type are resolved.
     pub fn constant(
         module_id: ModuleId,
         name: String,
@@ -495,7 +514,7 @@ impl AcornValue {
         })
     }
 
-    // Compatibility entry point for callers using the original constructor name.
+    /// Compatibility entry point for callers using the original constructor name.
     pub fn new_constant(
         module_id: ModuleId,
         name: String,
@@ -505,6 +524,7 @@ impl AcornValue {
         Self::constant(module_id, name, params, instance_type)
     }
 
+    /// Whether this value is a lambda expression.
     pub fn is_lambda(&self) -> bool {
         match self {
             AcornValue::Lambda(_, _) => true,
@@ -512,8 +532,8 @@ impl AcornValue {
         }
     }
 
-    // Whether this value can be converted to a term, rather than requiring a literal or clause.
-    // Terms can have no boolean operators, lambdas, etc.
+    /// Whether this value can be converted to a term, rather than requiring a literal or clause.
+    /// Terms can have no boolean operators, lambdas, etc.
     pub fn is_term(&self) -> bool {
         match self {
             AcornValue::Variable(_, _) => true,
@@ -535,12 +555,13 @@ impl AcornValue {
         }
     }
 
+    /// Negate the value, simplifying its outermost Boolean form.
     pub fn negate(self) -> AcornValue {
         self.maybe_negate(true)
     }
 
-    // Simplifies at the top level but does not recurse.
-    // Does not typecheck
+    /// Simplifies at the top level but does not recurse.
+    /// Does not typecheck
     fn maybe_negate(self, negate: bool) -> AcornValue {
         if !negate {
             return self;
@@ -558,7 +579,7 @@ impl AcornValue {
         }
     }
 
-    // Negates, but pushes the negation inwards when possible.
+    /// Negates, but pushes the negation inwards when possible.
     pub fn pretty_negate(self) -> AcornValue {
         match self {
             AcornValue::Not(x) => *x,
@@ -582,9 +603,9 @@ impl AcornValue {
         }
     }
 
-    // If this value can be represented as just a term, with perhaps a negation, return it.
-    // Removes negation if it's present.
-    // The boolean is whether the term was negated.
+    /// If this value can be represented as just a term, with perhaps a negation, return it.
+    /// Removes negation if it's present.
+    /// The boolean is whether the term was negated.
     fn as_simple_boolean_term(&self) -> Option<(bool, AcornValue)> {
         match self {
             AcornValue::Not(x) => Some((true, *x.clone())),
@@ -594,10 +615,10 @@ impl AcornValue {
         }
     }
 
-    // Moves negation inward for a boolean comparison.
-    // left and right should both be verified to be bools, when this is called.
-    // We want as close to CNF as possible.
-    // So the order outside-in goes: and, or, negates.
+    /// Moves negation inward for a boolean comparison.
+    /// left and right should both be verified to be bools, when this is called.
+    /// We want as close to CNF as possible.
+    /// So the order outside-in goes: and, or, negates.
     fn boolean_comparison(
         left: AcornValue,
         right: AcornValue,
@@ -657,13 +678,13 @@ impl AcornValue {
         }
     }
 
-    // Normalizes a boolean expression by moving all negations inwards.
-    // If 'allow_bool_eq' is set then it's okay to return something like
-    //   <bool expr> = <bool expr>
-    // This is useful because it allows rewrites.
-    // If 'negate' is set then we also negate this expression.
-    // See https://www.csd.uwo.ca/~lkari/prenex.pdf
-    // page 3, steps 1 and 2.
+    /// Normalizes a boolean expression by moving all negations inwards.
+    /// If 'allow_bool_eq' is set then it's okay to return something like
+    ///   `<bool expr> = <bool expr>`
+    /// This is useful because it allows rewrites.
+    /// If 'negate' is set then we also negate this expression.
+    /// See <https://www.csd.uwo.ca/~lkari/prenex.pdf>
+    /// page 3, steps 1 and 2.
     pub fn move_negation_inwards(self, allow_bool_eq: bool, negate: bool) -> AcornValue {
         match self {
             AcornValue::Binary(BinaryOp::Implies, left, right) => {
@@ -753,16 +774,16 @@ impl AcornValue {
         }
     }
 
-    // Binds the provided values to stack variables.
-    //
-    // The first_binding_index is the first index that we should bind to.
-    // For example, if stack_index is 2, and the values
-    // are "foo", "bar", and "baz" we should set x2 = foo, x3 = bar, x4 = baz.
-    // Any subsequent variables, x5 x6 x7 etc, should be renumbered downwards.
-    //
-    // The stack_size is the size of the stack where this value occurs. This is relevant because any
-    // variables in the bound values will be moved into this environment, so we need to renumber
-    // their variables appropriately.
+    /// Binds the provided values to stack variables.
+    ///
+    /// The first_binding_index is the first index that we should bind to.
+    /// For example, if stack_index is 2, and the values
+    /// are "foo", "bar", and "baz" we should set x2 = foo, x3 = bar, x4 = baz.
+    /// Any subsequent variables, x5 x6 x7 etc, should be renumbered downwards.
+    ///
+    /// The stack_size is the size of the stack where this value occurs. This is relevant because any
+    /// variables in the bound values will be moved into this environment, so we need to renumber
+    /// their variables appropriately.
     pub fn bind_values(
         self,
         first_binding_index: AtomId,
@@ -858,11 +879,11 @@ impl AcornValue {
         }
     }
 
-    // Inserts 'increment' stack entries, starting with the provided index, that this value
-    // doesn't use.
-    // This moves the value from a context that has 'index' stack entries, to one that
-    // has 'index + increment' entries.
-    // Every reference at index or higher should be incremented by increment.
+    /// Inserts 'increment' stack entries, starting with the provided index, that this value
+    /// doesn't use.
+    /// This moves the value from a context that has 'index' stack entries, to one that
+    /// has 'index + increment' entries.
+    /// Every reference at index or higher should be incremented by increment.
     pub fn insert_stack(self, index: AtomId, increment: AtomId) -> AcornValue {
         if increment == 0 {
             return self;
@@ -922,9 +943,9 @@ impl AcornValue {
         }
     }
 
-    // Converts function types to a primitive type by applying them to new unbound variables.
-    // Inserts these unbound variables as new stack variables starting at stack_size.
-    // Returns the types of the newly created unbound variables, along with the converted value.
+    /// Converts function types to a primitive type by applying them to new unbound variables.
+    /// Inserts these unbound variables as new stack variables starting at stack_size.
+    /// Returns the types of the newly created unbound variables, along with the converted value.
     fn apply_to_free_variables(self, stack_size: AtomId) -> (Vec<AcornType>, AcornValue) {
         let current_type = self.get_type();
         if let AcornType::Function(ftype) = current_type {
@@ -948,9 +969,9 @@ impl AcornValue {
         }
     }
 
-    // Replaces functional comparisons with comparisons between primitive values.
-    // f = g is equivalent to forall(x) { f(x) = g(x) }
-    // f != g is equivalent to exists(x) { f(x) != g(x) }
+    /// Replaces functional comparisons with comparisons between primitive values.
+    /// f = g is equivalent to forall(x) { f(x) = g(x) }
+    /// f != g is equivalent to exists(x) { f(x) != g(x) }
     pub fn replace_function_equality(&self, stack_size: AtomId) -> AcornValue {
         match self {
             AcornValue::Application(app) => AcornValue::Application(FunctionApplication {
@@ -1049,11 +1070,11 @@ impl AcornValue {
         }
     }
 
-    // Attempts to remove all lambdas from a value.
-    //
-    // Replaces lambda(...) { value } (args) by substituting the args into the value.
-    //
-    // stack_size is the number of variables that are already on the stack.
+    /// Attempts to remove all lambdas from a value.
+    ///
+    /// Replaces lambda(...) { value } (args) by substituting the args into the value.
+    ///
+    /// stack_size is the number of variables that are already on the stack.
     pub fn expand_lambdas(self, stack_size: AtomId) -> AcornValue {
         match self {
             AcornValue::Application(app) => {
@@ -1118,16 +1139,16 @@ impl AcornValue {
         }
     }
 
-    // The general idea is that these expressions are equivalent:
-    //
-    //   foo(if a then b else c)
-    //   if a then foo(b) else foo(c)
-    //
-    // extract_one_if tries to use this equivalence to extract one "if" statement, and return
-    // Some((condition, if_value, else_value))
-    //
-    // This function is very closely tied to replace_if and only has to work with the sorts of
-    // values it is called on, those at the boundary between boolean and non-boolean values.
+    /// The general idea is that these expressions are equivalent:
+    ///
+    ///   foo(if a then b else c)
+    ///   if a then foo(b) else foo(c)
+    ///
+    /// extract_one_if tries to use this equivalence to extract one "if" statement, and return
+    /// Some((condition, if_value, else_value))
+    ///
+    /// This function is very closely tied to replace_if and only has to work with the sorts of
+    /// values it is called on, those at the boundary between boolean and non-boolean values.
     fn extract_one_if(&self) -> Option<(AcornValue, AcornValue, AcornValue)> {
         match self {
             AcornValue::Application(app) => {
@@ -1202,8 +1223,8 @@ impl AcornValue {
         }
     }
 
-    // For an "if" among three boolean values, replace it with an equivalent value that
-    // doesn't use if-then-else nodes.
+    /// For an "if" among three boolean values, replace it with an equivalent value that
+    /// doesn't use if-then-else nodes.
     fn if_replacement(a: AcornValue, b: AcornValue, c: AcornValue) -> AcornValue {
         let (a, b, c) = (a.replace_if(), b.replace_if(), c.replace_if());
         let not_a_imp_c = AcornValue::implies(a.clone().negate(), c);
@@ -1211,8 +1232,8 @@ impl AcornValue {
         AcornValue::and(a_imp_b, not_a_imp_c)
     }
 
-    // Replaces all "if" nodes by extracting them into boolean values and then replacing them.
-    // This should only be called on boolean values.
+    /// Replaces all "if" nodes by extracting them into boolean values and then replacing them.
+    /// This should only be called on boolean values.
     pub fn replace_if(self) -> AcornValue {
         assert_eq!(self.get_type(), AcornType::Bool);
 
@@ -1246,9 +1267,9 @@ impl AcornValue {
         }
     }
 
-    // Extract a match without crossing a binder. Each returned case result contains
-    // the surrounding expression, with its existing binders shifted past the case's
-    // newly introduced variables. Variables below stack_size remain in their scope.
+    /// Extract a match without crossing a binder. Each returned case result contains
+    /// the surrounding expression, with its existing binders shifted past the case's
+    /// newly introduced variables. Variables below stack_size remain in their scope.
     fn extract_one_match(
         &self,
         stack_size: AtomId,
@@ -1354,9 +1375,9 @@ impl AcornValue {
         }
     }
 
-    // For a Boolean context C, an exhaustive match is equivalent to the conjunction
-    // of forall(case variables) { scrutinee = pattern -> C(case result) }.
-    // Keep quantifiers in their original scope; only lift matches within that scope.
+    /// For a Boolean context C, an exhaustive match is equivalent to the conjunction
+    /// of forall(case variables) { scrutinee = pattern -> C(case result) }.
+    /// Keep quantifiers in their original scope; only lift matches within that scope.
     pub fn replace_match(self, stack_size: AtomId) -> Result<AcornValue, String> {
         if !self.contains_match() {
             return Ok(self);
@@ -1418,7 +1439,7 @@ impl AcornValue {
         }
     }
 
-    // Removes all "forall" nodes, collecting the quantified types into quantifiers.
+    /// Removes all "forall" nodes, collecting the quantified types into quantifiers.
     pub fn remove_forall(self, quantifiers: &mut Vec<AcornType>) -> AcornValue {
         match self {
             AcornValue::Binary(BinaryOp::And, left, right) => {
@@ -1447,11 +1468,11 @@ impl AcornValue {
         }
     }
 
-    // Replaces some constants in this value with other values.
-    // 'replacer' tells us what value a constant should be replaced with, or None to not replace it.
-    // The callback receives the current binder depth and returns a value of the same type.
-    // It shifts closed definitions into that depth, but leaves variables already indexed in
-    // the enclosing context unchanged. Replacement values are traversed recursively too.
+    /// Replaces some constants in this value with other values.
+    /// 'replacer' tells us what value a constant should be replaced with, or None to not replace it.
+    /// The callback receives the current binder depth and returns a value of the same type.
+    /// It shifts closed definitions into that depth, but leaves variables already indexed in
+    /// the enclosing context unchanged. Replacement values are traversed recursively too.
     pub fn replace_constants(
         &self,
         stack_size: AtomId,
@@ -1521,8 +1542,8 @@ impl AcornValue {
         }
     }
 
-    // Returns an error string if this is not a valid top-level value.
-    // The types of variables should match the type of the quantifier they correspond to.
+    /// Returns an error string if this is not a valid top-level value.
+    /// The types of variables should match the type of the quantifier they correspond to.
     pub fn validate(&self) -> Result<(), String> {
         let mut stack: Vec<AcornType> = vec![];
         self.validate_against_stack(&mut stack)
@@ -1604,7 +1625,7 @@ impl AcornValue {
         }
     }
 
-    // Whether a match remains anywhere in the value, including function arguments.
+    /// Whether a match remains anywhere in the value, including function arguments.
     pub fn contains_match(&self) -> bool {
         match self {
             AcornValue::Match(..) => true,
@@ -1626,7 +1647,7 @@ impl AcornValue {
         }
     }
 
-    // Visit every type-bearing location, including phantom actuals and match binders.
+    /// Visit every type-bearing location, including phantom actuals and match binders.
     pub fn all_types(&self, predicate: &impl Fn(&AcornType) -> bool) -> bool {
         match self {
             Self::Variable(_, ty) => predicate(ty),
@@ -1676,7 +1697,7 @@ impl AcornValue {
         self.all_types(&|ty| ty.accepts_substitution_in_scope(substitutions, scope))
     }
 
-    // Replace some parametric types with other types.
+    /// Replace some parametric types with other types.
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> AcornValue {
         match self {
             AcornValue::Variable(i, var_type) => {
@@ -1734,8 +1755,8 @@ impl AcornValue {
         }
     }
 
-    // parametrize should only be called on concrete types.
-    // It replaces every data type with the given module and name with a type parameter.
+    /// parametrize should only be called on concrete types.
+    /// It replaces every data type with the given module and name with a type parameter.
     pub fn parametrize(&self, module: ModuleId, type_names: &[String]) -> AcornValue {
         match self {
             AcornValue::Variable(i, var_type) => {
@@ -1811,7 +1832,7 @@ impl AcornValue {
         }
     }
 
-    // Whether this value contains type variables or pending generic metadata.
+    /// Whether this value contains type variables or pending generic metadata.
     pub fn is_generic(&self) -> bool {
         match self {
             AcornValue::Variable(_, t) => t.is_generic(),
@@ -1841,7 +1862,7 @@ impl AcornValue {
         }
     }
 
-    // Whether any annotation or nested value contains an arbitrary type.
+    /// Whether any annotation or nested value contains an arbitrary type.
     pub fn has_arbitrary(&self) -> bool {
         match self {
             AcornValue::Variable(_, t) => t.has_arbitrary(),
@@ -1875,7 +1896,7 @@ impl AcornValue {
         self.is_generic()
     }
 
-    // Collect complete resolved instances selected by the caller.
+    /// Collect complete resolved instances selected by the caller.
     pub fn find_constants(
         &self,
         filter: &impl Fn(&ConstantInstance) -> bool,
@@ -1917,7 +1938,7 @@ impl AcornValue {
         }
     }
 
-    // Converts type variables in this value to fixed arbitrary types.
+    /// Converts type variables in this value to fixed arbitrary types.
     pub fn to_arbitrary(&self) -> AcornValue {
         match self {
             AcornValue::Variable(i, var_type) => AcornValue::Variable(*i, var_type.to_arbitrary()),
@@ -1974,7 +1995,7 @@ impl AcornValue {
         }
     }
 
-    // Convert every arbitrary annotation, including constant actuals and match binders.
+    /// Convert every arbitrary annotation, including constant actuals and match binders.
     pub fn to_generic(&self) -> AcornValue {
         match self {
             AcornValue::Variable(i, var_type) => AcornValue::Variable(*i, var_type.to_generic()),
@@ -2024,12 +2045,12 @@ impl AcornValue {
         }
     }
 
-    // Negates a goal proposition and separates it into the types of its assumptions.
-    // (hypothetical, counterfactual)
-    // Hypotheticals are assumed to be true in a "by" block when proving something, in the
-    // sense that you can write more statements that depend on the hypotheticals.
-    // Counterfactuals are used by the prover to find a contradiction, but cannot be used
-    // in the direct reasoning of the code.
+    /// Negates a goal proposition and separates it into the types of its assumptions.
+    /// (hypothetical, counterfactual)
+    /// Hypotheticals are assumed to be true in a "by" block when proving something, in the
+    /// sense that you can write more statements that depend on the hypotheticals.
+    /// Counterfactuals are used by the prover to find a contradiction, but cannot be used
+    /// in the direct reasoning of the code.
     pub fn negate_goal(self) -> (Option<AcornValue>, AcornValue) {
         match self {
             AcornValue::Binary(BinaryOp::Implies, left, right) => (Some(*left), right.negate()),
@@ -2037,7 +2058,7 @@ impl AcornValue {
         }
     }
 
-    // Combine a bunch of values with the given binary operator.
+    /// Combine a bunch of values with the given binary operator.
     pub fn reduce(op: BinaryOp, args: Vec<AcornValue>) -> AcornValue {
         if args.is_empty() {
             panic!("cannot reduce with no arguments");
@@ -2054,7 +2075,7 @@ impl AcornValue {
         answer.unwrap()
     }
 
-    // If this value is a member function or member variable of the given type, return its name.
+    /// If this value is a member function or member variable of the given type, return its name.
     pub fn is_member(&self, class: &AcornType) -> Option<String> {
         match &self {
             AcornValue::Constant(c) => {
