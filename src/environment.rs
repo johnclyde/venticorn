@@ -13,7 +13,7 @@ use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
 use crate::fact::Fact;
 use crate::module::ModuleId;
-use crate::names::{GlobalName, LocalName};
+use crate::names::{DefinedName, GlobalName, LocalName};
 use crate::project::{LoadError, Project};
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
@@ -381,11 +381,12 @@ impl Environment {
     fn add_let_statement(
         &mut self,
         project: &Project,
-        constant_name: LocalName,
+        defined_name: DefinedName,
         class_params: &[String],
         ls: &LetStatement,
         range: Range,
     ) -> compilation::Result<()> {
+        let constant_name = defined_name.into_identity();
         if !class_params.is_empty() && ls.name_token.token_type == TokenType::Numeral {
             return Err(ls
                 .name_token
@@ -489,12 +490,13 @@ impl Environment {
     fn add_define_statement(
         &mut self,
         project: &Project,
-        constant_name: LocalName,
+        defined_name: DefinedName,
         self_type: Option<&AcornType>,
         class_params: &[String],
         ds: &DefineStatement,
         range: Range,
     ) -> compilation::Result<()> {
+        let constant_name = defined_name.into_identity();
         if ds.name == "new" || ds.name == "self" {
             return Err(ds.name_token.error(&format!(
                 "'{}' is a reserved word. use a different name",
@@ -1536,7 +1538,7 @@ impl Environment {
                 StatementInfo::Let(ls) => {
                     self.add_let_statement(
                         project,
-                        LocalName::attribute(&cs.name, &ls.name),
+                        DefinedName::attribute(&cs.name, &ls.name),
                         &param_names,
                         ls,
                         substatement.range(),
@@ -1545,7 +1547,7 @@ impl Environment {
                 StatementInfo::Define(ds) => {
                     self.add_define_statement(
                         project,
-                        LocalName::attribute(&cs.name, &ds.name),
+                        DefinedName::attribute(&cs.name, &ds.name),
                         Some(&class_type),
                         &param_names,
                         ds,
@@ -1929,7 +1931,7 @@ impl Environment {
                 StatementInfo::Let(ls) => {
                     self.add_let_statement(
                         project,
-                        LocalName::instance(&class, &ls.name, name),
+                        DefinedName::instance(&class, &ls.name, name),
                         &[],
                         ls,
                         member.range(),
@@ -1942,7 +1944,7 @@ impl Environment {
                     }
                     self.add_define_statement(
                         project,
-                        LocalName::instance(&class, &ds.name, name),
+                        DefinedName::instance(&class, &ds.name, name),
                         Some(&target),
                         &[],
                         ds,
@@ -2120,7 +2122,7 @@ impl Environment {
                 self.add_other_lines(statement);
                 self.add_let_statement(
                     project,
-                    LocalName::unqualified(&ls.name),
+                    DefinedName::unqualified(&ls.name),
                     &[],
                     ls,
                     statement.range(),
@@ -2131,7 +2133,7 @@ impl Environment {
                 self.add_other_lines(statement);
                 self.add_define_statement(
                     project,
-                    LocalName::unqualified(&ds.name),
+                    DefinedName::unqualified(&ds.name),
                     None,
                     &[],
                     ds,
