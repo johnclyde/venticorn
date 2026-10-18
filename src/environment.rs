@@ -2017,7 +2017,7 @@ impl Environment {
                 name.to_string(),
                 class.name.clone(),
             );
-            let index = self.add_node(project, false, proposition, Some(block));
+            let index = self.push_node(Node::new_block(project, self, block, proposition));
             self.add_node_lines(index, &statement.range());
         }
         // Later goals may use this declaration conditionally on the whole module
@@ -2032,9 +2032,9 @@ impl Environment {
             claim
                 .validate()
                 .map_err(|error| instance.typeclass.error(&error))?;
-            self.add_node(
+            self.push_node(Node::structural(
                 project,
-                true,
+                self,
                 Proposition::type_member_definition(
                     claim,
                     self.module_id,
@@ -2042,8 +2042,7 @@ impl Environment {
                     name.to_string(),
                     format!("instance.{}.{}", class.name, member),
                 ),
-                None,
-            );
+            ));
         }
         self.add_other_lines(statement);
         Ok(())
@@ -2144,20 +2143,18 @@ impl Environment {
 
                 if self.bindings.is_citation(project, &claim) {
                     // We already know this is true, so we don't need to prove it
-                    self.add_node(
+                    self.push_node(Node::structural(
                         project,
-                        true,
+                        self,
                         Proposition::anonymous(claim, self.module_id, statement.range()),
-                        None,
-                    );
+                    ));
                     self.add_other_lines(statement);
                 } else {
-                    let index = self.add_node(
+                    let index = self.push_node(Node::claim(
                         project,
-                        false,
+                        self,
                         Proposition::anonymous(claim, self.module_id, statement.range()),
-                        None,
-                    );
+                    ));
                     self.add_node_lines(index, &statement.range());
                 }
                 Ok(())
@@ -2189,12 +2186,12 @@ impl Environment {
                 let (outer_claim, range) =
                     block.externalize_last_claim(self, &fas.body.right_brace)?;
 
-                let index = self.add_node(
+                let index = self.push_node(Node::new_block(
                     project,
-                    false,
+                    self,
+                    block,
                     Proposition::anonymous(outer_claim, self.module_id, range),
-                    Some(block),
-                );
+                ));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
             }
@@ -2336,7 +2333,7 @@ impl Environment {
                     }
                 };
 
-                let index = self.add_node(project, false, prop, Some(block));
+                let index = self.push_node(Node::new_block(project, self, block, prop));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
             }
@@ -2360,7 +2357,7 @@ impl Environment {
                     statement.range(),
                 );
 
-                let index = self.add_node(project, false, vacuous_prop, Some(block));
+                let index = self.push_node(Node::new_block(project, self, block, vacuous_prop));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
             }
@@ -2432,7 +2429,7 @@ impl Environment {
                         AcornValue::Bool(true)
                     };
                     let prop = Proposition::anonymous(claim, self.module_id, statement.range());
-                    let node_index = self.add_node(project, false, prop, Some(block));
+                    let node_index = self.push_node(Node::new_block(project, self, block, prop));
                     self.add_node_lines(node_index, &range);
                 }
                 self.add_line_types(
