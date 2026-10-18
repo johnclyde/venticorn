@@ -177,13 +177,9 @@ impl TypeParam {
                 AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                     param.typeclass.as_ref() == Some(class)
                 }
-                AcornType::Data(
-                    Class {
-                        module_id: module,
-                        name,
-                    },
-                    actuals,
-                ) if actuals.is_empty() => scope.has_membership(*module, name, class),
+                AcornType::Data(data, actuals) if actuals.is_empty() => {
+                    scope.has_class_membership(data, class)
+                }
                 _ => false,
             },
         }
