@@ -410,3 +410,97 @@ fn class_laws_do_not_apply_to_noninstances() {
     );
     assert_eq!(project.cached_build().num_modules(), 0);
 }
+
+#[test]
+fn typeclass_theorems_combine_through_a_checked_instance() {
+    let text = r#"
+            typeclass F: Foo {
+                foo: F -> Bool
+            }
+
+            axiom always_foo<F: Foo>(x: F) {
+                x.foo
+            }
+
+            inductive Bar {
+                bar
+            }
+
+            let qux: Bool = axiom
+
+            instance Bar: Foo {
+                define foo(self) -> Bool {
+                    qux
+                }
+            }
+
+            theorem goal {
+                qux
+            }
+        "#;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", text);
+    let module = project.expect_ok("main");
+    let env = project.get_env_by_id(module).unwrap();
+    assert_eq!(env.iter_goals().count(), 1);
+    for node in env.iter_goals() {
+        let goal = node.goal_context().unwrap();
+        let class = env.bindings.get_typeclass_for_name("Foo").unwrap();
+        assert!(goal.proof_scope.has_membership(module, "Bar", class));
+        let mut ordinary = project.prover_for_node(&node, false);
+        ordinary.set_goal(&goal);
+        let mut shallow = ordinary.clone();
+        assert_eq!(shallow.quick_shallow_search(), Outcome::Success);
+        assert_eq!(ordinary.quick_search(), Outcome::Success);
+        let code = ordinary
+            .get_proof()
+            .unwrap()
+            .to_code(&node.bindings_for_codegen())
+            .unwrap();
+        // This automatic proof can emit an empty body. Replay its actual output;
+        // the separate generic-method witness test requires nonempty output.
+        let lines = text.lines().collect::<Vec<_>>();
+        let insertion = goal.proof_insertion_line as usize;
+        assert!(goal.insert_block);
+        assert_eq!(lines[insertion].trim(), "}");
+        let suffix = lines[insertion + 1..].join("\n");
+        for (body, count, expected_first) in [
+            (code.join("\n"), 1, Outcome::Success),
+            ("false".into(), 2, Outcome::Exhausted),
+        ] {
+            let replay = format!(
+                "{} by {{\n{body}\n}}\n{suffix}",
+                lines[..=insertion].join("\n")
+            );
+            let mut replay_project = Project::new_mock();
+            replay_project.mock("/mock/main.ac", &replay);
+            let replay_module = replay_project.expect_ok("main");
+            let replay_env = replay_project.get_env_by_id(replay_module).unwrap();
+            let goals = replay_env.iter_goals().collect::<Vec<_>>();
+            assert_eq!(goals.len(), count);
+            let first = &goals[0];
+            let mut ordinary = replay_project.prover_for_node(first, false);
+            ordinary.set_goal(&first.goal_context().unwrap());
+            let mut shallow = ordinary.clone();
+            assert_eq!(ordinary.quick_search(), expected_first);
+            assert_eq!(shallow.quick_shallow_search(), expected_first);
+            let report = replay_project.sync_build_report();
+            assert_eq!(report.goals_done, count as i32);
+            if expected_first == Outcome::Success {
+                assert_eq!(report.status, BuildStatus::Good);
+                assert_eq!(report.num_success, count as i32);
+            } else {
+                assert_eq!(report.status, BuildStatus::Warning);
+                assert!(report.num_success < report.goals_total);
+                assert_eq!(replay_project.cached_build().num_modules(), 0);
+            }
+        }
+    }
+    project.set_cache_policy(CachePolicy::Disabled);
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!(
+        (report.goals_done, report.num_success, report.num_cached),
+        (1, 1, 0)
+    );
+}

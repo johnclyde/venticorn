@@ -280,3 +280,54 @@ fn generic_method_witness_emits_nonempty_code_at_the_original_goal_position() {
     assert!(report.num_success < report.goals_total);
     assert_eq!(invalid.cached_build().num_modules(), 0);
 }
+
+#[test]
+fn generic_definition_equations_keep_canonical_owners_and_skip_alias_members() {
+    let class = "typeclass T: Marked {\n flag: T -> Bool\n}";
+    let source = "import left\nimport right\ninductive Left {\n only\n}\ninductive Right {\n only\n}\ninductive Alias {\n only\n}\ndefine alias_flag(x: Alias) -> Bool { true }\ninstance Left: left.Marked {\n define flag(self) -> Bool { true }\n}\ninstance Right: right.Marked {\n define flag(self) -> Bool { false }\n}\ninstance Alias: left.Marked {\n let flag: Alias -> Bool = alias_flag\n}\ntheorem first { left.Marked.flag(Left.only) }\ntheorem second { not right.Marked.flag(Right.only) }\ntheorem alias { left.Marked.flag(Alias.only) }";
+    let mut project = Project::new_mock();
+    project.mock("/mock/left.ac", class);
+    project.mock("/mock/right.ac", class);
+    project.mock("/mock/main.ac", source);
+    let module = project.expect_ok("main");
+    let left = project.expect_ok("left");
+    let right = project.expect_ok("right");
+    let env = project.get_env_by_id(module).unwrap();
+    for (name, owner, count) in [("Left", left, 2), ("Right", right, 2), ("Alias", left, 1)] {
+        let nodes = env.nodes.iter().filter(|node| matches!(node.source().map(|s| &s.source_type), Some(SourceType::TypeDefinition(target, member)) if target == name && member == "instance.Marked.flag")).collect::<Vec<_>>();
+        assert_eq!(nodes.len(), count);
+        let target = env.bindings.get_type_for_name(name).unwrap();
+        for node in nodes {
+            let mut members = vec![];
+            node.proposition().unwrap().value.find_constants(
+                &|c| c.name.local_name == venticorn::names::LocalName::attribute("Marked", "flag"),
+                &mut members,
+            );
+            assert_eq!(members.len(), 1);
+            assert_eq!(members[0].name.module_id, owner);
+            assert_eq!(members[0].params, [target.clone()]);
+            assert_eq!(
+                members[0].instance_type,
+                AcornType::functional(vec![target.clone()], AcornType::Bool)
+            );
+            node.proposition().unwrap().value.validate().unwrap();
+        }
+    }
+    assert_eq!(env.iter_goals().count(), 3);
+    for node in env.iter_goals() {
+        let mut prover = project.prover_for_node(&node, false);
+        prover.set_goal(&node.goal_context().unwrap());
+        let mut shallow = prover.clone();
+        assert_eq!(prover.quick_search(), Outcome::Success);
+        assert_eq!(shallow.quick_shallow_search(), Outcome::Success);
+    }
+    project.mock(
+        "/mock/foreign.ac",
+        &format!("{source}\ntheorem wrong {{ left.Marked.flag(Right.only) }}"),
+    );
+    let foreign = project.load_module_by_name("foreign").unwrap();
+    assert!(matches!(
+        project.get_module_by_id(foreign),
+        venticorn::module::Module::Error(_)
+    ));
+}
