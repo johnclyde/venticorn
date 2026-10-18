@@ -63,6 +63,7 @@ fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
 }
 
 impl Normalization {
+    #[cfg(test)]
     fn into_result(self) -> Result<Vec<Clause>> {
         match self {
             Self::Clauses(clauses) => Ok(clauses),
@@ -84,27 +85,9 @@ impl Normalization {
         }
     }
 
+    #[cfg(test)]
     fn and(self, other: Normalization) -> Normalization {
-        match self {
-            Normalization::Clauses(mut clauses) => {
-                // Preserve the existing eager terminal policy: an already-false left
-                // branch absorbs the later branch, including any later conversion error.
-                if clauses.iter().any(Clause::is_impossible) {
-                    return Normalization::Clauses(vec![Clause::impossible()]);
-                }
-                match other {
-                    Normalization::Clauses(mut other_clauses) => {
-                        if other_clauses.iter().any(Clause::is_impossible) {
-                            return Normalization::Clauses(vec![Clause::impossible()]);
-                        }
-                        clauses.append(&mut other_clauses);
-                        Normalization::Clauses(clauses)
-                    }
-                    Normalization::Error(error) => Normalization::Error(error),
-                }
-            }
-            Normalization::Error(error) => Normalization::Error(error),
-        }
+        Self::from_result(combine_clauses(self.into_result(), other.into_result()))
     }
 
     pub fn clauses(&self) -> Vec<&Clause> {
@@ -113,6 +96,21 @@ impl Normalization {
             _ => vec![],
         }
     }
+}
+
+// A known false left branch absorbs later conversion errors; an earlier error
+// still wins. Keep the same ordering for production and compatibility tests.
+fn combine_clauses(left: Result<Vec<Clause>>, right: Result<Vec<Clause>>) -> Result<Vec<Clause>> {
+    let mut clauses = left?;
+    if clauses.iter().any(Clause::is_impossible) {
+        return Ok(vec![Clause::impossible()]);
+    }
+    let mut other = right?;
+    if other.iter().any(Clause::is_impossible) {
+        return Ok(vec![Clause::impossible()]);
+    }
+    clauses.append(&mut other);
+    Ok(clauses)
 }
 
 #[derive(Clone)]
@@ -400,18 +398,18 @@ impl Normalizer {
         }
     }
 
-    // Turns a value that is already in CNF into a Normalization
-    fn normalize_cnf(&mut self, value: AcornValue, local: bool) -> Normalization {
+    // Turns a value that is already in CNF into clauses.
+    fn normalize_cnf(&mut self, value: AcornValue, local: bool) -> Result<Vec<Clause>> {
         let mut universal = vec![];
         let value = value.remove_forall(&mut universal);
         match self.into_literal_lists(&value, local) {
-            Ok(Some(lists)) => self.normalize_literal_lists(lists),
-            Ok(None) => Normalization::Clauses(vec![Clause::impossible()]),
+            Ok(Some(lists)) => Ok(self.normalize_literal_lists(lists)),
+            Ok(None) => Ok(vec![Clause::impossible()]),
             Err(s) => {
                 // value is essentially a subvalue with the universal quantifiers removed,
                 // so reconstruct it to display it nicely.
                 let reconstructed = AcornValue::forall(universal, value);
-                Normalization::Error(format!(
+                Err(format!(
                     "\nerror converting {} to CNF:\n{}",
                     reconstructed, s
                 ))
@@ -419,7 +417,7 @@ impl Normalizer {
         }
     }
 
-    fn normalize_literal_lists(&self, literal_lists: Vec<Vec<Literal>>) -> Normalization {
+    fn normalize_literal_lists(&self, literal_lists: Vec<Vec<Literal>>) -> Vec<Clause> {
         let mut clauses = vec![];
         for literals in literal_lists {
             assert!(literals.len() > 0);
@@ -427,19 +425,16 @@ impl Normalizer {
             // println!("clause: {}", clause);
             clauses.push(clause);
         }
-        Normalization::Clauses(clauses)
+        clauses
     }
 
-    // Converts a value to CNF, then to a Normalization.
+    // Converts a value to CNF, then to clauses.
     // Does not handle the "definition" sorts of values.
-    fn convert_then_normalize(&mut self, value: &AcornValue, local: bool) -> Normalization {
+    fn convert_then_normalize(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
         // println!("\nnormalizing: {}", value);
         let value = value.replace_function_equality(0);
         let value = value.expand_lambdas(0);
-        let value = match value.replace_match(0) {
-            Ok(value) => value.expand_lambdas(0),
-            Err(error) => return Normalization::Error(error),
-        };
+        let value = value.replace_match(0)?.expand_lambdas(0);
         let value = value.replace_if();
         let value = value.move_negation_inwards(true, false);
         // println!("negin'd: {}", value);
@@ -478,11 +473,11 @@ impl Normalizer {
                 // If we handled functional types better in unification we might not need this.
                 let functional = self.normalize_cnf(value.clone(), local);
                 let primitive = self.convert_then_normalize(value, local);
-                return functional.and(primitive).into_result();
+                return combine_clauses(functional, primitive);
             }
         }
 
-        self.convert_then_normalize(value, local).into_result()
+        self.convert_then_normalize(value, local)
     }
 
     // A monomorphic fact retains its original source and truthiness on every emitted step.
