@@ -496,6 +496,7 @@ impl Environment {
         ds: &DefineStatement,
         range: Range,
     ) -> compilation::Result<()> {
+        let allow_recursive_binding = !defined_name.is_instance();
         let constant_name = defined_name.into_identity();
         if ds.name == "new" || ds.name == "self" {
             return Err(ds.name_token.error(&format!(
@@ -535,7 +536,7 @@ impl Environment {
                 Some(&ds.return_type),
                 &ds.return_value,
                 self_type,
-                Some(&constant_name),
+                allow_recursive_binding.then_some(&constant_name),
             )?;
 
         if let Some(class_type) = self_type {
