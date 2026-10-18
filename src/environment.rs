@@ -1455,7 +1455,7 @@ impl Environment {
     ) -> compilation::Result<()> {
         let canonical = match potential {
             PotentialType::Resolved(AcornType::Data(module, name, _)) => (*module, name),
-            PotentialType::Unresolved(t) => (t.module_id, &t.name),
+            PotentialType::Unresolved(t) => (t.class.module_id, &t.class.name),
             _ => return Err(name_token.error("we can only bind members to data types")),
         };
         if canonical.0 != self.module_id {
