@@ -179,6 +179,11 @@ impl Environment {
         block: Option<Block>,
     ) -> usize {
         let node = Node::new(project, self, structural, proposition, block);
+        self.push_node(node)
+    }
+
+    // Insert a node after its construction and admission checks are complete.
+    pub fn push_node(&mut self, node: Node) -> usize {
         self.nodes.push(node);
         self.nodes.len() - 1
     }
@@ -237,9 +242,9 @@ impl Environment {
         };
         let range = self.definition_ranges.get(name).unwrap().clone();
 
-        self.add_node(
+        self.push_node(Node::structural(
             project,
-            true,
+            self,
             Proposition::named_constant_definition(
                 claim,
                 self.module_id,
@@ -247,8 +252,7 @@ impl Environment {
                 constant,
                 name.to_string(),
             ),
-            None,
-        );
+        ));
     }
 
     pub fn get_definition(&self, name: &str) -> Option<&AcornValue> {
