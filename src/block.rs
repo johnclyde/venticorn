@@ -227,7 +227,10 @@ impl Block {
                 // but there is one last variable that needs to be existentially quantified.
                 let partial_goal = unbound_goal.bind_values(0, 0, &internal_args);
                 let bound_goal = AcornValue::exists(vec![return_type], partial_goal);
-                let prop = Proposition::anonymous(bound_goal, env.module_id, range);
+                let prop = Proposition::new(
+                    bound_goal,
+                    Source::anonymous(env.module_id, range, goal_depth),
+                );
                 Some(Goal::Prove(prop))
             }
             BlockParams::MatchCase(scrutinee, constructor, pattern_args, range) => {
@@ -262,10 +265,9 @@ impl Block {
             BlockParams::Constraint(constraint, range)
             | BlockParams::Instance(constraint, range) => {
                 // The condition is a goal only, never an assumed theorem.
-                Some(Goal::Prove(Proposition::anonymous(
+                Some(Goal::Prove(Proposition::new(
                     constraint,
-                    env.module_id,
-                    range,
+                    Source::anonymous(env.module_id, range, goal_depth),
                 )))
             }
             BlockParams::Solve(target, range) => Some(Goal::Solve(target, range)),
