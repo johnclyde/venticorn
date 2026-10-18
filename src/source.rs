@@ -150,6 +150,15 @@ impl Source {
         Self::new(module, range, SourceType::Premise, false, depth)
     }
 
+    /// Preserve the declaration location while marking a counterfactual goal.
+    pub fn as_negated_goal(&self) -> Self {
+        Self {
+            source_type: SourceType::NegatedGoal,
+            importable: false,
+            ..self.clone()
+        }
+    }
+
     pub fn negated_goal(module: ModuleId, range: Range, depth: u32) -> Source {
         Self::new(module, range, SourceType::NegatedGoal, false, depth)
     }

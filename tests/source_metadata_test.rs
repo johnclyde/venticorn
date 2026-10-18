@@ -133,3 +133,33 @@ fn source_constructors_preserve_location_exportability_and_contextual_roles() {
     assert_eq!(proposition.source.depth, 3);
     assert_eq!(proposition.truthiness(), Truthiness::Factual);
 }
+
+#[test]
+fn fresh_fact_and_negated_source_keep_location_and_explicit_roles() {
+    use venticorn::fact::Fact;
+    use venticorn::source::SourceType;
+    let source = Source {
+        module: 7,
+        depth: 3,
+        importable: true,
+        ..Source::mock()
+    };
+    let fact = Fact::proposition(AcornValue::Bool(true), source.clone());
+    assert_eq!(fact.source(), &source);
+    assert_eq!(fact.truthiness(), Some(Truthiness::Hypothetical));
+    let original = Proposition::new(AcornValue::Bool(true), source.clone())
+        .with_truthiness(Truthiness::Factual);
+    let negated = original.with_negated_goal(AcornValue::Bool(false));
+    assert_eq!(negated.source, source.as_negated_goal());
+    assert_eq!(negated.source.module, source.module);
+    assert_eq!(negated.source.range, source.range);
+    assert_eq!(negated.source.depth, source.depth);
+    assert!(!negated.source.importable);
+    assert!(matches!(
+        negated.source.source_type,
+        SourceType::NegatedGoal
+    ));
+    assert_eq!(negated.truthiness(), Truthiness::Counterfactual);
+    assert_eq!(original.truthiness(), Truthiness::Factual);
+    assert_eq!(original.source, source);
+}

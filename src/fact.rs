@@ -1,4 +1,5 @@
 use crate::acorn_type::{AcornType, Class, Typeclass};
+use crate::acorn_value::AcornValue;
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 use crate::source::Source;
@@ -12,6 +13,12 @@ pub enum Fact {
 }
 
 impl Fact {
+    /// Construct a fresh proposition with the source's default lexical role.
+    /// Existing propositions should retain their metadata through Fact::new.
+    pub fn proposition(value: AcornValue, source: Source) -> Self {
+        Fact::Proposition(Proposition::new(value, source))
+    }
+
     pub fn is_instance(&self) -> bool {
         matches!(self, Fact::Instance(..))
     }

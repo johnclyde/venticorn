@@ -22,7 +22,6 @@ use crate::passive_set::PassiveSet;
 use crate::project::Project;
 use crate::proof::{Difficulty, Proof};
 use crate::proof_step::{ProofStep, ProofStepId, Rule, Truthiness};
-use crate::source::Source;
 use crate::term::Term;
 use crate::term_graph::TermGraphContradiction;
 
@@ -206,8 +205,7 @@ impl Prover {
                     self.add_fact(Fact::new(prop.with_value(hypo), Truthiness::Hypothetical));
                 }
                 let mut counter_proposition = prop.with_value(counter.clone());
-                counter_proposition.source =
-                    Source::negated_goal(prop.source.module, prop.source.range, prop.source.depth);
+                counter_proposition.source = prop.source.as_negated_goal();
                 self.add_fact(Fact::new(counter_proposition, Truthiness::Counterfactual));
                 self.goal = Some(NormalizedGoal::ProveNegated(
                     counter,

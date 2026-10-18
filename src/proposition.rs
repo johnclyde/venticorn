@@ -155,11 +155,9 @@ impl Proposition {
     }
 
     pub fn with_negated_goal(&self, value: AcornValue) -> Proposition {
-        Proposition::new(
-            value,
-            Source::negated_goal(self.source.module, self.source.range, self.source.depth),
-        )
-        .with_truthiness(Truthiness::Counterfactual)
+        let mut proposition = self.with_value(value);
+        proposition.source = self.source.as_negated_goal();
+        proposition.with_truthiness(Truthiness::Counterfactual)
     }
 
     // Just changes the value while keeping the other stuff intact
