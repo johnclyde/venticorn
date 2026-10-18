@@ -477,15 +477,14 @@ impl Environment {
                     .name_token
                     .error("generic member cannot capture arbitrary types"));
             }
-            self.bindings.add_constant_named(
-                &constant_name,
+            self.define_constant(
+                project,
+                constant_name,
                 self.scoped_type_params(class_params),
                 constant_type,
                 definition,
-                None,
+                range,
             );
-            self.definition_ranges.insert(constant_name.clone(), range);
-            self.add_identity_named(project, &constant_name);
             return Ok(());
         }
         if let Some(value) = &value {
@@ -509,10 +508,7 @@ impl Environment {
             }
         }
 
-        self.bindings
-            .add_constant_named(&constant_name, vec![], acorn_type, value, None);
-        self.definition_ranges.insert(constant_name.clone(), range);
-        self.add_identity_named(project, &constant_name);
+        self.define_constant(project, constant_name, vec![], acorn_type, value, range);
         Ok(())
     }
 
