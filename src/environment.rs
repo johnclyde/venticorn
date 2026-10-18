@@ -269,7 +269,7 @@ impl Environment {
     // Find the innermost proof environment containing this saved source line.
     pub fn env_for_line(&self, line: u32) -> &Environment {
         if let Some(LineType::Node(index)) = self.get_line_type(line) {
-            if let Some(block) = self.nodes[index].block() {
+            if let Some(block) = self.nodes[index].get_block() {
                 // A line following this closing brace belongs to the parent scope.
                 if block.env.get_line_type(line) != Some(LineType::Closing) {
                     return block.env.env_for_line(line);
@@ -2480,7 +2480,7 @@ impl Environment {
         fn collect(env: &Environment, dependencies: &mut BTreeSet<ModuleId>) {
             dependencies.extend(env.bindings.direct_dependencies());
             for node in &env.nodes {
-                if let Some(block) = node.block() {
+                if let Some(block) = node.get_block() {
                     collect(&block.env, dependencies);
                 }
             }
@@ -2576,7 +2576,7 @@ impl Environment {
                     if node.proposition().source.is_axiom() {
                         return Err(format!("line {} is an axiom", line + 1));
                     }
-                    match node.block() {
+                    match node.get_block() {
                         Some(b) => {
                             block = Some(b);
                             env = &b.env;
@@ -2611,7 +2611,7 @@ impl Environment {
                                 if node.proposition().source.is_axiom() {
                                     return Err(format!("slide to axiom, line {}", slide + 1));
                                 }
-                                if node.block().is_none() {
+                                if node.get_block().is_none() {
                                     path.push(i);
                                     return Ok(path);
                                 }
@@ -2693,7 +2693,7 @@ impl Environment {
         for (line, line_type) in self.line_types.iter().enumerate() {
             if let LineType::Node(prop_index) = line_type {
                 let prop = &self.nodes[*prop_index];
-                if let Some(block) = prop.block() {
+                if let Some(block) = prop.get_block() {
                     assert!(block.env.covers_line(line as u32));
                 }
             }
@@ -2701,7 +2701,7 @@ impl Environment {
 
         // Recurse
         for prop in &self.nodes {
-            if let Some(block) = prop.block() {
+            if let Some(block) = prop.get_block() {
                 block.env.check_lines();
             }
         }
