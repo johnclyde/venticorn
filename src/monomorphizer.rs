@@ -127,7 +127,7 @@ impl Monomorphizer {
             .find_constants(&|c| !c.params.is_empty() && c.is_generic(), &mut instances);
         if instances.is_empty() {
             // A generic fact without a constant demand cannot yet be specialized safely.
-            if proposition.value.is_generic() {
+            if proposition.has_generic() {
                 return;
             }
 
@@ -238,14 +238,6 @@ impl Monomorphizer {
             }
         }
 
-        // The selected constant may not expose every bound elsewhere in the same fact.
-        if !self.prop_info[prop_id]
-            .proposition
-            .value
-            .accepts_substitution_in_scope(&prop_params, &self.scope)
-        {
-            return;
-        }
         let prop_params = PropParams::new(prop_params);
 
         if self.prop_info[prop_id]
@@ -256,10 +248,14 @@ impl Monomorphizer {
             return;
         }
 
-        let monomorphic_prop = self.prop_info[prop_id]
+        // Check every formal, value and definition bound before substitution and emission.
+        let Ok(monomorphic_prop) = self.prop_info[prop_id]
             .proposition
-            .instantiate(&prop_params.params);
-        if monomorphic_prop.value.is_generic() {
+            .try_instantiate(&prop_params.params, &self.scope)
+        else {
+            return;
+        };
+        if monomorphic_prop.has_generic() {
             // Matching one constant may leave other type variables in the fact unresolved.
             // Do not emit or remember an incomplete substitution.
             return;

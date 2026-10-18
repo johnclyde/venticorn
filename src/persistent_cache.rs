@@ -576,6 +576,9 @@ pub(crate) fn goal_policy(
     state.text("venticorn:goal-policy:v3");
     state.number(goals.len() as u64);
     for goal in goals {
+        if goal.goal.has_generic() {
+            return None;
+        }
         state.tag(u8::from(matches!(goal.goal, Goal::Prove(_))));
         state.value(goal.goal.value())?;
         let range = goal.goal.range();
@@ -704,6 +707,47 @@ mod tests {
             assert_ne!(original, goal_policy(&[changed], &resolve).unwrap());
         }
         assert_ne!(original, goal_policy(&[], &resolve).unwrap());
+    }
+
+    #[test]
+    fn persistent_goal_policy_rejects_phantom_formals_without_hashing_them_away() {
+        use crate::acorn_type::{TypeParam, Typeclass};
+        use crate::proposition::Proposition;
+
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem goal { true }");
+        let env = project
+            .get_env_by_ref(&ModuleRef::Name("main".into()))
+            .unwrap();
+        let node = env.iter_goals().next().unwrap();
+        let fixed = node.goal_context().unwrap();
+        let resolve = |_| Some(ModuleRef::Name("main".into()));
+        let digest = goal_policy(std::slice::from_ref(&fixed), &resolve).unwrap();
+        let mut phantom = node.goal_context().unwrap();
+        let source = match &phantom.goal {
+            Goal::Prove(proposition) => proposition.source.clone(),
+            _ => panic!("expected a proof goal"),
+        };
+        phantom.goal = Goal::Prove(Proposition::generic(
+            phantom.goal.value().clone(),
+            vec![TypeParam {
+                name: "Unused".into(),
+                typeclass: Some(Typeclass {
+                    module_id: env.module_id,
+                    name: "Required".into(),
+                }),
+            }],
+            source,
+        ));
+        assert!(!phantom.goal.value().is_generic());
+        assert!(phantom.goal.has_generic());
+        assert!(goal_policy(std::slice::from_ref(&phantom), &resolve).is_none());
+        let fixed_again = node.goal_context().unwrap();
+        assert!(goal_policy(&[fixed_again, phantom], &resolve).is_none());
+        assert_eq!(
+            goal_policy(std::slice::from_ref(&fixed), &resolve),
+            Some(digest)
+        );
     }
 
     fn scope_goal(first: ModuleId, second: ModuleId) -> GoalContext {

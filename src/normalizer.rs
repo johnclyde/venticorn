@@ -543,6 +543,9 @@ impl Normalizer {
         proposition: Proposition,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
+        if proposition.has_generic() {
+            return Err("cannot normalize unresolved proposition metadata".into());
+        }
         let truthiness = proposition.truthiness();
         let local = truthiness != Truthiness::Factual;
         let defined = match &proposition.source.source_type {
