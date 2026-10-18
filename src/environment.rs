@@ -363,7 +363,11 @@ impl Environment {
             project,
             self,
             block,
-            Proposition::anonymous(external_claim, self.module_id, claim_range),
+            Some(Proposition::anonymous(
+                external_claim,
+                self.module_id,
+                claim_range,
+            )),
         ));
         self.add_line_types(
             LineType::Node(index),
@@ -717,7 +721,7 @@ impl Environment {
                 ts.name.clone(),
             );
             match block {
-                Some(block) => Node::new_block(project, &staged, block, proposition),
+                Some(block) => Node::new_block(project, &staged, block, Some(proposition)),
                 None => Node::structural(project, &staged, proposition),
             }
         };
@@ -848,7 +852,7 @@ impl Environment {
             fss.name.clone(),
         );
 
-        let index = self.push_node(Node::new_block(project, self, block, prop));
+        let index = self.push_node(Node::new_block(project, self, block, Some(prop)));
         self.add_node_lines(index, &statement.range());
         Ok(())
     }
@@ -950,7 +954,7 @@ impl Environment {
         );
         if let Some(block) = constraint_block {
             let proposition = Proposition::inhabited(self.module_id, &ss.name, statement.range());
-            let index = self.push_node(Node::new_block(project, self, block, proposition));
+            let index = self.push_node(Node::new_block(project, self, block, Some(proposition)));
             self.add_node_lines(index, &statement.range());
         }
 
@@ -2027,7 +2031,7 @@ impl Environment {
                 name.to_string(),
                 class.name.clone(),
             );
-            let index = self.push_node(Node::new_block(project, self, block, proposition));
+            let index = self.push_node(Node::new_block(project, self, block, Some(proposition)));
             self.add_node_lines(index, &statement.range());
         }
         // Later goals may use this declaration conditionally on the whole module
@@ -2200,7 +2204,7 @@ impl Environment {
                     project,
                     self,
                     block,
-                    Proposition::anonymous(outer_claim, self.module_id, range),
+                    Some(Proposition::anonymous(outer_claim, self.module_id, range)),
                 ));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
@@ -2343,7 +2347,7 @@ impl Environment {
                     }
                 };
 
-                let index = self.push_node(Node::new_block(project, self, block, prop));
+                let index = self.push_node(Node::new_block(project, self, block, Some(prop)));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
             }
@@ -2367,7 +2371,8 @@ impl Environment {
                     statement.range(),
                 );
 
-                let index = self.push_node(Node::new_block(project, self, block, vacuous_prop));
+                let index =
+                    self.push_node(Node::new_block(project, self, block, Some(vacuous_prop)));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
             }
@@ -2439,7 +2444,8 @@ impl Environment {
                         AcornValue::Bool(true)
                     };
                     let prop = Proposition::anonymous(claim, self.module_id, statement.range());
-                    let node_index = self.push_node(Node::new_block(project, self, block, prop));
+                    let node_index =
+                        self.push_node(Node::new_block(project, self, block, Some(prop)));
                     self.add_node_lines(node_index, &range);
                 }
                 self.add_line_types(
