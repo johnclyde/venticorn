@@ -410,10 +410,10 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
             .iter()
             .map(|key| {
                 Some((
-                    self.module_key(key.data_module)?,
-                    key.data_name.as_str(),
-                    self.module_key(key.class_module)?,
-                    key.class_name.as_str(),
+                    self.module_key(key.data.module_id)?,
+                    key.data.name.as_str(),
+                    self.module_key(key.class.module_id)?,
+                    key.class.name.as_str(),
                 ))
             })
             .collect::<Option<BTreeSet<_>>>()?;
@@ -715,23 +715,26 @@ mod tests {
         goal.proof_scope = ProofScope {
             memberships: Arc::new(BTreeSet::from([
                 MembershipKey {
-                    data_module: first,
-                    data_name: "One".into(),
-                    class_module: second,
-                    class_name: "Left".into(),
+                    data: crate::acorn_type::Class::new(first, "One".into()),
+                    class: crate::acorn_type::Typeclass {
+                        module_id: second,
+                        name: "Left".into(),
+                    },
                 },
                 MembershipKey {
-                    data_module: second,
-                    data_name: "Two".into(),
-                    class_module: first,
-                    class_name: "Right".into(),
+                    data: crate::acorn_type::Class::new(second, "Two".into()),
+                    class: crate::acorn_type::Typeclass {
+                        module_id: first,
+                        name: "Right".into(),
+                    },
                 },
             ])),
             denied_memberships: Arc::new(BTreeSet::from([MembershipKey {
-                data_module: first,
-                data_name: "Denied".into(),
-                class_module: second,
-                class_name: "Left".into(),
+                data: crate::acorn_type::Class::new(first, "Denied".into()),
+                class: crate::acorn_type::Typeclass {
+                    module_id: second,
+                    name: "Left".into(),
+                },
             }])),
             imports: Arc::new(vec![first, second]),
         };
@@ -775,10 +778,10 @@ mod tests {
                     let memberships = Arc::make_mut(&mut changed.proof_scope.memberships);
                     let mut key = memberships.pop_first().unwrap();
                     match field {
-                        3 => key.data_module = 30,
-                        4 => key.class_module = 30,
-                        5 => key.data_name.push('x'),
-                        _ => key.class_name.push('x'),
+                        3 => key.data.module_id = 30,
+                        4 => key.class.module_id = 30,
+                        5 => key.data.name.push('x'),
+                        _ => key.class.name.push('x'),
                     }
                     memberships.insert(key);
                 }
@@ -820,7 +823,7 @@ mod tests {
                     };
                     let group = Arc::make_mut(group);
                     let mut key = group.pop_first().unwrap();
-                    key.class_module = 99;
+                    key.class.module_id = 99;
                     group.insert(key);
                 }
                 _ => Arc::make_mut(&mut goal.proof_scope.imports).push(99),
