@@ -938,7 +938,7 @@ impl BindingMap {
     // Returns the defined value and its parameters in declaration order.
     pub fn get_definition_and_params(&self, name: &str) -> Option<(&AcornValue, &[TypeParam])> {
         let info = self
-            .constant_info_by_spelling(name)
+            .stored_info(self.stored_constant_name(name)?)
             .filter(|info| info.canonical)?;
         Some((info.definition.as_ref()?, info.value.unresolved_params()))
     }
@@ -951,7 +951,7 @@ impl BindingMap {
         if !self.canonical_name_matches(&GlobalName::new(self.module, name.clone())) {
             return None;
         }
-        let info = self.constant_info.get(name)?;
+        let info = self.stored_info(name)?;
         Some((info.definition.as_ref()?, info.value.unresolved_params()))
     }
 
@@ -4894,5 +4894,66 @@ mod instance_definition_tests {
         assert!(!bindings
             .proof_scope()
             .has_membership(FIRST_NORMAL, "State", &class));
+    }
+}
+
+#[cfg(test)]
+mod instance_formal_tests {
+    use super::*;
+
+    #[test]
+    fn definition_lookup_preserves_ordered_phantom_bounds_and_alias_nonownership() {
+        let mut bindings = BindingMap::new(FIRST_NORMAL);
+        bindings.add_data_type("State");
+        let class = Typeclass {
+            module_id: FIRST_NORMAL + 1,
+            name: "Marked".into(),
+        };
+        let local = LocalName::instance(&class, "flag", "State");
+        let params = vec![
+            TypeParam {
+                name: "T".into(),
+                typeclass: Some(class.clone()),
+            },
+            TypeParam::unconstrained("U"),
+        ];
+        bindings.add_constant_named(
+            &local,
+            params.clone(),
+            AcornType::Bool,
+            Some(AcornValue::Bool(true)),
+            None,
+        );
+        let expected = Some((&AcornValue::Bool(true), params.as_slice()));
+        assert_eq!(
+            bindings.get_definition_and_params(&local.to_string()),
+            expected
+        );
+        assert_eq!(bindings.get_definition_and_params_named(&local), expected);
+        assert!(bindings.get_constant_value_named(&local).is_none());
+        let foreign = LocalName::instance(
+            &Typeclass {
+                module_id: FIRST_NORMAL + 2,
+                name: class.name.clone(),
+            },
+            "flag",
+            "State",
+        );
+        assert!(bindings.get_definition_and_params_named(&foreign).is_none());
+        let missing = LocalName::instance(&class, "missing", "State");
+        bindings.add_constant_named(&missing, params.clone(), AcornType::Bool, None, None);
+        assert!(bindings.get_definition_and_params_named(&missing).is_none());
+        let alias = LocalName::instance(&class, "alias", "State");
+        let target = GlobalName::new(FIRST_NORMAL + 2, LocalName::unqualified("known"));
+        bindings.add_checked_instance_alias(
+            &alias,
+            target.clone(),
+            PotentialValue::constant_named(target, AcornType::Bool, params),
+        );
+        assert!(bindings
+            .get_definition_and_params(&alias.to_string())
+            .is_none());
+        assert!(bindings.get_definition_and_params_named(&alias).is_none());
+        assert!(bindings.unresolved_params(&alias.to_string()).is_empty());
     }
 }
