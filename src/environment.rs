@@ -268,6 +268,22 @@ impl Environment {
         ));
     }
 
+    /// Store a validated declaration, its source range, and its defining equations.
+    fn define_constant(
+        &mut self,
+        project: &Project,
+        name: LocalName,
+        params: Vec<TypeParam>,
+        constant_type: AcornType,
+        definition: Option<AcornValue>,
+        range: Range,
+    ) {
+        self.bindings
+            .add_constant_named(&name, params, constant_type, definition, None);
+        self.definition_ranges.insert(name.clone(), range);
+        self.add_identity_named(project, &name);
+    }
+
     pub fn get_definition(&self, name: &str) -> Option<&AcornValue> {
         self.bindings.get_definition(name)
     }
@@ -613,16 +629,14 @@ impl Environment {
             }
             self.scoped_type_params(class_params)
         };
-        self.bindings.add_constant_named(
-            &constant_name,
+        self.define_constant(
+            project,
+            constant_name,
             param_names,
             constant_type,
             definition,
-            None,
+            range,
         );
-
-        self.definition_ranges.insert(constant_name.clone(), range);
-        self.add_identity_named(project, &constant_name);
         Ok(())
     }
 
