@@ -321,7 +321,14 @@ impl BindingMap {
                             .type_to_typename
                             .entry(ty.clone())
                             .or_insert_with(|| name.clone());
-                        if let AcornType::Data(module, family, actuals) = ty {
+                        if let AcornType::Data(
+                            Class {
+                                module_id: module,
+                                name: family,
+                            },
+                            actuals,
+                        ) = ty
+                        {
                             if actuals.is_empty() {
                                 result
                                     .canonical_to_alias
@@ -494,7 +501,7 @@ impl BindingMap {
     // Adds a new data type to the binding map.
     // Panics if the name is already bound.
     pub fn add_data_type(&mut self, name: &str) -> AcornType {
-        let data_type = AcornType::Data(self.module, name.to_string(), vec![]);
+        let data_type = AcornType::Data(Class::new(self.module, name.to_string()), vec![]);
         self.insert_type_name(name.to_string(), PotentialType::Resolved(data_type.clone()));
         data_type
     }
@@ -528,9 +535,16 @@ impl BindingMap {
     // Adds a new type name that's an alias for an existing type
     pub fn add_type_alias(&mut self, name: &str, acorn_type: AcornType) {
         let canonical = match &acorn_type {
-            AcornType::Data(module, type_name, actuals) if actuals.is_empty() => Some(
-                GlobalConstantName::new(*module, LocalConstantName::unqualified(type_name)),
-            ),
+            AcornType::Data(
+                Class {
+                    module_id: module,
+                    name: type_name,
+                },
+                actuals,
+            ) if actuals.is_empty() => Some(GlobalConstantName::new(
+                *module,
+                LocalConstantName::unqualified(type_name),
+            )),
             _ => None,
         };
         // Complete the checked forward insertion before updating preferred aliases.
@@ -1181,7 +1195,13 @@ impl BindingMap {
         visible: &dyn Fn(&str) -> bool,
     ) -> Option<Vec<CompletionItem>> {
         let (module, type_name) = match data_type {
-            AcornType::Data(module, name, _) => (*module, name),
+            AcornType::Data(
+                Class {
+                    module_id: module,
+                    name,
+                },
+                _,
+            ) => (*module, name),
             AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                 let class = param.typeclass.as_ref()?;
                 (class.module_id, &class.name)
@@ -1259,15 +1279,21 @@ impl BindingMap {
             for name in namespace.split('.') {
                 let local_name = match &entity {
                     None => Some(name.to_string()),
-                    Some(NamedEntity::Type(AcornType::Data(module, type_name, _)))
-                        if *module == self.module =>
-                    {
-                        Some(format!("{}.{}", type_name, name))
-                    }
+                    Some(NamedEntity::Type(AcornType::Data(
+                        Class {
+                            module_id: module,
+                            name: type_name,
+                        },
+                        _,
+                    ))) if *module == self.module => Some(format!("{}.{}", type_name, name)),
                     Some(NamedEntity::Value(value)) => match value.get_type() {
-                        AcornType::Data(module, type_name, _) if module == self.module => {
-                            Some(format!("{}.{}", type_name, name))
-                        }
+                        AcornType::Data(
+                            Class {
+                                module_id: module,
+                                name: type_name,
+                            },
+                            _,
+                        ) if module == self.module => Some(format!("{}.{}", type_name, name)),
                         _ => None,
                     },
                     _ => None,
@@ -1300,7 +1326,7 @@ impl BindingMap {
                 NamedEntity::Unresolved(_) => Some(vec![]),
                 NamedEntity::UnresolvedType(t) => self.get_member_completions(
                     project,
-                    &AcornType::Data(t.class.module_id, t.class.name, vec![]),
+                    &AcornType::Data(Class::new(t.class.module_id, t.class.name), vec![]),
                     partial,
                     None,
                     visible,
@@ -1349,9 +1375,13 @@ impl BindingMap {
             }
             if importing {
                 let canonical = match self.typename_to_type.get(name) {
-                    Some(PotentialType::Resolved(AcornType::Data(module, canonical, _))) => {
-                        *module == self.module && canonical == name
-                    }
+                    Some(PotentialType::Resolved(AcornType::Data(
+                        Class {
+                            module_id: module,
+                            name: canonical,
+                        },
+                        _,
+                    ))) => *module == self.module && canonical == name,
                     Some(PotentialType::Unresolved(t)) => {
                         t.class.module_id == self.module && &t.class.name == name
                     }
@@ -1775,7 +1805,13 @@ impl BindingMap {
     ) -> compilation::Result<AcornValue> {
         let base_type = instance.get_type();
         let (module, type_name) = match base_type {
-            AcornType::Data(module, name, _) => (module, name),
+            AcornType::Data(
+                Class {
+                    module_id: module,
+                    name,
+                },
+                _,
+            ) => (module, name),
             AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                 let class = param.typeclass.ok_or_else(|| {
                     source.error(&format!(
@@ -1839,7 +1875,14 @@ impl BindingMap {
                         };
                     }
                 }
-                if let AcornType::Data(module, type_name, actuals) = t {
+                if let AcornType::Data(
+                    Class {
+                        module_id: module,
+                        name: type_name,
+                    },
+                    actuals,
+                ) = t
+                {
                     if name_token.token_type == TokenType::Numeral {
                         if !actuals.is_empty() {
                             return Err(
@@ -2144,7 +2187,14 @@ impl BindingMap {
                 Ok(())
             }
             NamedEntity::Type(acorn_type) => {
-                if let AcornType::Data(owner, _, _) = &acorn_type {
+                if let AcornType::Data(
+                    Class {
+                        module_id: owner,
+                        name: _,
+                    },
+                    _,
+                ) = &acorn_type
+                {
                     if let Some(bindings) = project.get_bindings(*owner) {
                         self.import_instance_members(bindings);
                     }
@@ -2949,7 +2999,14 @@ impl BindingMap {
         if let Some(name) = self.type_to_typename.get(acorn_type) {
             return Ok(Expression::generate_identifier(name));
         }
-        if let AcornType::Data(module, type_name, actuals) = acorn_type {
+        if let AcornType::Data(
+            Class {
+                module_id: module,
+                name: type_name,
+            },
+            actuals,
+        ) = acorn_type
+        {
             let family = (*module, type_name.clone(), actuals.len());
             if let Some(alias) = self.generic_type_aliases.get(&family) {
                 return self.parametrize_type_expr(Expression::generate_identifier(alias), actuals);
@@ -3077,7 +3134,7 @@ impl BindingMap {
         }
         match &name.local_name {
             LocalConstantName::Instance(class, member, target) => {
-                let data_type = AcornType::Data(module, target.clone(), vec![]);
+                let data_type = AcornType::Data(Class::new(module, target.clone()), vec![]);
                 if let Some(alias) = self.type_to_typename.get(&data_type) {
                     return Ok(Expression::generate_identifier_chain(&[
                         alias,
@@ -3093,7 +3150,7 @@ impl BindingMap {
                 )) {
                     return Ok(Expression::generate_identifier_chain(&[alias, member]));
                 }
-                let data_type = AcornType::Data(module, owner.clone(), vec![]);
+                let data_type = AcornType::Data(Class::new(module, owner.clone()), vec![]);
                 if let Some(alias) = self.type_to_typename.get(&data_type) {
                     return Ok(Expression::generate_identifier_chain(&[alias, member]));
                 }
@@ -3430,7 +3487,7 @@ mod tests {
     fn codegen_positions_restore_prior_aliases_module_spelling_and_numeric_default() {
         let mut bindings = BindingMap::new(FIRST_NORMAL);
         bindings.import_module("early", FIRST_NORMAL + 1);
-        let item = AcornType::Data(FIRST_NORMAL + 1, "Item".into(), vec![]);
+        let item = AcornType::Data(Class::new(FIRST_NORMAL + 1, "Item".into()), vec![]);
         let numeral =
             AcornValue::new_constant(FIRST_NORMAL + 1, "Item.0".into(), vec![], item.clone());
         let value =
@@ -3514,7 +3571,7 @@ mod tests {
         let mut stack = Stack::new();
         stack.insert(
             "value".to_string(),
-            AcornType::Data(FIRST_NORMAL, "Foo".to_string(), vec![]),
+            AcornType::Data(Class::new(FIRST_NORMAL, "Foo".to_string()), vec![]),
         );
         let expression = Expression::expect_value("match value { Foo.bar(local) { unknown } }");
         let error = env
@@ -3532,7 +3589,7 @@ mod tests {
         let mut stack = Stack::new();
         stack.insert(
             "value".to_string(),
-            AcornType::Data(FIRST_NORMAL, "Foo".to_string(), vec![]),
+            AcornType::Data(Class::new(FIRST_NORMAL, "Foo".to_string()), vec![]),
         );
         let expression = Expression::expect_value(
             "match value { Foo.bar(first) { first } Foo.bar(second) { second } }",
@@ -3552,7 +3609,7 @@ mod tests {
         let mut env = crate::environment::Environment::new_test();
         env.add("inductive Foo {\n bar(Bool)\n baz\n }\n");
         env.add("structure Pair {\n first: Bool\n second: Bool\n }\n");
-        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string(), vec![]);
+        let foo = AcornType::Data(Class::new(FIRST_NORMAL, "Foo".to_string()), vec![]);
         assert_eq!(
             env.bindings
                 .constant_info_by_spelling("Foo.bar")
@@ -3573,7 +3630,7 @@ mod tests {
                 .unwrap()
                 .constructor,
             Some((
-                AcornType::Data(FIRST_NORMAL, "Pair".to_string(), vec![]),
+                AcornType::Data(Class::new(FIRST_NORMAL, "Pair".to_string()), vec![]),
                 0,
                 1
             ))
@@ -3590,7 +3647,7 @@ mod tests {
     fn pattern_arguments_infer_constructor_parameter_types() {
         let mut env = crate::environment::Environment::new_test();
         env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
-        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string(), vec![]);
+        let foo = AcornType::Data(Class::new(FIRST_NORMAL, "Foo".to_string()), vec![]);
         let expression = Expression::expect_value("Foo.pair(left, right)");
         let (constructor, args, index, total) = env
             .bindings
@@ -3646,7 +3703,7 @@ mod tests {
         let mut env = crate::environment::Environment::new_test();
         env.add("inductive Foo {\n end\n pair(Bool, Foo)\n }\n");
         env.add("let existing: Bool = true");
-        let foo = AcornType::Data(FIRST_NORMAL, "Foo".to_string(), vec![]);
+        let foo = AcornType::Data(Class::new(FIRST_NORMAL, "Foo".to_string()), vec![]);
         let project = Project::new_mock();
         let pattern = Expression::expect_value("Foo.pair(left, right)");
         let (constructor, args, index, total) = env
@@ -3771,7 +3828,10 @@ mod name_insertion_tests {
         assert_eq!(
             bindings
                 .type_to_typename
-                .get(&AcornType::Data(FIRST_NORMAL, "Data".into(), vec![]))
+                .get(&AcornType::Data(
+                    Class::new(FIRST_NORMAL, "Data".into()),
+                    vec![]
+                ))
                 .map(String::as_str),
             Some("Data")
         );
@@ -3794,7 +3854,7 @@ mod name_insertion_tests {
             reject_without_name_mutation(&mut bindings, |b| {
                 b.add_type_alias(
                     name,
-                    AcornType::Data(FIRST_NORMAL + 1, "Foreign".into(), vec![]),
+                    AcornType::Data(Class::new(FIRST_NORMAL + 1, "Foreign".into()), vec![]),
                 )
             });
             reject_without_name_mutation(&mut bindings, |b| {
@@ -4512,7 +4572,7 @@ mod canonical_alias_inventory_tests {
     #[test]
     fn type_alias_surrogates_retain_the_first_visible_name() {
         let mut bindings = BindingMap::new(20);
-        let ty = AcornType::Data(10, "Shape".into(), vec![]);
+        let ty = AcornType::Data(Class::new(10, "Shape".into()), vec![]);
         bindings.add_type_alias("First", ty.clone());
         let first = bindings.codegen_position();
         bindings.add_type_alias("Later", ty);

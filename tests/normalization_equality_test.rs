@@ -1,4 +1,5 @@
 use venticorn::acorn_type::AcornType;
+use venticorn::acorn_type::Class;
 use venticorn::acorn_value::AcornValue;
 use venticorn::builder::BuildStatus;
 use venticorn::module::FIRST_NORMAL;
@@ -8,7 +9,7 @@ use venticorn::prover::Outcome;
 
 #[test]
 fn constant_equality_stays_explicit_with_known_right_hand_side() {
-    let data = AcornType::Data(FIRST_NORMAL, "Value".into(), vec![]);
+    let data = AcornType::Data(Class::new(FIRST_NORMAL, "Value".into()), vec![]);
     for typ in [
         data.clone(),
         AcornType::new_functional(vec![data.clone()], data),

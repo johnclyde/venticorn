@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use venticorn::acorn_type::Class;
 use venticorn::acorn_type::{AcornType, TypeParam, Typeclass};
 use venticorn::environment::Environment;
 use venticorn::project::Project;
@@ -65,7 +66,7 @@ fn bound_matching_checks_new_and_already_mapped_parameters() {
     let bounded = AcornType::Variable(formal.clone());
     for actual in [
         AcornType::Bool,
-        AcornType::Data(10, "Item".into(), vec![]),
+        AcornType::Data(Class::new(10, "Item".into()), vec![]),
         AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
         AcornType::Variable(TypeParam::unconstrained("U")),
         AcornType::Arbitrary(TypeParam::unconstrained("U")),

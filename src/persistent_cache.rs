@@ -1,3 +1,4 @@
+use crate::acorn_type::Class;
 // Modified for Venticorn: bounded, finalized verification metadata on disk.
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
@@ -455,7 +456,13 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
         match ty {
             AcornType::Empty => self.tag(0),
             AcornType::Bool => self.tag(1),
-            AcornType::Data(module, name, actuals) => {
+            AcornType::Data(
+                Class {
+                    module_id: module,
+                    name,
+                },
+                actuals,
+            ) => {
                 self.tag(2);
                 self.module(*module)?;
                 self.text(name);
@@ -609,8 +616,7 @@ mod tests {
 
     fn annotated_value(id: ModuleId) -> AcornValue {
         let ty = AcornType::Data(
-            id,
-            "Box".into(),
+            Class::new(id, "Box".into()),
             vec![AcornType::Variable(crate::acorn_type::TypeParam {
                 name: "T".into(),
                 typeclass: Some(TypeClass {
@@ -1018,7 +1024,10 @@ mod constant_identity_tests {
         let AcornValue::Constant(mut specialized) = original.clone() else {
             unreachable!()
         };
-        specialized.params = vec![AcornType::Bool, AcornType::Data(10, "Item".into(), vec![])];
+        specialized.params = vec![
+            AcornType::Bool,
+            AcornType::Data(Class::new(10, "Item".into()), vec![]),
+        ];
         let first = AcornValue::Constant(specialized.clone());
         specialized.params.reverse();
         assert_ne!(
@@ -1026,7 +1035,7 @@ mod constant_identity_tests {
             digest(&AcornValue::Constant(specialized.clone()), &resolve)
         );
         specialized.params.clear();
-        specialized.instance_type = AcornType::Data(10, "Item".into(), vec![]);
+        specialized.instance_type = AcornType::Data(Class::new(10, "Item".into()), vec![]);
         assert_ne!(
             digest(&original, &resolve),
             digest(&AcornValue::Constant(specialized), &resolve)

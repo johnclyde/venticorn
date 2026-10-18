@@ -1,4 +1,5 @@
 use venticorn::acorn_type::AcornType;
+use venticorn::acorn_type::Class;
 use venticorn::acorn_value::{AcornValue, FunctionApplication};
 use venticorn::normalizer::{Normalization, Normalizer};
 
@@ -25,7 +26,7 @@ fn direct_normalization_reports_non_boolean_values_without_panicking() {
         2,
         "item".into(),
         vec![],
-        AcornType::Data(2, "Item".into(), vec![]),
+        AcornType::Data(Class::new(2, "Item".into()), vec![]),
     );
     value.validate().unwrap();
     match Normalizer::new().normalize(&value, false) {

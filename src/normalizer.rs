@@ -33,7 +33,7 @@ pub enum Normalization {
 // Check the first-order type boundary before assigning prover type IDs.
 fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
     match acorn_type {
-        AcornType::Data(_, _, actuals) => {
+        AcornType::Data(_, actuals) => {
             for actual in actuals {
                 check_normalized_type(actual)?;
             }
@@ -1010,7 +1010,7 @@ mod ownership_tests {
             name: "T".into(),
             typeclass: Some(class.clone()),
         });
-        let data = AcornType::Data(3, "Item".into(), vec![]);
+        let data = AcornType::Data(crate::acorn_type::Class::new(3, "Item".into()), vec![]);
         let generic = AcornValue::constant(
             2,
             "choose".into(),

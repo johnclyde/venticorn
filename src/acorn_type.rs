@@ -56,7 +56,10 @@ impl PotentialType {
                         )));
                     }
                 }
-                Ok(AcornType::Data(t.class.module_id, t.class.name, params))
+                Ok(AcornType::Data(
+                    Class::new(t.class.module_id, t.class.name),
+                    params,
+                ))
             }
             Self::Unresolved(t) => Err(source.error(&format!(
                 "type {} expects {} parameters, but got {}",
@@ -174,9 +177,13 @@ impl TypeParam {
                 AcornType::Variable(param) | AcornType::Arbitrary(param) => {
                     param.typeclass.as_ref() == Some(class)
                 }
-                AcornType::Data(module, name, actuals) if actuals.is_empty() => {
-                    scope.has_membership(*module, name, class)
-                }
+                AcornType::Data(
+                    Class {
+                        module_id: module,
+                        name,
+                    },
+                    actuals,
+                ) if actuals.is_empty() => scope.has_membership(*module, name, class),
                 _ => false,
             },
         }
@@ -194,7 +201,7 @@ pub enum AcornType {
     Bool,
 
     // Data identity includes its defining module, name, and ordered type arguments.
-    Data(ModuleId, String, Vec<AcornType>),
+    Data(Class, Vec<AcornType>),
 
     // Function types are defined by their inputs and output.
     Function(FunctionType),
@@ -262,7 +269,7 @@ impl AcornType {
     pub fn has_type_variable(&self, name: &str) -> bool {
         match self {
             AcornType::Variable(param) => param.name == name,
-            AcornType::Data(_, _, actuals) => actuals.iter().any(|t| t.has_type_variable(name)),
+            AcornType::Data(_, actuals) => actuals.iter().any(|t| t.has_type_variable(name)),
             AcornType::Function(function) => {
                 function.arg_types.iter().any(|t| t.has_type_variable(name))
                     || function.return_type.has_type_variable(name)
@@ -278,7 +285,7 @@ impl AcornType {
             return true;
         }
         match self {
-            AcornType::Data(_, _, actuals) => actuals.iter().any(|t| t.refers_to(module_id, name)),
+            AcornType::Data(_, actuals) => actuals.iter().any(|t| t.refers_to(module_id, name)),
             AcornType::Function(function_type) => {
                 for arg_type in &function_type.arg_types {
                     if arg_type.refers_to(module_id, name) {
@@ -323,7 +330,7 @@ impl AcornType {
                 function_type.return_type.is_normalized()
             }
             AcornType::Bool => true,
-            AcornType::Data(_, _, actuals) => actuals.iter().all(AcornType::is_normalized),
+            AcornType::Data(_, actuals) => actuals.iter().all(AcornType::is_normalized),
             AcornType::Variable(..) => {
                 // Type variables should be monomorphized before passing them the prover
                 false
@@ -335,7 +342,7 @@ impl AcornType {
 
     pub fn equals_data_type(&self, data_type_module_id: ModuleId, data_type_name: &str) -> bool {
         match self {
-            AcornType::Data(module_id, name, _) => {
+            AcornType::Data(Class { module_id, name }, _) => {
                 *module_id == data_type_module_id && name == data_type_name
             }
             _ => false,
@@ -380,7 +387,13 @@ impl AcornType {
                     .collect(),
                 function_type.return_type.parametrize(module_id, type_names),
             ),
-            AcornType::Data(ns, name, actuals) => {
+            AcornType::Data(
+                Class {
+                    module_id: ns,
+                    name,
+                },
+                actuals,
+            ) => {
                 if *ns == module_id && actuals.is_empty() && type_names.contains(name) {
                     AcornType::Variable(crate::acorn_type::TypeParam {
                         name: name.clone(),
@@ -388,8 +401,7 @@ impl AcornType {
                     })
                 } else {
                     AcornType::Data(
-                        *ns,
-                        name.clone(),
+                        Class::new(*ns, name.clone()),
                         actuals
                             .iter()
                             .map(|t| t.parametrize(module_id, type_names))
@@ -404,9 +416,14 @@ impl AcornType {
     // Replaces type variables in the provided list with the corresponding type.
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> AcornType {
         match self {
-            AcornType::Data(module, name, actuals) => AcornType::Data(
-                *module,
-                name.clone(),
+            AcornType::Data(
+                Class {
+                    module_id: module,
+                    name,
+                },
+                actuals,
+            ) => AcornType::Data(
+                Class::new(*module, name.clone()),
                 actuals.iter().map(|t| t.instantiate(params)).collect(),
             ),
             AcornType::Variable(param) => {
@@ -450,8 +467,20 @@ impl AcornType {
     ) -> bool {
         match (self, specialized) {
             (
-                AcornType::Data(module, name, actuals),
-                AcornType::Data(other_module, other_name, other_actuals),
+                AcornType::Data(
+                    Class {
+                        module_id: module,
+                        name,
+                    },
+                    actuals,
+                ),
+                AcornType::Data(
+                    Class {
+                        module_id: other_module,
+                        name: other_name,
+                    },
+                    other_actuals,
+                ),
             ) => {
                 module == other_module
                     && name == other_name
@@ -497,7 +526,7 @@ impl AcornType {
     pub fn is_generic(&self) -> bool {
         match self {
             AcornType::Bool | AcornType::Empty | AcornType::Arbitrary(..) => false,
-            AcornType::Data(_, _, actuals) => actuals.iter().any(AcornType::is_generic),
+            AcornType::Data(_, actuals) => actuals.iter().any(AcornType::is_generic),
             AcornType::Variable(..) => true,
             AcornType::Function(ftype) => {
                 for arg_type in &ftype.arg_types {
@@ -513,9 +542,14 @@ impl AcornType {
     // Converts all type variables to arbitrary types.
     pub fn to_arbitrary(&self) -> AcornType {
         match self {
-            AcornType::Data(module, name, actuals) => AcornType::Data(
-                *module,
-                name.clone(),
+            AcornType::Data(
+                Class {
+                    module_id: module,
+                    name,
+                },
+                actuals,
+            ) => AcornType::Data(
+                Class::new(*module, name.clone()),
                 actuals.iter().map(AcornType::to_arbitrary).collect(),
             ),
             AcornType::Variable(param) => AcornType::Arbitrary(param.clone()),
@@ -530,9 +564,14 @@ impl AcornType {
     // Converts arbitrary types back to generic parameters.
     pub fn to_generic(&self) -> AcornType {
         match self {
-            AcornType::Data(module, name, actuals) => AcornType::Data(
-                *module,
-                name.clone(),
+            AcornType::Data(
+                Class {
+                    module_id: module,
+                    name,
+                },
+                actuals,
+            ) => AcornType::Data(
+                Class::new(*module, name.clone()),
                 actuals.iter().map(AcornType::to_generic).collect(),
             ),
             AcornType::Arbitrary(param) => AcornType::Variable(param.clone()),
@@ -558,7 +597,7 @@ impl AcornType {
             Self::Variable(param) => substitutions
                 .get(&param.name)
                 .is_none_or(|actual| param.accepts_in_scope(actual, scope)),
-            Self::Data(_, _, actuals) => actuals
+            Self::Data(_, actuals) => actuals
                 .iter()
                 .all(|t| t.accepts_substitution_in_scope(substitutions, scope)),
             Self::Function(function) => {
@@ -577,7 +616,7 @@ impl AcornType {
     pub fn has_typeclass_bound(&self) -> bool {
         match self {
             AcornType::Variable(param) | AcornType::Arbitrary(param) => param.typeclass.is_some(),
-            AcornType::Data(_, _, actuals) => actuals.iter().any(Self::has_typeclass_bound),
+            AcornType::Data(_, actuals) => actuals.iter().any(Self::has_typeclass_bound),
             AcornType::Function(function) => {
                 function.arg_types.iter().any(Self::has_typeclass_bound)
                     || function.return_type.has_typeclass_bound()
@@ -592,7 +631,7 @@ impl AcornType {
             AcornType::Function(f) => {
                 f.arg_types.iter().any(AcornType::has_arbitrary) || f.return_type.has_arbitrary()
             }
-            AcornType::Data(_, _, actuals) => actuals.iter().any(AcornType::has_arbitrary),
+            AcornType::Data(_, actuals) => actuals.iter().any(AcornType::has_arbitrary),
             _ => false,
         }
     }
@@ -613,7 +652,7 @@ impl fmt::Display for AcornType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AcornType::Bool => write!(f, "Bool"),
-            AcornType::Data(_, name, actuals) => {
+            AcornType::Data(Class { module_id: _, name }, actuals) => {
                 write!(f, "{}", name)?;
                 if !actuals.is_empty() {
                     write!(f, "<{}>", AcornType::types_to_str(actuals))?;

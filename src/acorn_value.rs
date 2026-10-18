@@ -1,3 +1,4 @@
+use crate::acorn_type::Class;
 // Modified for Venticorn: preserve Boolean-literal polarity during normalization.
 use std::collections::HashMap;
 use std::fmt;
@@ -2028,7 +2029,13 @@ impl AcornValue {
         match &self {
             AcornValue::Constant(c) => {
                 if let (
-                    AcornType::Data(module, name, _),
+                    AcornType::Data(
+                        Class {
+                            module_id: module,
+                            name,
+                        },
+                        _,
+                    ),
                     LocalConstantName::Attribute(owner, member),
                 ) = (class, &c.name.local_name)
                 {
