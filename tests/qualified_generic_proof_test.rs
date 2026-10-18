@@ -18,7 +18,7 @@ fn prove_goal(expression: &str, expected: Outcome) {
     context.goal.value().validate().unwrap();
     let mut prover = Prover::new(&project, false);
     for fact in node.usable_facts(&project) {
-        fact.value.validate().unwrap();
+        fact.proposition.value.validate().unwrap();
         prover.add_fact(fact);
     }
     prover.set_goal(&context);

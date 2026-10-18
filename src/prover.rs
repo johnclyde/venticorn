@@ -1030,11 +1030,13 @@ mod equality_provenance_tests {
                 source_type: SourceType::Axiom(Some("same".into())),
                 ..Source::mock()
             };
-            prover.add_fact(Fact {
-                value: AcornValue::new_equals(left.clone(), right.clone()),
-                source: source.clone(),
+            prover.add_fact(Fact::new(
+                crate::proposition::Proposition {
+                    value: AcornValue::new_equals(left.clone(), right.clone()),
+                    source: source.clone(),
+                },
                 truthiness,
-            });
+            ));
             assert!(prover.error.is_none(), "{:?}", prover.error);
             let steps = prover.passive_set.iter_steps().collect::<Vec<_>>();
             assert_eq!(steps.len(), 1);
@@ -1073,11 +1075,13 @@ mod normalization_boundary_tests {
                 let mut goal = node.goal_context().unwrap();
                 goal.inconsistency_okay = okay;
                 let mut prover = Prover::with_scope(&project, false, goal.proof_scope.clone());
-                prover.add_fact(Fact {
-                    value: AcornValue::Bool(false),
-                    source: source.clone(),
+                prover.add_fact(Fact::new(
+                    crate::proposition::Proposition {
+                        value: AcornValue::Bool(false),
+                        source: source.clone(),
+                    },
                     truthiness,
-                });
+                ));
                 assert!(prover.has_immediate_outcome());
                 let step = prover.final_step.as_ref().unwrap();
                 assert!(step.clause.is_impossible());
@@ -1133,11 +1137,13 @@ mod normalization_boundary_tests {
                 vec![],
             ),
         );
-        prover.add_fact(Fact {
-            value,
-            source: Source::mock(),
-            truthiness: Truthiness::Factual,
-        });
+        prover.add_fact(Fact::new(
+            crate::proposition::Proposition {
+                value: value,
+                source: Source::mock(),
+            },
+            Truthiness::Factual,
+        ));
         assert!(prover.has_immediate_outcome());
         assert_eq!(
             prover.error.as_deref(),
@@ -1174,10 +1180,10 @@ mod goal_fact_demand_tests {
         let definitions = node
             .usable_facts(&project)
             .into_iter()
-            .filter(|fact| fact.source.name().as_deref() == Some("identity"))
+            .filter(|fact| fact.proposition.source.name().as_deref() == Some("identity"))
             .collect::<Vec<_>>();
         assert_eq!(definitions.len(), 1);
-        assert!(definitions[0].value.is_generic());
+        assert!(definitions[0].proposition.value.is_generic());
         for fact in definitions {
             prover.add_fact(fact);
         }
@@ -1209,21 +1215,28 @@ mod fact_batch_tests {
             for truthiness in [Truthiness::Factual, Truthiness::Counterfactual] {
                 let mut source = Source::mock();
                 source.range.start.line = 17;
-                let impossible = Fact {
-                    value: AcornValue::Bool(false),
-                    source: source.clone(),
+                let impossible = Fact::new(
+                    crate::proposition::Proposition {
+                        value: AcornValue::Bool(false),
+                        source: source.clone(),
+                    },
                     truthiness,
-                };
-                let invalid = Fact {
-                    value: AcornValue::constant(
-                        2,
-                        "item".into(),
-                        vec![],
-                        AcornType::Data(crate::acorn_type::Class::new(2, "Item".into()), vec![]),
-                    ),
-                    source: Source::mock(),
-                    truthiness: Truthiness::Factual,
-                };
+                );
+                let invalid = Fact::new(
+                    crate::proposition::Proposition {
+                        value: AcornValue::constant(
+                            2,
+                            "item".into(),
+                            vec![],
+                            AcornType::Data(
+                                crate::acorn_type::Class::new(2, "Item".into()),
+                                vec![],
+                            ),
+                        ),
+                        source: Source::mock(),
+                    },
+                    Truthiness::Factual,
+                );
                 let facts = if false_first {
                     vec![impossible, invalid]
                 } else {
@@ -1270,10 +1283,10 @@ mod fact_batch_tests {
         let facts = node
             .usable_facts(&project)
             .into_iter()
-            .filter(|fact| fact.source.name().as_deref() == Some("impossible"))
+            .filter(|fact| fact.proposition.source.name().as_deref() == Some("impossible"))
             .collect::<Vec<_>>();
         assert_eq!(facts.len(), 1);
-        assert!(facts[0].value.is_generic());
+        assert!(facts[0].proposition.value.is_generic());
         let mut prover = Prover::new(&project, false);
         prover.add_fact(facts[0].clone());
         assert!(!prover.has_immediate_outcome());
@@ -1286,7 +1299,7 @@ mod fact_batch_tests {
         let Rule::Assumption(info) = &step.rule else {
             panic!("expected assumption")
         };
-        assert_ne!(info.source, facts[0].source);
+        assert_ne!(info.source, facts[0].proposition.source);
         assert_eq!(info.source.range, goal.goal.range());
         assert_eq!(info.defined_atom, None);
         assert_eq!(prover.verification_search(), Outcome::Success);

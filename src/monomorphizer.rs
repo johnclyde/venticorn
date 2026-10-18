@@ -99,15 +99,16 @@ impl Monomorphizer {
     // Adds a fact that could be either generic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
         // Directly admitted facts can expose concrete instances needed by definitions.
-        self.add_monomorphs(&fact.value);
+        self.add_monomorphs(&fact.proposition.value);
 
         let i = self.fact_info.len();
         let mut instances = vec![];
-        fact.value
+        fact.proposition
+            .value
             .find_constants(&|c| !c.params.is_empty() && c.is_generic(), &mut instances);
         if instances.is_empty() {
             // A generic fact without a constant demand cannot yet be specialized safely.
-            if fact.value.is_generic() {
+            if fact.proposition.value.is_generic() {
                 return;
             }
 
@@ -202,6 +203,7 @@ impl Monomorphizer {
         // The selected constant may not expose every bound elsewhere in the same fact.
         if !self.fact_info[fact_id]
             .fact
+            .proposition
             .value
             .accepts_substitution_in_scope(&fact_params, &self.scope)
         {
@@ -220,7 +222,7 @@ impl Monomorphizer {
         let monomorphic_fact = self.fact_info[fact_id]
             .fact
             .instantiate(&fact_params.params);
-        if monomorphic_fact.value.is_generic() {
+        if monomorphic_fact.proposition.value.is_generic() {
             // Matching one constant may leave other type variables in the fact unresolved.
             // Do not emit or remember an incomplete substitution.
             return;
@@ -228,7 +230,7 @@ impl Monomorphizer {
         self.fact_info[fact_id].instantiations.push(fact_params);
         // Definitions can introduce concrete generic calls needed by the current proof.
         // Record this substitution before following those calls to break repeated demand.
-        self.add_monomorphs(&monomorphic_fact.value);
+        self.add_monomorphs(&monomorphic_fact.proposition.value);
         self.output_facts.push(monomorphic_fact);
     }
 

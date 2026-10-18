@@ -58,11 +58,14 @@ fn declaration_roles_and_lexical_nesting_define_source_importability() {
         .unwrap();
     let fact = Fact::new(definition.claim.clone(), Truthiness::Hypothetical);
     let specialized = fact.instantiate(&[("T".into(), AcornType::Bool)]);
-    assert!(!specialized.source.importable);
-    assert_eq!(specialized.source.range, fact.source.range);
+    assert!(!specialized.proposition.source.importable);
     assert_eq!(
-        specialized.source.qualified_fact_name(),
-        fact.source.qualified_fact_name()
+        specialized.proposition.source.range,
+        fact.proposition.source.range
+    );
+    assert_eq!(
+        specialized.proposition.source.qualified_fact_name(),
+        fact.proposition.source.qualified_fact_name()
     );
 }
 

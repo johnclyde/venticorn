@@ -122,14 +122,14 @@ fn bridge_facts_are_after_the_obligation_and_absent_from_its_own_proof() {
         .unwrap()
         .proof_scope
         .has_membership(module, "State", class));
-    assert!(!obligation.usable_facts(&project).iter().any(|fact| matches!(&fact.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")));
+    assert!(!obligation.usable_facts(&project).iter().any(|fact| matches!(&fact.proposition.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")));
     let after = env.get_node_by_name("after");
     assert!(after
         .goal_context()
         .unwrap()
         .proof_scope
         .has_membership(module, "State", class));
-    assert!(after.usable_facts(&project).iter().any(|fact| matches!(&fact.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")));
+    assert!(after.usable_facts(&project).iter().any(|fact| matches!(&fact.proposition.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")));
     assert_eq!(env.iter_goals().count(), 2);
     assert_success(source);
 
@@ -155,7 +155,7 @@ fn earlier_goals_cannot_borrow_later_membership_or_bridges() {
     let module = project.expect_ok("main");
     let env = project.get_env_by_id(module).unwrap();
     let before = env.get_node_by_name("before");
-    assert!(!before.usable_facts(&project).iter().any(|fact| matches!(&fact.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")));
+    assert!(!before.usable_facts(&project).iter().any(|fact| matches!(&fact.proposition.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")));
     for shallow in [false, true] {
         let results = outcomes(source, shallow);
         assert_eq!(results.len(), 2);

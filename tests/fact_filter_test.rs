@@ -24,16 +24,16 @@ fn export_filter_preserves_shared_datatype_principles_and_anonymous_facts() {
     assert_eq!(
         selected
             .iter()
-            .filter(|fact| fact.source.name().as_deref() == Some("Choice.three"))
+            .filter(|fact| fact.proposition.source.name().as_deref() == Some("Choice.three"))
             .count(),
         2
     );
     assert!(selected
         .iter()
-        .any(|fact| fact.source.name().as_deref() == Some("6")));
+        .any(|fact| fact.proposition.source.name().as_deref() == Some("6")));
     assert!(selected
         .iter()
-        .any(|fact| fact.source.name().as_deref() == Some("identity")));
+        .any(|fact| fact.proposition.source.name().as_deref() == Some("identity")));
 }
 
 fn project() -> (Project, u16) {
@@ -66,9 +66,12 @@ fn imported_names_are_qualified_by_defining_module() {
     filter.insert(ModuleRef::Name("left".into()), names(&["same"]));
     let selected = project.imported_facts_filtered(id, Some(&filter));
     assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].source.module, left_id);
-    assert_ne!(selected[0].source.module, right_id);
-    assert_eq!(selected[0].source.name().as_deref(), Some("same"));
+    assert_eq!(selected[0].proposition.source.module, left_id);
+    assert_ne!(selected[0].proposition.source.module, right_id);
+    assert_eq!(
+        selected[0].proposition.source.name().as_deref(),
+        Some("same")
+    );
     assert!(project
         .imported_facts_filtered(id, Some(&ImportFilter::new()))
         .is_empty());
@@ -147,8 +150,11 @@ fn reexports_select_defining_sources_instead_of_local_alias_spellings() {
     filter.insert(ModuleRef::Name("original".into()), names(&["identity"]));
     let selected = project.imported_facts_filtered(id, Some(&filter));
     assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].source.module, original);
-    assert_eq!(selected[0].source.name().as_deref(), Some("identity"));
+    assert_eq!(selected[0].proposition.source.module, original);
+    assert_eq!(
+        selected[0].proposition.source.name().as_deref(),
+        Some("identity")
+    );
     let node = project.get_env_by_id(id).unwrap().get_node_by_name("goal");
     let mut prover = Prover::new(&project, false);
     for fact in node.usable_facts_filtered(&project, Some(&filter)) {
@@ -171,7 +177,7 @@ fn reexports_select_defining_sources_instead_of_local_alias_spellings() {
         assert_eq!(
             facts
                 .iter()
-                .any(|fact| fact.source.name().as_deref() == Some("alias")),
+                .any(|fact| fact.proposition.source.name().as_deref() == Some("alias")),
             include_alias
         );
         for fact in facts {

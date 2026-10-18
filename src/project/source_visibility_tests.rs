@@ -32,8 +32,11 @@ fn normal_and_guided_imports_exclude_block_claims_but_keep_anonymous_declaration
             && !node.claim.source.importable));
     let exported = dependency.exported_facts();
     assert_eq!(exported.len(), 1);
-    assert_eq!(exported[0].source.fact_name().as_deref(), Some("3"));
-    assert!(exported[0].source.importable);
+    assert_eq!(
+        exported[0].proposition.source.fact_name().as_deref(),
+        Some("3")
+    );
+    assert!(exported[0].proposition.source.importable);
     assert!(dependency
         .exported_facts_filtered(Some(&HashSet::from(["2".into()])))
         .is_empty());
@@ -110,13 +113,19 @@ fn chosen_witness_exports_its_condition_after_a_real_existence_obligation() {
     assert!(!obligations[0].current().claim.source.importable);
     let exported = owner.exported_facts();
     assert_eq!(exported.len(), 1);
-    assert!(exported[0].source.importable);
-    assert_eq!(exported[0].source.fact_name().as_deref(), Some("3"));
+    assert!(exported[0].proposition.source.importable);
     assert_eq!(
-        exported[0].source.range,
+        exported[0].proposition.source.fact_name().as_deref(),
+        Some("3")
+    );
+    assert_eq!(
+        exported[0].proposition.source.range,
         obligations[0].current().claim.source.range
     );
-    assert_ne!(exported[0].value, obligations[0].current().claim.value);
+    assert_ne!(
+        exported[0].proposition.value,
+        obligations[0].current().claim.value
+    );
     assert_eq!(
         owner
             .exported_facts_filtered(Some(&HashSet::from(["3".into()])))
