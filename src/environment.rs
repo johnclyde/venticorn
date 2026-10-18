@@ -1451,7 +1451,7 @@ impl Environment {
             if !names.insert(constant_name.clone()) {
                 return Err(name.error("typeclass member already defined in this scope"));
             }
-            scope.check_constant_name_available(name, &constant_name)?;
+            scope.check_local_name_available(name, &constant_name)?;
             let member_type = scope
                 .evaluate_type(project, expression)?
                 .parametrize(self.module_id, &params);
@@ -1631,7 +1631,7 @@ impl Environment {
             }
             staged
                 .bindings
-                .check_constant_name_available(&condition.name, &constant_name)?;
+                .check_local_name_available(&condition.name, &constant_name)?;
             let full_name = constant_name.to_string();
             let range = Range {
                 start: condition.name.start_pos(),
