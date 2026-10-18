@@ -48,6 +48,9 @@ pub struct Source {
     // Whether this source may be exported or retained as reusable premise advice.
     // Node admission also intersects this with its actual top-level environment.
     pub importable: bool,
+
+    // Lexical declaration depth. Contextual proof roles are independent metadata.
+    pub depth: u32,
 }
 
 impl Source {
@@ -57,6 +60,7 @@ impl Source {
             range: Range::default(),
             source_type: SourceType::Anonymous,
             importable: true,
+            depth: 0,
         }
     }
 
@@ -136,6 +140,12 @@ pub struct Proposition {
 }
 
 impl Proposition {
+    // Set the declaration location without changing exportability or source identity.
+    pub fn with_depth(mut self, depth: u32) -> Self {
+        self.source.depth = depth;
+        self
+    }
+
     pub fn theorem(
         axiomatic: bool,
         value: AcornValue,
@@ -155,6 +165,7 @@ impl Proposition {
                 range,
                 source_type,
                 importable: true,
+                depth: 0,
             },
         }
     }
@@ -167,6 +178,7 @@ impl Proposition {
                 range,
                 source_type: SourceType::Anonymous,
                 importable: false,
+                depth: 0,
             },
         }
     }
@@ -186,6 +198,7 @@ impl Proposition {
                 range,
                 source_type: SourceType::Instance(name, class),
                 importable: true,
+                depth: 0,
             },
         }
     }
@@ -225,6 +238,7 @@ impl Proposition {
                 range,
                 source_type: SourceType::TypeDefinition(name, member),
                 importable: true,
+                depth: 0,
             },
         }
     }
@@ -256,6 +270,7 @@ impl Proposition {
                 range,
                 source_type: SourceType::ConstantDefinition(constant, name),
                 importable: true,
+                depth: 0,
             },
         }
     }
@@ -268,6 +283,7 @@ impl Proposition {
                 range,
                 source_type: SourceType::Premise,
                 importable: false,
+                depth: 0,
             },
         }
     }
@@ -280,6 +296,7 @@ impl Proposition {
                 range: self.source.range,
                 source_type: SourceType::NegatedGoal,
                 importable: false,
+                depth: self.source.depth,
             },
         }
     }
