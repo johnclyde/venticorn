@@ -14,6 +14,7 @@ use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::named_entity::NamedEntity;
 use crate::project::Project;
 use crate::proof_scope::ProofScope;
+use crate::proposition::Proposition;
 use crate::termination_checker::TerminationChecker;
 use crate::token::{self, Token, TokenIter, TokenType};
 
@@ -2972,6 +2973,38 @@ impl BindingMap {
             }
         }
         Ok(())
+    }
+
+    // Expand theorem references while preserving source and contextual role.
+    pub fn expand_theorems(&self, project: &Project, proposition: Proposition) -> Proposition {
+        // Make sure we aren't adding an invalid claim.
+        proposition
+            .value
+            .validate()
+            .unwrap_or_else(|e| panic!("invalid claim: {} ({})", proposition.value, e));
+
+        let value = proposition.value.replace_constants(0, &|c, depth| {
+            let bindings = if self.module == c.name.module_id {
+                self
+            } else {
+                &project
+                    .get_env_by_id(c.name.module_id)
+                    .expect("missing module during add_proposition")
+                    .bindings
+            };
+            if !bindings.is_theorem_named(&c.name.local_name) {
+                return None;
+            }
+            let (definition, params) =
+                bindings.get_definition_and_params_named(&c.name.local_name)?;
+            let pairs: Vec<_> = params
+                .iter()
+                .map(|param| param.name.clone())
+                .zip(c.type_arguments().cloned())
+                .collect();
+            Some(definition.instantiate(&pairs).insert_stack(0, depth))
+        });
+        proposition.with_value(value)
     }
 
     ////////////////////////////////////////////////////////////////////////////////

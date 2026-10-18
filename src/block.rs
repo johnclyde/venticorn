@@ -492,38 +492,10 @@ impl Node {
         proposition: Proposition,
         block: Option<Block>,
     ) -> Self {
-        // Make sure we aren't adding an invalid claim.
-        proposition
-            .value
-            .validate()
-            .unwrap_or_else(|e| panic!("invalid claim: {} ({})", proposition.value, e));
-
         if structural {
             assert!(block.is_none());
         }
-
-        let value = proposition.value.replace_constants(0, &|c, depth| {
-            let bindings = if env.module_id == c.name.module_id {
-                &env.bindings
-            } else {
-                &project
-                    .get_env_by_id(c.name.module_id)
-                    .expect("missing module during add_proposition")
-                    .bindings
-            };
-            if !bindings.is_theorem_named(&c.name.local_name) {
-                return None;
-            }
-            let (definition, params) =
-                bindings.get_definition_and_params_named(&c.name.local_name)?;
-            let pairs: Vec<_> = params
-                .iter()
-                .map(|param| param.name.clone())
-                .zip(c.type_arguments().cloned())
-                .collect();
-            Some(definition.instantiate(&pairs).insert_stack(0, depth))
-        });
-        let mut claim = proposition.with_value(value);
+        let mut claim = env.bindings.expand_theorems(project, proposition);
         // A nested declaration stays local even when it has a reusable source name.
         claim.source.importable &= env.top_level;
         claim.source.depth = env.depth;
