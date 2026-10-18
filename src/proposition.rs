@@ -13,19 +13,19 @@ use std::collections::{HashMap, HashSet};
 // Compatibility exports for existing source metadata callers.
 pub use crate::source::{Source, SourceType};
 
-// A value along with information on where to find it in the source.
+/// A value along with information on where to find it in the source.
 #[derive(Debug, Clone)]
 pub struct Proposition {
-    // A boolean value. The essence of the proposition is "value is true".
+    /// A boolean value. The essence of the proposition is "value is true".
     pub value: AcornValue,
 
-    // Complete ordered formals, including parameters absent from the value.
+    /// Complete ordered formals, including parameters absent from the value.
     pub params: Vec<TypeParam>,
 
-    // Where this proposition came from.
+    /// Where this proposition came from.
     pub source: Source,
 
-    // An explicit proof-context role never changes the declaration source.
+    /// An explicit proof-context role never changes the declaration source.
     contextual_truthiness: Option<Truthiness>,
 }
 
@@ -36,7 +36,7 @@ impl fmt::Display for Proposition {
 }
 
 impl Proposition {
-    // Construct a proposition with its source's default lexical role.
+    /// Construct a proposition with its source's default lexical role.
     pub fn new(value: AcornValue, source: Source) -> Self {
         Self::generic(value, vec![], source)
     }
@@ -59,13 +59,13 @@ impl Proposition {
                 SourceType::ConstantDefinition(value, _) if value.is_generic())
     }
 
-    // Supply a role for this proof context without rewriting source provenance.
+    /// Supply a role for this proof context without rewriting source provenance.
     pub fn with_truthiness(mut self, truthiness: Truthiness) -> Self {
         self.contextual_truthiness = Some(truthiness);
         self
     }
 
-    // Effective role in this proof context, falling back to the declaration scope.
+    /// Effective role in this proof context, falling back to the declaration scope.
     pub fn truthiness(&self) -> Truthiness {
         self.contextual_truthiness.unwrap_or_else(|| {
             if matches!(self.source.source_type, SourceType::NegatedGoal) {
@@ -78,7 +78,7 @@ impl Proposition {
         })
     }
 
-    // Set the declaration location without changing exportability or source identity.
+    /// Set the declaration location without changing exportability or source identity.
     pub fn with_depth(mut self, depth: u32) -> Self {
         self.source.depth = depth;
         self
@@ -98,7 +98,8 @@ impl Proposition {
         Proposition::new(value, Source::anonymous(module, range, 0))
     }
 
-    // The relationship marker is separate from the block that proves its laws.
+    /// Compatibility Boolean marker. Parsed instance declarations use a sourced
+    /// relation fact and retain their separate law obligations.
     pub fn instance(
         value: Option<AcornValue>,
         module: ModuleId,
@@ -112,7 +113,8 @@ impl Proposition {
         )
     }
 
-    // The constraint block proves inhabitation; its exported claim remains vacuous.
+    /// Compatibility constructor for a vacuous legacy marker. Actual constraint
+    /// blocks retain their existence goals without exporting this proposition.
     pub fn inhabited(module: ModuleId, type_name: &str, range: Range) -> Proposition {
         Proposition::new(
             AcornValue::Bool(true),
@@ -120,7 +122,7 @@ impl Proposition {
         )
     }
 
-    // Compatibility constructor for callers without a more specific member name.
+    /// Compatibility constructor for callers without a more specific member name.
     pub fn type_definition(
         value: AcornValue,
         module: ModuleId,
@@ -179,7 +181,7 @@ impl Proposition {
         proposition.with_truthiness(Truthiness::Counterfactual)
     }
 
-    // Just changes the value while keeping the other stuff intact
+    /// Just changes the value while keeping the other stuff intact
     pub fn with_value(&self, value: AcornValue) -> Proposition {
         Self {
             value,
@@ -189,8 +191,8 @@ impl Proposition {
         }
     }
 
-    // Theorems and axioms can have names
-    // Compatibility name for theorem/axiom declarations, distinct from Source::name.
+    /// Theorems and axioms can have names
+    /// Compatibility name for theorem/axiom declarations, distinct from Source::name.
     pub fn name(&self) -> Option<&str> {
         self.theorem_name()
     }
