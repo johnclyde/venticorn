@@ -72,34 +72,11 @@ impl Proposition {
         range: Range,
         name: Option<String>,
     ) -> Proposition {
-        let source_type = if axiomatic {
-            SourceType::Axiom(name)
-        } else {
-            SourceType::Theorem(name)
-        };
-        Proposition::new(
-            value,
-            Source {
-                module,
-                range,
-                source_type,
-                importable: true,
-                depth: 0,
-            },
-        )
+        Proposition::new(value, Source::theorem(axiomatic, module, range, 0, name))
     }
 
     pub fn anonymous(value: AcornValue, module: ModuleId, range: Range) -> Proposition {
-        Proposition::new(
-            value,
-            Source {
-                module,
-                range,
-                source_type: SourceType::Anonymous,
-                importable: false,
-                depth: 0,
-            },
-        )
+        Proposition::new(value, Source::anonymous(module, range, 0))
     }
 
     // The relationship marker is separate from the block that proves its laws.
@@ -112,24 +89,15 @@ impl Proposition {
     ) -> Proposition {
         Proposition::new(
             value.unwrap_or(AcornValue::Bool(true)),
-            Source {
-                module,
-                range,
-                source_type: SourceType::Instance(name, class),
-                importable: true,
-                depth: 0,
-            },
+            Source::instance(module, range, 0, name, class),
         )
     }
 
     // The constraint block proves inhabitation; its exported claim remains vacuous.
     pub fn inhabited(module: ModuleId, type_name: &str, range: Range) -> Proposition {
-        Self::type_member_definition(
+        Proposition::new(
             AcornValue::Bool(true),
-            module,
-            range,
-            type_name.to_string(),
-            "constraint".into(),
+            Source::inhabited(module, type_name, range, 0),
         )
     }
 
@@ -152,13 +120,7 @@ impl Proposition {
     ) -> Proposition {
         Proposition::new(
             value,
-            Source {
-                module,
-                range,
-                source_type: SourceType::TypeDefinition(name, member),
-                importable: true,
-                depth: 0,
-            },
+            Source::type_definition(module, range, 0, name, member),
         )
     }
 
@@ -184,39 +146,18 @@ impl Proposition {
     ) -> Proposition {
         Proposition::new(
             value,
-            Source {
-                module,
-                range,
-                source_type: SourceType::ConstantDefinition(constant, name),
-                importable: true,
-                depth: 0,
-            },
+            Source::constant_definition(module, range, 0, constant, name),
         )
     }
 
     pub fn premise(value: AcornValue, module: ModuleId, range: Range) -> Proposition {
-        Proposition::new(
-            value,
-            Source {
-                module,
-                range,
-                source_type: SourceType::Premise,
-                importable: false,
-                depth: 0,
-            },
-        )
+        Proposition::new(value, Source::premise(module, range, 0))
     }
 
     pub fn with_negated_goal(&self, value: AcornValue) -> Proposition {
         Proposition::new(
             value,
-            Source {
-                module: self.source.module,
-                range: self.source.range,
-                source_type: SourceType::NegatedGoal,
-                importable: false,
-                depth: self.source.depth,
-            },
+            Source::negated_goal(self.source.module, self.source.range, self.source.depth),
         )
         .with_truthiness(Truthiness::Counterfactual)
     }

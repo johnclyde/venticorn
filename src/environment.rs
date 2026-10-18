@@ -17,7 +17,7 @@ use crate::names::{DefinedName, GlobalName, LocalName};
 use crate::project::{LoadError, Project};
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
-use crate::source::{Source, SourceType};
+use crate::source::Source;
 use crate::statement::{
     Body, ClassStatement, DefineStatement, LetStatement, Statement, StatementInfo,
     TypeclassStatement, VariableSatisfyStatement,
@@ -2009,13 +2009,13 @@ impl Environment {
         let relation = Fact::Instance(
             target_class.clone(),
             class.clone(),
-            Source {
-                module: self.module_id,
-                range: statement.range(),
-                source_type: SourceType::Instance(name.to_string(), class.name.clone()),
-                importable: true,
-                depth: self.depth,
-            },
+            Source::instance(
+                self.module_id,
+                statement.range(),
+                self.depth,
+                name,
+                &class.name,
+            ),
         );
         if !conditions.is_empty() || instance.proof.is_some() {
             let goal = if conditions.is_empty() {
