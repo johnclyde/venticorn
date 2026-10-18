@@ -5,6 +5,8 @@ use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::constant_name::GlobalConstantName;
 use crate::fact::Fact;
+use crate::proof_step::Truthiness;
+use crate::proposition::Proposition;
 
 // A sorted substitution of type variables belonging to one fact.
 #[derive(PartialEq, Eq, Clone)]
@@ -76,7 +78,7 @@ pub struct Monomorphizer {
 
     // Facts that are fully monomorphized.
     // The Monomorphizer only writes to this, never reads.
-    output_facts: Vec<Fact>,
+    output: Vec<(Proposition, Truthiness)>,
 
     // Facts, goals and definitions request concrete instances in declaration order.
     constant_info: HashMap<GlobalConstantName, GenericConstantInfo>,
@@ -91,7 +93,7 @@ impl Monomorphizer {
         Monomorphizer {
             scope,
             fact_info: vec![],
-            output_facts: vec![],
+            output: vec![],
             constant_info: HashMap::new(),
         }
     }
@@ -113,7 +115,7 @@ impl Monomorphizer {
             }
 
             // There's nothing to monomorphize here. Just output it.
-            self.output_facts.push(fact);
+            self.output.push((fact.proposition, fact.truthiness));
             return;
         }
 
@@ -146,8 +148,16 @@ impl Monomorphizer {
     }
 
     // Extract monomorphic facts from the prover.
+    pub fn take_output(&mut self) -> Vec<(Proposition, Truthiness)> {
+        std::mem::take(&mut self.output)
+    }
+
+    // Compatibility collection; each proposition and role move without cloning.
     pub fn take_facts(&mut self) -> Vec<Fact> {
-        std::mem::take(&mut self.output_facts)
+        self.take_output()
+            .into_iter()
+            .map(|(proposition, truthiness)| Fact::new(proposition, truthiness))
+            .collect()
     }
 
     // Monomorphizes a generic constant.
@@ -231,7 +241,8 @@ impl Monomorphizer {
         // Definitions can introduce concrete generic calls needed by the current proof.
         // Record this substitution before following those calls to break repeated demand.
         self.add_monomorphs(&monomorphic_fact.proposition.value);
-        self.output_facts.push(monomorphic_fact);
+        self.output
+            .push((monomorphic_fact.proposition, monomorphic_fact.truthiness));
     }
 
     // Make sure that we are generating any monomorphizations that are used in this value.

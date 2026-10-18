@@ -13,7 +13,7 @@ use crate::module::SKOLEM;
 use crate::monomorphizer::Monomorphizer;
 use crate::proof_scope::ProofScope;
 use crate::proof_step::{ProofStep, Truthiness};
-use crate::proposition::SourceType;
+use crate::proposition::{Proposition, SourceType};
 use crate::term::{Term, TypeId};
 use crate::type_map::TypeMap;
 
@@ -142,9 +142,9 @@ impl Normalizer {
     }
 
     // Return newly usable monomorphic facts without exposing mutable scope authority.
-    pub(crate) fn monomorphize_fact(&mut self, fact: Fact) -> Vec<Fact> {
+    pub(crate) fn monomorphize_fact(&mut self, fact: Fact) -> Vec<(Proposition, Truthiness)> {
         self.monomorphizer.add_fact(fact);
-        self.monomorphizer.take_facts()
+        self.monomorphizer.take_output()
     }
 
     pub(crate) fn monomorphize_for_value(&mut self, value: &AcornValue) -> Vec<Fact> {
@@ -482,21 +482,35 @@ impl Normalizer {
 
     // Monomorphization uses the immutable authority captured by this normalizer.
     pub fn normalize_fact(&mut self, fact: Fact, steps: &mut Vec<ProofStep>) -> Result<()> {
-        let facts = self.monomorphize_fact(fact);
-        self.append_facts(facts, steps)
+        let propositions = self.monomorphize_fact(fact);
+        self.append_propositions(propositions, steps)
+    }
+
+    fn append_propositions(
+        &mut self,
+        propositions: impl IntoIterator<Item = (Proposition, Truthiness)>,
+        steps: &mut Vec<ProofStep>,
+    ) -> Result<()> {
+        for (proposition, truthiness) in propositions {
+            self.normalize_monomorphic_steps(proposition, truthiness, steps)?;
+        }
+        Ok(())
     }
 
     // Keep the successfully converted prefix, stopping at the first error.
     // Each individual fact still appends atomically after its conversion succeeds.
+    #[cfg(test)]
     pub(crate) fn append_facts(
         &mut self,
         facts: impl IntoIterator<Item = Fact>,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        for fact in facts {
-            self.normalize_monomorphic_steps(fact, steps)?;
-        }
-        Ok(())
+        self.append_propositions(
+            facts
+                .into_iter()
+                .map(|fact| (fact.proposition, fact.truthiness)),
+            steps,
+        )
     }
 
     // Compatibility wrapper for callers requesting a fresh collection.
@@ -513,22 +527,23 @@ impl Normalizer {
         fact: Fact,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        self.normalize_monomorphic_steps(fact, steps)
+        self.normalize_monomorphic_steps(fact.proposition, fact.truthiness, steps)
     }
 
     fn normalize_monomorphic_steps(
         &mut self,
-        fact: Fact,
+        proposition: Proposition,
+        truthiness: Truthiness,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        let local = fact.truthiness != Truthiness::Factual;
-        let defined = match &fact.proposition.source.source_type {
+        let local = truthiness != Truthiness::Factual;
+        let defined = match &proposition.source.source_type {
             SourceType::ConstantDefinition(value, _) => {
                 Some(self.term_from_value(value, local)?.get_head().clone())
             }
             _ => None,
         };
-        let clauses = self.normalize_value(&fact.proposition.value, local)?;
+        let clauses = self.normalize_value(&proposition.value, local)?;
         steps.extend(clauses.into_iter().map(|clause| {
             // A false definition supplies no defined-atom shortcut, as before.
             let defined = if clause.is_impossible() {
@@ -536,7 +551,7 @@ impl Normalizer {
             } else {
                 defined
             };
-            ProofStep::assumption(clause, fact.truthiness, &fact.proposition.source, defined)
+            ProofStep::assumption(clause, truthiness, &proposition.source, defined)
         }));
         Ok(())
     }

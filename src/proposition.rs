@@ -1,6 +1,7 @@
 // Modified for Venticorn: theorem and axiom names are optional source metadata.
 use tower_lsp::lsp_types::Range;
 
+use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::module::ModuleId;
 
@@ -302,5 +303,18 @@ impl Proposition {
             SourceType::Axiom(name) | SourceType::Theorem(name) => name.as_deref(),
             _ => None,
         }
+    }
+
+    // Substitute provided type variables while preserving unresolved formals.
+    pub fn instantiate(&self, params: &[(String, AcornType)]) -> Proposition {
+        let value = self.value.instantiate(params);
+        let source = match &self.source.source_type {
+            SourceType::ConstantDefinition(v, name) => Source {
+                source_type: SourceType::ConstantDefinition(v.instantiate(params), name.clone()),
+                ..self.source.clone()
+            },
+            _ => self.source.clone(),
+        };
+        Proposition { value, source }
     }
 }
