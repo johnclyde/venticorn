@@ -1003,11 +1003,20 @@ impl BindingMap {
             );
         }
         self.record_constant_name(&local_name, name);
-        let value = PotentialValue::constant_named(
-            GlobalName::new(self.module, local_name.clone()),
-            constant_type,
-            params,
-        );
+        let global_name = GlobalName::new(self.module, local_name.clone());
+        let value = if params.is_empty() {
+            PotentialValue::Resolved(AcornValue::constant_named(
+                global_name,
+                vec![],
+                constant_type,
+            ))
+        } else {
+            PotentialValue::Unresolved(UnresolvedConstant {
+                name: global_name,
+                params,
+                generic_type: constant_type,
+            })
+        };
 
         let info = ConstantInfo {
             value,
