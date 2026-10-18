@@ -813,6 +813,7 @@ impl BindingMap {
     }
 
     /// Look up a constant without treating a pending generic declaration as a proof value.
+    /// The result retains either a resolved value or the complete pending declaration.
     pub fn get_constant_value(&self, name: &str) -> Option<PotentialValue> {
         self.stored_value(self.stored_constant_name(name)?).cloned()
     }

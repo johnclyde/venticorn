@@ -183,7 +183,8 @@ impl Environment {
         self.push_node(node)
     }
 
-    // Insert a node after its construction and admission checks are complete.
+    /// Insert a node after its construction and admission checks are complete.
+    /// Returns its index in the environment.
     pub fn push_node(&mut self, node: Node) -> usize {
         self.nodes.push(node);
         self.nodes.len() - 1
@@ -232,6 +233,7 @@ impl Environment {
             .expect("a stored definition must have a declaration value")
             .to_generic_value();
 
+        // Expand function definitions into equality for every argument.
         let claim = if let AcornValue::Lambda(acorn_types, return_value) = definition {
             let args: Vec<_> = acorn_types
                 .iter()
