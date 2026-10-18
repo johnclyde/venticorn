@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 // Modified for Venticorn: validate match expressions before proof normalization.
 use venticorn::environment::Environment;
 use venticorn::project::Project;
@@ -116,7 +117,7 @@ fn match_type_errors_restore_case_and_function_bindings() {
 fn malformed_match_values_report_validation_errors() {
     use venticorn::acorn_type::AcornType;
     use venticorn::acorn_value::AcornValue;
-    let item_type = AcornType::Data(0, "Item".to_string(), vec![]);
+    let item_type = AcornType::Data(Class::new(0, "Item".to_string()), vec![]);
     let item = AcornValue::new_constant(0, "Item.empty".to_string(), vec![], item_type);
     let empty = AcornValue::Match(Box::new(item.clone()), vec![]);
     assert!(empty.validate().unwrap_err().contains("at least one case"));

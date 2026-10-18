@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 // Modified for Venticorn: preserve scope and declaration order during constant replacement.
 use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
@@ -6,7 +7,7 @@ use venticorn::prover::{Outcome, Prover};
 
 #[test]
 fn recursive_replacement_shifts_closed_definitions_beneath_mixed_binders() {
-    let item = AcornType::Data(10, "Item".into(), vec![]);
+    let item = AcornType::Data(Class::new(10, "Item".into()), vec![]);
     let function_type = AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool);
     let inner = AcornValue::new_constant(10, "inner".into(), vec![], function_type.clone());
     let outer = AcornValue::new_constant(10, "outer".into(), vec![], function_type);

@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 use venticorn::acorn_type::{AcornType, Typeclass};
 use venticorn::binding_map::BindingMap;
 use venticorn::constant_name::LocalConstantName;
@@ -41,7 +42,10 @@ fn structured_availability_preserves_all_namespace_collisions() {
     );
     assert_eq!(
         bindings.get_type_for_name("Data"),
-        Some(&AcornType::Data(FIRST_NORMAL, "Data".into(), vec![]))
+        Some(&AcornType::Data(
+            Class::new(FIRST_NORMAL, "Data".into()),
+            vec![]
+        ))
     );
     assert!(bindings.get_type_for_typename("Data").is_some());
 }

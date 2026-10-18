@@ -1010,7 +1010,10 @@ mod equality_provenance_tests {
 
     #[test]
     fn equality_assumptions_keep_their_source_truthiness_and_distinct_atoms() {
-        let typ = AcornType::Data(FIRST_NORMAL, "Value".into(), vec![]);
+        let typ = AcornType::Data(
+            crate::acorn_type::Class::new(FIRST_NORMAL, "Value".into()),
+            vec![],
+        );
         let left = AcornValue::new_constant(FIRST_NORMAL, "left".into(), vec![], typ.clone());
         let right = AcornValue::new_constant(FIRST_NORMAL, "right".into(), vec![], typ);
         for truthiness in [
@@ -1125,7 +1128,10 @@ mod normalization_boundary_tests {
             2,
             "item".into(),
             vec![],
-            crate::acorn_type::AcornType::Data(2, "Item".into(), vec![]),
+            crate::acorn_type::AcornType::Data(
+                crate::acorn_type::Class::new(2, "Item".into()),
+                vec![],
+            ),
         );
         prover.add_fact(Fact {
             value,
@@ -1213,7 +1219,7 @@ mod fact_batch_tests {
                         2,
                         "item".into(),
                         vec![],
-                        AcornType::Data(2, "Item".into(), vec![]),
+                        AcornType::Data(crate::acorn_type::Class::new(2, "Item".into()), vec![]),
                     ),
                     source: Source::mock(),
                     truthiness: Truthiness::Factual,

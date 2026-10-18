@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 // Modified for Venticorn: independent finite-model checks for match lowering.
 use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::{AcornValue, BinaryOp};
@@ -12,7 +13,7 @@ enum Value {
 }
 
 fn item_type() -> AcornType {
-    AcornType::Data(0, "Item".to_string(), vec![])
+    AcornType::Data(Class::new(0, "Item".to_string()), vec![])
 }
 
 fn domain(t: &AcornType) -> Vec<Value> {

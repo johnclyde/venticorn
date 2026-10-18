@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 // Modified for Venticorn: validate application types before admitting logical facts.
 use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
@@ -13,7 +14,7 @@ fn identity(t: AcornType) -> AcornValue {
 
 #[test]
 fn malformed_applications_fail_validation_without_panicking() {
-    let nat = AcornType::Data(10, "Nat".into(), vec![]);
+    let nat = AcornType::Data(Class::new(10, "Nat".into()), vec![]);
     for value in [
         AcornValue::new_apply(AcornValue::Bool(true), vec![AcornValue::Bool(false)]),
         AcornValue::new_apply(identity(nat), vec![AcornValue::Bool(false)]),
@@ -37,7 +38,7 @@ fn malformed_applications_fail_validation_without_panicking() {
 
 #[test]
 fn parametrization_updates_recursive_constant_types() {
-    let specific = identity(AcornType::Data(10, "T".into(), vec![]));
+    let specific = identity(AcornType::Data(Class::new(10, "T".into()), vec![]));
     let generic = specific.parametrize(10, &["T".into()]);
     assert_eq!(
         generic.get_type(),
@@ -56,7 +57,7 @@ fn parametrization_updates_recursive_constant_types() {
 
 #[test]
 fn constant_types_specialize_symmetrically_with_parametrization() {
-    let specific = identity(AcornType::Data(10, "T".into(), vec![]));
+    let specific = identity(AcornType::Data(Class::new(10, "T".into()), vec![]));
     let generic = specific.parametrize(10, &["T".into()]);
     let concrete = generic.instantiate(&[("T".into(), AcornType::Bool)]);
     assert_eq!(concrete.get_type(), identity(AcornType::Bool).get_type());
@@ -207,7 +208,7 @@ fn inference_preserves_declared_parameter_order_instead_of_sorting_names() {
         )
         .unwrap();
     value.validate().unwrap();
-    let nat = AcornType::Data(env.module_id, "Nat".into(), vec![]);
+    let nat = AcornType::Data(Class::new(env.module_id, "Nat".into()), vec![]);
     assert_eq!(value.get_type(), nat);
     let AcornValue::Application(app) = value else {
         panic!("expected application")
@@ -367,7 +368,7 @@ fn constant_admission_validates_definitions_before_mutating_bindings() {
             10,
             "item".into(),
             vec![],
-            AcornType::Data(10, "Item".into(), vec![]),
+            AcornType::Data(Class::new(10, "Item".into()), vec![]),
         )],
     );
     assert!(catch_unwind(AssertUnwindSafe(|| bindings.add_constant(

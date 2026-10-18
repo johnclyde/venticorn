@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 // Modified for Venticorn: instantiate generic facts only for consistent proof demand.
 use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::AcornValue;
@@ -107,7 +108,10 @@ fn conflicting_repeated_parameters_do_not_create_or_cache_an_instance() {
     ));
     mono.add_monomorphs(&predicate(
         "f",
-        vec![AcornType::Bool, AcornType::Data(10, "Nat".into(), vec![])],
+        vec![
+            AcornType::Bool,
+            AcornType::Data(Class::new(10, "Nat".into()), vec![]),
+        ],
     ));
     assert!(mono.take_facts().is_empty());
     mono.add_monomorphs(&predicate("f", vec![AcornType::Bool, AcornType::Bool]));
@@ -139,7 +143,7 @@ fn constant_matching_uses_declared_positions_and_rejects_wrong_arity() {
     // An inconsistent request cannot truncate a zip or contaminate later requests.
     mono.add_monomorphs(&predicate("ordered", vec![AcornType::Bool]));
     assert!(mono.take_facts().is_empty());
-    let nat = AcornType::Data(10, "Nat".into(), vec![]);
+    let nat = AcornType::Data(Class::new(10, "Nat".into()), vec![]);
     mono.add_monomorphs(&predicate("ordered", vec![nat.clone(), AcornType::Bool]));
     let emitted = mono.take_facts();
     assert_eq!(emitted.len(), 1);
@@ -213,8 +217,7 @@ fn bounds_in_binders_and_effective_types_are_checked_for_whole_fact_demand() {
         typeclass: Some(class.clone()),
     });
     let nested = AcornType::Data(
-        10,
-        "Wrap".into(),
+        Class::new(10, "Wrap".into()),
         vec![AcornType::new_functional(vec![bound.clone()], bound)],
     );
     let seed = |actual| AcornValue::new_constant(10, "seed".into(), vec![actual], AcornType::Bool);
@@ -293,13 +296,13 @@ fn concrete_scope_checks_whole_fact_bounds_before_phantom_erasure() {
     mono.add_fact(fact(generic.clone(), Truthiness::Factual));
     for actual in [
         AcornType::Bool,
-        AcornType::Data(id + 1, "Item".into(), vec![]),
-        AcornType::Data(id, "Item".into(), vec![AcornType::Bool]),
+        AcornType::Data(Class::new(id + 1, "Item".into()), vec![]),
+        AcornType::Data(Class::new(id, "Item".into()), vec![AcornType::Bool]),
     ] {
         mono.add_monomorphs(&constant("loose", actual));
         assert!(mono.take_facts().is_empty());
     }
-    let valid = AcornType::Data(id, "Item".into(), vec![]);
+    let valid = AcornType::Data(Class::new(id, "Item".into()), vec![]);
     mono.add_monomorphs(&constant("loose", valid.clone()));
     let output = mono.take_facts();
     assert_eq!(output.len(), 1);

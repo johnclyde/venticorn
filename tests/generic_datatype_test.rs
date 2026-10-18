@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use venticorn::acorn_type::AcornType;
+use venticorn::acorn_type::Class;
 
 fn data(name: &str, args: Vec<AcornType>) -> AcornType {
-    AcornType::Data(10, name.into(), args)
+    AcornType::Data(Class::new(10, name.into()), args)
 }
 
 #[test]
@@ -25,7 +26,7 @@ fn datatype_arguments_preserve_identity_and_recursive_type_operations() {
     assert!(nested.match_instance(&concrete, &mut mapping));
     assert_eq!(mapping.get("T"), Some(&AcornType::Bool));
     assert!(!nested.match_instance(
-        &AcornType::Data(11, "Outer".into(), vec![AcornType::Bool]),
+        &AcornType::Data(Class::new(11, "Outer".into()), vec![AcornType::Bool]),
         &mut HashMap::new()
     ));
     assert!(!nested.match_instance(&data("Outer", vec![]), &mut HashMap::new()));
@@ -120,14 +121,17 @@ fn specialized_type_alias_members_never_discard_fixed_arguments() {
         vec![venticorn::acorn_type::TypeParam::unconstrained("T")],
         AcornType::new_functional(
             vec![generic.clone()],
-            AcornType::Data(env.module_id, "Box".into(), vec![generic]),
+            AcornType::Data(Class::new(env.module_id, "Box".into()), vec![generic]),
         ),
         None,
         None,
     );
     env.bindings.add_type_alias(
         "BoolBox",
-        AcornType::Data(env.module_id, "Box".into(), vec![AcornType::Bool]),
+        AcornType::Data(
+            Class::new(env.module_id, "Box".into()),
+            vec![AcornType::Bool],
+        ),
     );
     env.add("let okay: Box<Bool> = Box.new(true)");
     env.add("let alias: Box<Bool> = BoolBox.new(true)");

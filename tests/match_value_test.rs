@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 // Modified for Venticorn: exercise match binders without enabling incomplete proof lowering.
 use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::{AcornValue, BinaryOp};
@@ -18,7 +19,7 @@ fn bound_match(acorn_type: AcornType) -> AcornValue {
 
 #[test]
 fn match_case_binders_follow_type_transformations() {
-    let concrete = AcornType::Data(FIRST_NORMAL, "T".to_string(), vec![]);
+    let concrete = AcornType::Data(Class::new(FIRST_NORMAL, "T".to_string()), vec![]);
     let value = bound_match(concrete);
     let parameterized = value.parametrize(FIRST_NORMAL, &["T".to_string()]);
     let AcornValue::Match(_, cases) = &parameterized else {

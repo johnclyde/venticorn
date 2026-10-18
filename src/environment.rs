@@ -1,3 +1,4 @@
+use crate::acorn_type::Class;
 // Modified for Venticorn.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -410,7 +411,9 @@ impl Environment {
                 ls.name_token
                     .error("numeric literals must be class members")
             })?;
-            if acorn_type != AcornType::Data(self.module_id, class_name.to_string(), vec![]) {
+            if acorn_type
+                != AcornType::Data(Class::new(self.module_id, class_name.to_string()), vec![])
+            {
                 return Err(ls
                     .type_expr
                     .error("numeric class variables must be the class type"));
@@ -1454,7 +1457,13 @@ impl Environment {
         potential: &PotentialType,
     ) -> compilation::Result<()> {
         let canonical = match potential {
-            PotentialType::Resolved(AcornType::Data(module, name, _)) => (*module, name),
+            PotentialType::Resolved(AcornType::Data(
+                Class {
+                    module_id: module,
+                    name,
+                },
+                _,
+            )) => (*module, name),
             PotentialType::Unresolved(t) => (t.class.module_id, &t.class.name),
             _ => return Err(name_token.error("we can only bind members to data types")),
         };
@@ -1839,11 +1848,19 @@ impl Environment {
             })?;
         self.check_canonical_classname(&instance.type_name, &potential)?;
         let target = match potential {
-            PotentialType::Resolved(AcornType::Data(module, canonical, actuals))
-                if actuals.is_empty() =>
-            {
-                AcornType::Data(module, canonical, actuals)
-            }
+            PotentialType::Resolved(AcornType::Data(
+                Class {
+                    module_id: module,
+                    name: canonical,
+                },
+                actuals,
+            )) if actuals.is_empty() => AcornType::Data(
+                Class {
+                    module_id: module,
+                    name: canonical,
+                },
+                actuals,
+            ),
             _ => {
                 return Err(instance.type_name.error(
                     "instance target must be a canonical nongeneric data type in this module",
@@ -2266,7 +2283,14 @@ impl Environment {
             StatementInfo::Numerals(ds) => {
                 self.add_other_lines(statement);
                 let acorn_type = self.bindings.evaluate_type(project, &ds.type_expr)?;
-                if let AcornType::Data(module, typename, actuals) = acorn_type {
+                if let AcornType::Data(
+                    Class {
+                        module_id: module,
+                        name: typename,
+                    },
+                    actuals,
+                ) = acorn_type
+                {
                     if !actuals.is_empty() {
                         return Err(ds
                             .type_expr

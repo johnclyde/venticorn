@@ -1,3 +1,4 @@
+use venticorn::acorn_type::Class;
 // Modified for Venticorn: keep instance identity and declaration metadata through normalization.
 use venticorn::acorn_type::AcornType;
 use venticorn::acorn_value::{AcornValue, BinaryOp};
@@ -12,7 +13,7 @@ fn instance(left: AcornType, right: AcornType) -> AcornValue {
 
 #[test]
 fn normalized_instances_retain_distinct_order_and_complete_roundtrip_metadata() {
-    let nat = AcornType::Data(10, "Nat".into(), vec![]);
+    let nat = AcornType::Data(Class::new(10, "Nat".into()), vec![]);
     let original = instance(nat.clone(), AcornType::Bool);
     let reversed = instance(AcornType::Bool, nat);
     let mut normalizer = Normalizer::new();

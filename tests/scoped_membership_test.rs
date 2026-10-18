@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use venticorn::acorn_type::Class;
 use venticorn::acorn_type::{AcornType, TypeParam, Typeclass};
 use venticorn::builder::BuildStatus;
 use venticorn::environment::Environment;
@@ -118,8 +119,11 @@ fn complete_actuals_preserve_canonical_bounds_for_explicit_inferred_and_phantom_
     assert!(!formal.accepts(&ty));
     for bad in [
         AcornType::Bool,
-        AcornType::Data(class.module_id, "Item".into(), vec![AcornType::Bool]),
-        AcornType::Data(class.module_id + 1, "Item".into(), vec![]),
+        AcornType::Data(
+            Class::new(class.module_id, "Item".into()),
+            vec![AcornType::Bool],
+        ),
+        AcornType::Data(Class::new(class.module_id + 1, "Item".into()), vec![]),
         AcornType::new_functional(vec![ty.clone()], ty.clone()),
         AcornType::Arbitrary(TypeParam::unconstrained("U")),
     ] {
