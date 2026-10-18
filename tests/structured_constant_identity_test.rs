@@ -75,11 +75,13 @@ fn generic_demand_does_not_cross_same_spelling_class_owners() {
         name(11),
         vec![AcornType::Variable(TypeParam::unconstrained("T"))],
     );
-    monomorphizer.add_fact(Fact {
-        value: generic,
-        source: Source::mock(),
-        truthiness: Truthiness::Factual,
-    });
+    monomorphizer.add_fact(Fact::new(
+        venticorn::proposition::Proposition {
+            value: generic,
+            source: Source::mock(),
+        },
+        Truthiness::Factual,
+    ));
     assert!(monomorphizer.take_facts().is_empty());
     monomorphizer.add_monomorphs(&value(name(12), vec![AcornType::Bool]));
     assert!(monomorphizer.take_facts().is_empty());
@@ -87,7 +89,7 @@ fn generic_demand_does_not_cross_same_spelling_class_owners() {
     monomorphizer.add_monomorphs(&expected);
     let output = monomorphizer.take_facts();
     assert_eq!(output.len(), 1);
-    assert_eq!(output[0].value, expected);
+    assert_eq!(output[0].proposition.value, expected);
 }
 
 #[test]

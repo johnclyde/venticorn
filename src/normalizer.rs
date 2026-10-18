@@ -522,13 +522,13 @@ impl Normalizer {
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
         let local = fact.truthiness != Truthiness::Factual;
-        let defined = match &fact.source.source_type {
+        let defined = match &fact.proposition.source.source_type {
             SourceType::ConstantDefinition(value, _) => {
                 Some(self.term_from_value(value, local)?.get_head().clone())
             }
             _ => None,
         };
-        let clauses = self.normalize_value(&fact.value, local)?;
+        let clauses = self.normalize_value(&fact.proposition.value, local)?;
         steps.extend(clauses.into_iter().map(|clause| {
             // A false definition supplies no defined-atom shortcut, as before.
             let defined = if clause.is_impossible() {
@@ -536,7 +536,7 @@ impl Normalizer {
             } else {
                 defined
             };
-            ProofStep::assumption(clause, fact.truthiness, &fact.source, defined)
+            ProofStep::assumption(clause, fact.truthiness, &fact.proposition.source, defined)
         }));
         Ok(())
     }
@@ -1030,11 +1030,13 @@ mod ownership_tests {
             vec![formal],
             AcornValue::equals(AcornValue::apply(generic, vec![argument.clone()]), argument),
         );
-        let fact = Fact {
-            value: law,
-            source: Source::mock(),
-            truthiness: Truthiness::Factual,
-        };
+        let fact = Fact::new(
+            crate::proposition::Proposition {
+                value: law,
+                source: Source::mock(),
+            },
+            Truthiness::Factual,
+        );
         let demand = AcornValue::constant(
             2,
             "choose".into(),
@@ -1051,7 +1053,7 @@ mod ownership_tests {
         for normalizer in [&mut allowed, &mut copied] {
             let facts = normalizer.monomorphize_for_value(&demand);
             assert_eq!(facts.len(), 1);
-            assert!(!facts[0].value.is_generic());
+            assert!(!facts[0].proposition.value.is_generic());
             assert!(normalizer.monomorphize_for_value(&demand).is_empty());
         }
         for mut normalizer in [Normalizer::with_scope(denied), Normalizer::new()] {
@@ -1082,11 +1084,13 @@ mod fact_step_tests {
             source.source_type = SourceType::ConstantDefinition(value.clone(), "flag".into());
             let mut normalizer = Normalizer::new();
             let steps = normalizer
-                .normalize_monomorphic_fact(Fact {
-                    value: value.clone(),
-                    source: source.clone(),
+                .normalize_monomorphic_fact(Fact::new(
+                    crate::proposition::Proposition {
+                        value: value.clone(),
+                        source: source.clone(),
+                    },
                     truthiness,
-                })
+                ))
                 .unwrap();
             assert_eq!(steps.len(), 1);
             let step = &steps[0];
@@ -1117,11 +1121,13 @@ mod fact_step_tests {
             Truthiness::Counterfactual,
         ] {
             let steps = Normalizer::new()
-                .normalize_monomorphic_fact(Fact {
-                    value: AcornValue::Bool(false),
-                    source: source.clone(),
+                .normalize_monomorphic_fact(Fact::new(
+                    crate::proposition::Proposition {
+                        value: AcornValue::Bool(false),
+                        source: source.clone(),
+                    },
                     truthiness,
-                })
+                ))
                 .unwrap();
             assert_eq!(steps.len(), 1);
             assert!(steps[0].clause.is_impossible());
@@ -1188,11 +1194,13 @@ mod empty_clause_tests {
             "flag".into(),
         );
         let steps = Normalizer::new()
-            .normalize_monomorphic_fact(Fact {
-                value: AcornValue::Bool(false),
-                source: source.clone(),
-                truthiness: Truthiness::Factual,
-            })
+            .normalize_monomorphic_fact(Fact::new(
+                crate::proposition::Proposition {
+                    value: AcornValue::Bool(false),
+                    source: source.clone(),
+                },
+                Truthiness::Factual,
+            ))
             .unwrap();
         assert_eq!(steps.len(), 1);
         assert!(steps[0].clause.is_impossible());
@@ -1219,11 +1227,13 @@ mod append_fact_tests {
             source.range.start.line = line;
             normalizer
                 .append_monomorphic_fact(
-                    Fact {
-                        value: AcornValue::Bool(false),
-                        source,
-                        truthiness: Truthiness::Factual,
-                    },
+                    Fact::new(
+                        crate::proposition::Proposition {
+                            value: AcornValue::Bool(false),
+                            source: source,
+                        },
+                        Truthiness::Factual,
+                    ),
                     &mut steps,
                 )
                 .unwrap();
@@ -1245,11 +1255,13 @@ mod append_fact_tests {
         let invalid = AcornValue::lambda(vec![AcornType::Bool], AcornValue::Bool(true));
         let error = normalizer
             .append_monomorphic_fact(
-                Fact {
-                    value: invalid,
-                    source: Source::mock(),
-                    truthiness: Truthiness::Factual,
-                },
+                Fact::new(
+                    crate::proposition::Proposition {
+                        value: invalid,
+                        source: Source::mock(),
+                    },
+                    Truthiness::Factual,
+                ),
                 &mut steps,
             )
             .unwrap_err();

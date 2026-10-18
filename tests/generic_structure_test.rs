@@ -14,7 +14,7 @@ fn prove(source: &str) -> (Outcome, Vec<String>) {
     let node = env.get_node_by_name("goal");
     let mut prover = Prover::new(&project, false);
     for fact in node.usable_facts(&project) {
-        fact.value.validate().unwrap();
+        fact.proposition.value.validate().unwrap();
         prover.add_fact(fact);
     }
     let context = node.goal_context().unwrap();
@@ -163,7 +163,7 @@ fn verify_all(source: &str) -> Outcome {
     for node in project.get_env_by_id(id).unwrap().iter_goals() {
         let mut prover = Prover::new(&project, false);
         for fact in node.usable_facts(&project) {
-            fact.value.validate().unwrap();
+            fact.proposition.value.validate().unwrap();
             prover.add_fact(fact);
         }
         prover.set_goal(&node.goal_context().unwrap());

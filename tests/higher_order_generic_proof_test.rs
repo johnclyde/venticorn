@@ -32,7 +32,7 @@ fn identity_is_surjective_with_same_or_distinct_formal_names() {
                 context.goal.value().validate().unwrap();
                 let mut prover = Prover::new(&project, false);
                 for fact in node.usable_facts(&project) {
-                    fact.value.validate().unwrap();
+                    fact.proposition.value.validate().unwrap();
                     prover.add_fact(fact);
                 }
                 prover.set_goal(&context);

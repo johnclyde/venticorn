@@ -34,7 +34,7 @@ fn run_search(source: &str, shallow: bool) -> Outcome {
     for node in project.get_env_by_id(id).unwrap().iter_goals() {
         let mut prover = Prover::new(&project, false);
         for fact in node.usable_facts(&project) {
-            fact.value.validate().unwrap();
+            fact.proposition.value.validate().unwrap();
             prover.add_fact(fact);
         }
         let goal = node.goal_context().unwrap();

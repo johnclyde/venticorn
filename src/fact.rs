@@ -1,48 +1,38 @@
 use crate::acorn_type::AcornType;
-use crate::acorn_value::AcornValue;
 use crate::proof_step::Truthiness;
 use crate::proposition::{Proposition, Source, SourceType};
 
-// A fact is a proposition that we already know to be true.
+// A proposition and the contextual role under which it is available.
 #[derive(Clone, Debug)]
 pub struct Fact {
-    pub value: AcornValue,
-    pub source: Source,
+    pub proposition: Proposition,
     pub truthiness: Truthiness,
 }
 
 impl Fact {
     pub fn new(proposition: Proposition, truthiness: Truthiness) -> Fact {
         Fact {
-            value: proposition.value,
-            source: proposition.source,
+            proposition,
             truthiness,
         }
     }
 
-    // Compatibility query; normalization derives locality directly from truthiness.
     pub fn local(&self) -> bool {
         self.truthiness != Truthiness::Factual
     }
 
-    // Substitutes type variables in a fact, preserving any variables not provided.
+    // Substitutes known type variables, preserving those not provided.
     pub fn instantiate(&self, params: &[(String, AcornType)]) -> Fact {
-        let value = self.value.instantiate(params);
-        let source = match &self.source.source_type {
-            SourceType::ConstantDefinition(v, name) => {
-                let new_type = SourceType::ConstantDefinition(v.instantiate(params), name.clone());
-                Source {
-                    module: self.source.module,
-                    range: self.source.range.clone(),
-                    source_type: new_type,
-                    importable: self.source.importable,
-                }
-            }
-            _ => self.source.clone(),
+        let value = self.proposition.value.instantiate(params);
+        let source = match &self.proposition.source.source_type {
+            SourceType::ConstantDefinition(v, name) => Source {
+                source_type: SourceType::ConstantDefinition(v.instantiate(params), name.clone()),
+                ..self.proposition.source.clone()
+            },
+            _ => self.proposition.source.clone(),
         };
         Fact {
-            value,
-            source,
+            proposition: Proposition { value, source },
             truthiness: self.truthiness,
         }
     }

@@ -30,11 +30,13 @@ fn claim(name: &str, actuals: Vec<AcornType>) -> AcornValue {
 }
 fn fact(value: AcornValue, truthiness: Truthiness) -> Fact {
     value.validate().unwrap();
-    Fact {
-        value,
-        source: Source::mock(),
+    Fact::new(
+        venticorn::proposition::Proposition {
+            value: value,
+            source: Source::mock(),
+        },
         truthiness,
-    }
+    )
 }
 
 #[test]
@@ -60,7 +62,7 @@ fn admitted_facts_and_goals_supply_demand_in_either_order() {
             assert_eq!(output.len(), 2);
             assert!(output
                 .iter()
-                .any(|f| f.truthiness == Truthiness::Factual && f.value == concrete));
+                .any(|f| f.truthiness == Truthiness::Factual && f.proposition.value == concrete));
             mono.add_monomorphs(&concrete);
             assert!(
                 mono.take_facts().is_empty(),
@@ -117,8 +119,8 @@ fn conflicting_repeated_parameters_do_not_create_or_cache_an_instance() {
     mono.add_monomorphs(&predicate("f", vec![AcornType::Bool, AcornType::Bool]));
     let output = mono.take_facts();
     assert_eq!(output.len(), 1);
-    output[0].value.validate().unwrap();
-    assert!(!output[0].value.is_generic());
+    output[0].proposition.value.validate().unwrap();
+    assert!(!output[0].proposition.value.is_generic());
 }
 
 #[test]
@@ -148,7 +150,7 @@ fn constant_matching_uses_declared_positions_and_rejects_wrong_arity() {
     let emitted = mono.take_facts();
     assert_eq!(emitted.len(), 1);
     assert_eq!(
-        emitted[0].value,
+        emitted[0].proposition.value,
         claim("ordered", vec![nat, AcornType::Bool])
     );
 }
@@ -200,7 +202,7 @@ fn whole_fact_bounds_guard_phantom_actuals_before_substitution() {
         "failed requests must not poison a later valid request"
     );
     assert_eq!(
-        output[0].value,
+        output[0].proposition.value,
         AcornValue::new_and(constant("loose", valid.clone()), constant("bound", valid))
     );
 }
@@ -237,7 +239,10 @@ fn bounds_in_binders_and_effective_types_are_checked_for_whole_fact_demand() {
     mono.add_monomorphs(&seed(valid.clone()));
     let output = mono.take_facts();
     assert_eq!(output.len(), 1);
-    assert_eq!(output[0].value, generic.instantiate(&[("T".into(), valid)]));
+    assert_eq!(
+        output[0].proposition.value,
+        generic.instantiate(&[("T".into(), valid)])
+    );
 }
 
 #[test]
@@ -306,5 +311,8 @@ fn concrete_scope_checks_whole_fact_bounds_before_phantom_erasure() {
     mono.add_monomorphs(&constant("loose", valid.clone()));
     let output = mono.take_facts();
     assert_eq!(output.len(), 1);
-    assert_eq!(output[0].value, generic.instantiate(&[("T".into(), valid)]));
+    assert_eq!(
+        output[0].proposition.value,
+        generic.instantiate(&[("T".into(), valid)])
+    );
 }
