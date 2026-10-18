@@ -448,6 +448,12 @@ impl Node {
         self.block.as_mut()
     }
 
+    pub fn as_theorem(&self) -> Option<(&str, &AcornValue)> {
+        self.claim
+            .theorem_name()
+            .map(|name| (name, &self.claim.value))
+    }
+
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
         &self.proof_scope
     }
