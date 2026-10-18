@@ -260,14 +260,10 @@ impl Environment {
     }
 
     pub fn get_theorem_claim(&self, name: &str) -> Option<AcornValue> {
-        for node in &self.nodes {
-            if let Some(claim_name) = node.claim.theorem_name() {
-                if claim_name == name {
-                    return Some(node.claim.value.clone());
-                }
-            }
-        }
-        None
+        self.nodes.iter().find_map(|node| {
+            let (theorem_name, value) = node.as_theorem()?;
+            (theorem_name == name).then(|| value.clone())
+        })
     }
 
     // Find the innermost proof environment containing this saved source line.

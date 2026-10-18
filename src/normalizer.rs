@@ -721,11 +721,14 @@ impl Normalizer {
     // Checks a theorem
     #[cfg(test)]
     pub fn check(&mut self, env: &Environment, name: &str, expected: &[&str]) {
-        let val = match env.get_theorem_claim(name) {
+        let val = match env.nodes.iter().find_map(|node| {
+            let (theorem_name, value) = node.as_theorem()?;
+            (theorem_name == name).then_some(value)
+        }) {
             Some(val) => val,
             None => panic!("no value named {}", name),
         };
-        self.check_value(&val, expected);
+        self.check_value(val, expected);
     }
 }
 
