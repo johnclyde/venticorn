@@ -92,3 +92,22 @@ fn value_and_source_transforms_preserve_depth_and_visibility() {
         SourceType::NegatedGoal
     ));
 }
+
+#[test]
+fn lexical_role_does_not_rewrite_explicit_compatibility_fact_roles() {
+    use venticorn::fact::Fact;
+    use venticorn::proof_step::Truthiness;
+    let prop = Proposition::anonymous(AcornValue::Bool(true), 7, Range::default());
+    assert_eq!(prop.truthiness(), Truthiness::Factual);
+    assert_eq!(
+        prop.clone().with_depth(2).truthiness(),
+        Truthiness::Hypothetical
+    );
+    assert_eq!(
+        prop.with_negated_goal(AcornValue::Bool(false)).truthiness(),
+        Truthiness::Counterfactual
+    );
+    let fact = Fact::new(prop.clone(), Truthiness::Hypothetical);
+    assert_eq!(fact.truthiness(), Some(Truthiness::Hypothetical));
+    assert_eq!(fact.as_proposition().unwrap().source, prop.source);
+}
