@@ -53,6 +53,107 @@ pub struct Source {
 }
 
 impl Source {
+    pub fn new(
+        module: ModuleId,
+        range: Range,
+        source_type: SourceType,
+        importable: bool,
+        depth: u32,
+    ) -> Source {
+        Source {
+            module,
+            range,
+            source_type,
+            importable,
+            depth,
+        }
+    }
+
+    pub fn theorem(
+        axiomatic: bool,
+        module: ModuleId,
+        range: Range,
+        depth: u32,
+        name: Option<String>,
+    ) -> Source {
+        let source_type = if axiomatic {
+            SourceType::Axiom(name)
+        } else {
+            SourceType::Theorem(name)
+        };
+        Self::new(module, range, source_type, true, depth)
+    }
+
+    pub fn anonymous(module: ModuleId, range: Range, depth: u32) -> Source {
+        Self::new(module, range, SourceType::Anonymous, false, depth)
+    }
+
+    pub fn inhabited(module: ModuleId, type_name: &str, range: Range, depth: u32) -> Source {
+        Self::type_definition(
+            module,
+            range,
+            depth,
+            type_name.to_string(),
+            "constraint".into(),
+        )
+    }
+
+    pub fn type_definition(
+        module: ModuleId,
+        range: Range,
+        depth: u32,
+        type_name: String,
+        member_name: String,
+    ) -> Source {
+        Self::new(
+            module,
+            range,
+            SourceType::TypeDefinition(type_name, member_name),
+            true,
+            depth,
+        )
+    }
+
+    pub fn constant_definition(
+        module: ModuleId,
+        range: Range,
+        depth: u32,
+        constant: AcornValue,
+        name: impl Into<String>,
+    ) -> Source {
+        Self::new(
+            module,
+            range,
+            SourceType::ConstantDefinition(constant, name.into()),
+            depth == 0,
+            depth,
+        )
+    }
+
+    pub fn instance(
+        module: ModuleId,
+        range: Range,
+        depth: u32,
+        instance_name: impl Into<String>,
+        typeclass_name: impl Into<String>,
+    ) -> Source {
+        Self::new(
+            module,
+            range,
+            SourceType::Instance(instance_name.into(), typeclass_name.into()),
+            true,
+            depth,
+        )
+    }
+
+    pub fn premise(module: ModuleId, range: Range, depth: u32) -> Source {
+        Self::new(module, range, SourceType::Premise, false, depth)
+    }
+
+    pub fn negated_goal(module: ModuleId, range: Range, depth: u32) -> Source {
+        Self::new(module, range, SourceType::NegatedGoal, false, depth)
+    }
+
     pub fn mock() -> Source {
         Source {
             module: 0,
