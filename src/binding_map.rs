@@ -11,7 +11,7 @@ use crate::compilation::{self, Error, ErrorSource};
 use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::named_entity::NamedEntity;
-use crate::names::{GlobalName, LocalName};
+use crate::names::{GlobalName, InstanceName, LocalName};
 use crate::project::Project;
 use crate::proof_scope::ProofScope;
 use crate::proposition::Proposition;
@@ -708,10 +708,12 @@ impl BindingMap {
         if !actuals.is_empty() {
             return Err(source.error("instance target cannot have type arguments"));
         }
-        let generic = AcornValue::instance_constant(
-            class.clone(),
-            member.to_owned(),
-            target_class.clone(),
+        let generic = AcornValue::instance_constant_named(
+            InstanceName {
+                typeclass: class.clone(),
+                attribute: member.to_owned(),
+                class: target_class.clone(),
+            },
             expected,
         );
         generic.validate().map_err(|error| source.error(&error))?;

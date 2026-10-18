@@ -7,7 +7,7 @@ use crate::acorn_type::{AcornType, Typeclass};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::module::ModuleId;
-use crate::names::{GlobalName, LocalName};
+use crate::names::{GlobalName, InstanceName, LocalName};
 use crate::token::TokenType;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -461,9 +461,24 @@ impl AcornValue {
         target: Class,
         instance_type: AcornType,
     ) -> Self {
+        Self::instance_constant_named(
+            InstanceName {
+                typeclass: class,
+                attribute: member,
+                class: target,
+            },
+            instance_type,
+        )
+    }
+
+    /// Construct a generic member specialization from its complete relationship name.
+    pub fn instance_constant_named(name: InstanceName, instance_type: AcornType) -> Self {
         Self::constant_named(
-            GlobalName::new(class.module_id, LocalName::Attribute(class.name, member)),
-            vec![AcornType::Data(target, vec![])],
+            GlobalName::new(
+                name.typeclass.module_id,
+                LocalName::Attribute(name.typeclass.name, name.attribute),
+            ),
+            vec![AcornType::Data(name.class, vec![])],
             instance_type,
         )
     }
