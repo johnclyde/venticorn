@@ -2,7 +2,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use crate::acorn_type::Typeclass;
+use crate::acorn_type::{Class, Typeclass};
 use crate::module::ModuleId;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -30,6 +30,10 @@ impl ProofScope {
             class_name: class.name.clone(),
         };
         self.memberships.contains(&key) && !self.denied_memberships.contains(&key)
+    }
+
+    pub fn has_class_membership(&self, data: &Class, class: &Typeclass) -> bool {
+        self.has_membership(data.module_id, &data.name, class)
     }
 
     pub fn imports(&self) -> &[ModuleId] {
