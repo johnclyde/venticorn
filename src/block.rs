@@ -369,7 +369,7 @@ impl Block {
         token: &Token,
     ) -> compilation::Result<(AcornValue, Range)> {
         let (inner_claim, range) = match self.env.nodes.last() {
-            Some(p) => (&p.claim.value, p.claim.source.range),
+            Some(p) => (&p.proposition().value, p.proposition().source.range),
             None => {
                 return Err(token.error("expected a claim in this block"));
             }
@@ -426,7 +426,7 @@ pub struct Node {
     // Besides the claim, nothing else from the block is visible externally.
     //
     // This claim needs to be proved for nonstructural propositions, when there is no block.
-    pub claim: Proposition,
+    claim: Proposition,
 
     // The body of the proposition, when it has an associated block.
     // When there is a block, proving every proposition in the block implies that the
@@ -437,11 +437,11 @@ pub struct Node {
 impl Node {
     // The declaration's proposition with its effective lexical/contextual role.
     pub fn get_fact(&self) -> Fact {
-        self.get_fact_with_truthiness(self.claim.truthiness())
+        self.get_fact_with_truthiness(self.proposition().truthiness())
     }
 
     pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Fact {
-        Fact::new(self.claim.clone(), truthiness)
+        Fact::new(self.proposition().clone(), truthiness)
     }
 
     pub fn is_structural(&self) -> bool {
@@ -458,18 +458,26 @@ impl Node {
     }
 
     pub fn as_theorem(&self) -> Option<(&str, &AcornValue)> {
-        self.claim
+        self.proposition()
             .theorem_name()
-            .map(|name| (name, &self.claim.value))
+            .map(|name| (name, &self.proposition().value))
     }
 
     pub fn importable(&self) -> bool {
-        self.claim.source.importable
+        self.proposition().source.importable
     }
 
     // Stable premise identity, when this source has one.
     pub fn fact_name(&self) -> Option<String> {
-        self.claim.source.fact_name()
+        self.proposition().source.fact_name()
+    }
+
+    pub fn proposition(&self) -> &Proposition {
+        &self.claim
+    }
+
+    pub fn is_axiom(&self) -> bool {
+        self.proposition().source.is_axiom()
     }
 
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
@@ -528,7 +536,7 @@ impl Node {
     }
 
     pub(crate) fn theorem_name(&self) -> Option<&str> {
-        match &self.claim.source.source_type {
+        match &self.proposition().source.source_type {
             crate::proposition::SourceType::Theorem(name) => name.as_deref(),
             _ => None,
         }
@@ -539,7 +547,7 @@ impl Node {
         if let Some(name) = self.theorem_name() {
             return Some(Cow::Borrowed(name));
         }
-        match &self.claim.source.source_type {
+        match &self.proposition().source.source_type {
             crate::proposition::SourceType::ConstantDefinition(_, name) => {
                 Some(Cow::Borrowed(name))
             }
@@ -799,10 +807,10 @@ impl<'a> NodeCursor<'a> {
         } else {
             GoalContext::new(
                 self.env(),
-                Goal::Prove(node.claim.clone()),
-                node.claim.source.range.start.line,
-                node.claim.source.range.start.line,
-                node.claim.source.range.end.line,
+                Goal::Prove(node.proposition().clone()),
+                node.proposition().source.range.start.line,
+                node.proposition().source.range.start.line,
+                node.proposition().source.range.end.line,
             )
         };
         if node.block().is_none() {

@@ -10,7 +10,7 @@ fn check_node_depths(env: &Environment, expected: u32) -> usize {
     let mut total = 0;
     for node in &env.nodes {
         total += 1;
-        assert_eq!(node.claim.source.depth, expected);
+        assert_eq!(node.proposition().source.depth, expected);
         if let Some(block) = node.block() {
             total += check_node_depths(&block.env, expected + 1);
         }
@@ -30,17 +30,17 @@ fn lexical_depth_survives_same_scope_staging_and_real_children() {
         .nodes
         .iter()
         .find(|n| {
-            matches!(&n.claim.source.source_type,
+            matches!(&n.proposition().source.source_type,
         SourceType::Axiom(Some(name)) if name == "Marked.reflexive")
         })
         .unwrap();
-    assert_eq!(condition.claim.source.depth, 0);
-    assert!(condition.claim.source.importable);
+    assert_eq!(condition.proposition().source.depth, 0);
+    assert!(condition.proposition().source.importable);
     let instance = env
         .nodes
         .iter()
         .find(|n| {
-            matches!(&n.claim.source.source_type,
+            matches!(&n.proposition().source.source_type,
         SourceType::Instance(name, class) if name == "Item" && class == "Marked")
         })
         .unwrap();
@@ -61,14 +61,18 @@ fn lexical_depth_survives_same_scope_staging_and_real_children() {
         .env
         .nodes
         .iter()
-        .find(|n| n.claim.theorem_name() == Some("inner"))
+        .find(|n| n.proposition().theorem_name() == Some("inner"))
         .unwrap();
     let inner = inner.block().unwrap();
     let Some(Goal::Prove(goal)) = &inner.goal else {
         panic!("nested theorem goal")
     };
     assert_eq!(goal.source.depth, 2);
-    assert!(block.env.nodes.iter().all(|n| !n.claim.source.importable));
+    assert!(block
+        .env
+        .nodes
+        .iter()
+        .all(|n| !n.proposition().source.importable));
 }
 
 #[test]

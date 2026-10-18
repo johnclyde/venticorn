@@ -879,7 +879,7 @@ fn explicit_instance_constant_arguments_are_admitted() {
     let target = env.bindings.get_type_for_name("Z2").unwrap();
     let goal = env.get_node_by_name("goal");
     let mut members = vec![];
-    goal.current().claim.value.find_constants(
+    goal.current().proposition().value.find_constants(
         &|constant| constant.name.local_name.to_string() == "PointedSet.basepoint",
         &mut members,
     );

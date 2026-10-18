@@ -1010,7 +1010,7 @@ impl Project {
             );
         for (selected_node, truthiness, local) in selected {
             let selected = selected_node
-                .claim
+                .proposition()
                 .source
                 .qualified_fact_name()
                 .and_then(|(id, name)| {
@@ -1038,7 +1038,7 @@ impl Project {
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
             if let Some(block) = node.block() {
                 for child in &block.env.nodes {
-                    if let Some((id, name)) = child.claim.source.qualified_fact_name() {
+                    if let Some((id, name)) = child.proposition().source.qualified_fact_name() {
                         if let Some(module) = project.modules.get(id as usize) {
                             if let Some(names) = remaining.get_mut(&module.descriptor) {
                                 names.remove(&name);

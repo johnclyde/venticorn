@@ -28,8 +28,10 @@ fn normal_and_guided_imports_exclude_block_claims_but_keep_anonymous_declaration
     assert!(dependency
         .nodes
         .iter()
-        .any(|node| node.claim.source.fact_name().as_deref() == Some("2")
-            && !node.claim.source.importable));
+        .any(
+            |node| node.proposition().source.fact_name().as_deref() == Some("2")
+                && !node.proposition().source.importable
+        ));
     let exported = dependency.exported_facts();
     assert_eq!(exported.len(), 1);
     assert_eq!(
@@ -115,7 +117,7 @@ fn chosen_witness_exports_its_condition_after_a_real_existence_obligation() {
         .unwrap();
     let obligations = owner.iter_goals().collect::<Vec<_>>();
     assert_eq!(obligations.len(), 1);
-    assert!(!obligations[0].current().claim.source.importable);
+    assert!(!obligations[0].current().proposition().source.importable);
     let exported = owner.exported_facts();
     assert_eq!(exported.len(), 1);
     assert!(exported[0].as_proposition().unwrap().source.importable);
@@ -130,11 +132,11 @@ fn chosen_witness_exports_its_condition_after_a_real_existence_obligation() {
     );
     assert_eq!(
         exported[0].as_proposition().unwrap().source.range,
-        obligations[0].current().claim.source.range
+        obligations[0].current().proposition().source.range
     );
     assert_ne!(
         exported[0].as_proposition().unwrap().value,
-        obligations[0].current().claim.value
+        obligations[0].current().proposition().value
     );
     assert_eq!(
         owner

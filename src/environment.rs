@@ -718,7 +718,12 @@ impl Environment {
             block,
         );
         for param in &ts.type_params {
-            if param.typeclass.is_some() && !node.claim.value.has_type_variable(param.name.text()) {
+            if param.typeclass.is_some()
+                && !node
+                    .proposition()
+                    .value
+                    .has_type_variable(param.name.text())
+            {
                 return Err(
                     param.error("bounded theorem parameter must occur in the exported proposition")
                 );
@@ -1660,7 +1665,7 @@ impl Environment {
             // Inspect the actual exported proposition after theorem-name expansion,
             // exactly as for ordinary bounded theorems. Fact does not retain erased
             // declaration formals, so a closed condition cannot safely be published.
-            if !node.claim.value.has_type_variable(&param_names[0]) {
+            if !node.proposition().value.has_type_variable(&param_names[0]) {
                 return Err(condition
                     .name
                     .error("bounded typeclass condition must occur in the exported proposition"));
@@ -1669,7 +1674,7 @@ impl Environment {
             info.conditions.insert(
                 name.to_string(),
                 TypeclassCondition {
-                    claim: node.claim.value.clone(),
+                    claim: node.proposition().value.clone(),
                     definition,
                     range,
                 },
@@ -2568,7 +2573,7 @@ impl Environment {
                 Some(LineType::Node(i)) => {
                     path.push(i);
                     let node = &env.nodes[i];
-                    if node.claim.source.is_axiom() {
+                    if node.proposition().source.is_axiom() {
                         return Err(format!("line {} is an axiom", line + 1));
                     }
                     match node.block() {
@@ -2603,7 +2608,7 @@ impl Environment {
                         match env.get_line_type(slide) {
                             Some(LineType::Node(i)) => {
                                 let node = &env.nodes[i];
-                                if node.claim.source.is_axiom() {
+                                if node.proposition().source.is_axiom() {
                                     return Err(format!("slide to axiom, line {}", slide + 1));
                                 }
                                 if node.block().is_none() {
