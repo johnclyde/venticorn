@@ -813,7 +813,9 @@ impl Project {
                 if !node.has_next() {
                     break;
                 }
-                prover.add_fact(node.get_fact());
+                if let Some(fact) = node.get_fact() {
+                    prover.add_fact(fact);
+                }
                 node.next();
             }
         }
@@ -894,9 +896,11 @@ impl Project {
                 if !self.verify_build_node(&prover, guided.as_ref(), node, context, builder) {
                     return false;
                 }
-                prover.add_fact(node.get_fact());
-                if let Some(guided) = &mut guided {
-                    guided.add_fact(node.get_fact());
+                if let Some(fact) = node.get_fact() {
+                    if let Some(guided) = &mut guided {
+                        guided.add_fact(fact.clone());
+                    }
+                    prover.add_fact(fact);
                 }
                 if !node.has_next() {
                     break;
@@ -1032,7 +1036,9 @@ impl Project {
                 || truthiness == crate::proof_step::Truthiness::Hypothetical
                 || (local && !selected_node.importable())
             {
-                prover.add_fact(selected_node.get_fact_with_truthiness(truthiness));
+                if let Some(fact) = selected_node.get_fact_with_truthiness(truthiness) {
+                    prover.add_fact(fact);
+                }
             }
         }
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
@@ -1140,7 +1146,9 @@ impl Project {
             if !node.has_next() {
                 break;
             }
-            prover.add_fact(node.get_fact());
+            if let Some(fact) = node.get_fact() {
+                prover.add_fact(fact);
+            }
             node.next();
         }
     }
@@ -1176,7 +1184,9 @@ impl Project {
                     return false;
                 }
 
-                prover.add_fact(node.get_fact());
+                if let Some(fact) = node.get_fact() {
+                    prover.add_fact(fact);
+                }
                 if node.has_next() {
                     node.next();
                 } else {
