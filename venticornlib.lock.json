@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "https://github.com/johnclyde/venticornlib",
-  "revision": "015af799b0addef4d4c17312e1d1814c131e2df1",
+  "revision": "3c3986134a8771fc8191d9138449fb2df92e8b18",
   "library_path": ".",
   "bundled_directory": "vscode/extension/acornlib",
   "files": {
