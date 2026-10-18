@@ -480,6 +480,25 @@ impl Normalizer {
         self.convert_then_normalize(value, local)
     }
 
+    // Monomorphization uses the immutable authority captured by this normalizer.
+    pub fn normalize_fact(&mut self, fact: Fact, steps: &mut Vec<ProofStep>) -> Result<()> {
+        let facts = self.monomorphize_fact(fact);
+        self.append_facts(facts, steps)
+    }
+
+    // Keep the successfully converted prefix, stopping at the first error.
+    // Each individual fact still appends atomically after its conversion succeeds.
+    pub(crate) fn append_facts(
+        &mut self,
+        facts: impl IntoIterator<Item = Fact>,
+        steps: &mut Vec<ProofStep>,
+    ) -> Result<()> {
+        for fact in facts {
+            self.append_monomorphic_fact(fact, steps)?;
+        }
+        Ok(())
+    }
+
     // Compatibility wrapper for callers requesting a fresh collection.
     pub fn normalize_monomorphic_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>> {
         let mut steps = vec![];

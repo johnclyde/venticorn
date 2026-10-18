@@ -158,21 +158,28 @@ impl Prover {
     // Add a fact to the prover.
     // The fact can be either polymorphic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
-        for fact in self.normalizer.monomorphize_fact(fact) {
-            self.add_monomorphic_fact(fact);
-        }
+        let mut steps = vec![];
+        let result = self.normalizer.normalize_fact(fact, &mut steps);
+        self.add_normalized_steps(steps, result);
     }
 
     // Used to add facts internally, after the fact has already been monomorphized.
     fn add_monomorphic_fact(&mut self, fact: Fact) {
         let mut steps = vec![];
-        if let Err(error) = self.normalizer.append_monomorphic_fact(fact, &mut steps) {
+        let result = self.normalizer.append_monomorphic_fact(fact, &mut steps);
+        self.add_normalized_steps(steps, result);
+    }
+
+    fn add_normalized_steps(&mut self, mut steps: Vec<ProofStep>, result: Result<(), String>) {
+        // Retain the successful prefix, but an error remains terminal even when
+        // that prefix contains a contradiction. Search checks the error first.
+        if let Err(error) = result {
             self.error = Some(error);
-            return;
         }
         // An empty clause is already a known outcome, before search or subset selection.
-        // Keep its original truthiness and source when deciding Success versus Inconsistent.
-        if let Some(index) = steps.iter().position(|step| step.clause.is_impossible()) {
+        // Preserve the last impossible fact's truthiness and source, as sequential
+        // fact ingestion did. Impossible clauses from one fact share that metadata.
+        if let Some(index) = steps.iter().rposition(|step| step.clause.is_impossible()) {
             self.final_step = Some(steps.swap_remove(index));
             return;
         }
@@ -1181,5 +1188,101 @@ mod goal_fact_demand_tests {
             &step.rule,
             Rule::Assumption(info) if info.source.name().as_deref() == Some("identity")
         )));
+    }
+}
+
+#[cfg(test)]
+mod fact_batch_tests {
+    use super::*;
+    use crate::acorn_type::AcornType;
+    use crate::proposition::Source;
+
+    #[test]
+    fn batch_errors_preserve_only_the_successful_prefix_and_remain_terminal() {
+        for false_first in [true, false] {
+            for truthiness in [Truthiness::Factual, Truthiness::Counterfactual] {
+                let mut source = Source::mock();
+                source.range.start.line = 17;
+                let impossible = Fact {
+                    value: AcornValue::Bool(false),
+                    source: source.clone(),
+                    truthiness,
+                };
+                let invalid = Fact {
+                    value: AcornValue::constant(
+                        2,
+                        "item".into(),
+                        vec![],
+                        AcornType::Data(2, "Item".into(), vec![]),
+                    ),
+                    source: Source::mock(),
+                    truthiness: Truthiness::Factual,
+                };
+                let facts = if false_first {
+                    vec![impossible, invalid]
+                } else {
+                    vec![invalid, impossible]
+                };
+                let project = Project::new_mock();
+                let mut prover = Prover::new(&project, false);
+                let mut steps = vec![];
+                let result = prover.normalizer.append_facts(facts, &mut steps);
+                let diagnostic = "normalization requires a Boolean value, got Item";
+                assert_eq!(result, Err(diagnostic.into()));
+                assert_eq!(steps.len(), usize::from(false_first));
+                prover.add_normalized_steps(steps, result);
+                assert!(prover.has_immediate_outcome());
+                assert_eq!(prover.error(), Some(diagnostic));
+                assert_eq!(
+                    prover.verification_search(),
+                    Outcome::Error(diagnostic.into())
+                );
+                assert_eq!(prover.iter_active_steps().count(), 0);
+                if false_first {
+                    let step = prover.final_step.as_ref().unwrap();
+                    assert!(step.clause.is_impossible());
+                    assert_eq!(step.truthiness, truthiness);
+                    let Rule::Assumption(info) = &step.rule else {
+                        panic!("expected original assumption")
+                    };
+                    assert_eq!(info.source, source);
+                    assert_eq!(info.defined_atom, None);
+                } else {
+                    assert!(prover.final_step.is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn demanded_false_fact_does_not_replace_the_later_counterfactual_outcome() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "define mark<T>(x: T) -> Bool { true }\naxiom impossible<T>(x: T) { false and mark(x) }\ntheorem goal { mark(true) or true }");
+        let id = project.expect_ok("main");
+        let env = project.get_env_by_id(id).unwrap();
+        let node = env.get_node_by_name("goal");
+        let facts = node
+            .usable_facts(&project)
+            .into_iter()
+            .filter(|fact| fact.source.name().as_deref() == Some("impossible"))
+            .collect::<Vec<_>>();
+        assert_eq!(facts.len(), 1);
+        assert!(facts[0].value.is_generic());
+        let mut prover = Prover::new(&project, false);
+        prover.add_fact(facts[0].clone());
+        assert!(!prover.has_immediate_outcome());
+        let goal = node.goal_context().unwrap();
+        prover.set_goal(&goal);
+        assert!(prover.error().is_none());
+        let step = prover.final_step.as_ref().unwrap();
+        assert!(step.clause.is_impossible());
+        assert_eq!(step.truthiness, Truthiness::Counterfactual);
+        let Rule::Assumption(info) = &step.rule else {
+            panic!("expected assumption")
+        };
+        assert_ne!(info.source, facts[0].source);
+        assert_eq!(info.source.range, goal.goal.range());
+        assert_eq!(info.defined_atom, None);
+        assert_eq!(prover.verification_search(), Outcome::Success);
     }
 }
