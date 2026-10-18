@@ -63,6 +63,20 @@ fn check_normalized_type(acorn_type: &AcornType) -> Result<()> {
 }
 
 impl Normalization {
+    fn into_result(self) -> Result<Vec<Clause>> {
+        match self {
+            Self::Clauses(clauses) => Ok(clauses),
+            Self::Error(error) => Err(error),
+        }
+    }
+
+    fn from_result(result: Result<Vec<Clause>>) -> Self {
+        match result {
+            Ok(clauses) => Self::Clauses(clauses),
+            Err(error) => Self::Error(error),
+        }
+    }
+
     pub fn expect_clauses(self) -> Vec<Clause> {
         match self {
             Normalization::Clauses(clauses) => clauses,
@@ -437,20 +451,20 @@ impl Normalizer {
 
     // Compatibility facade for callers inspecting normalized values directly.
     pub fn normalize(&mut self, value: &AcornValue, local: bool) -> Normalization {
-        self.normalize_value(value, local)
+        Normalization::from_result(self.normalize_value(value, local))
     }
 
     // Converts a checked Boolean value to CNF.
-    fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Normalization {
+    fn normalize_value(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
         // Validate every value before transformations inspect application or match types.
         if let Err(error) = value.validate() {
-            return Normalization::Error(format!(
+            return Err(format!(
                 "validation error: {} while normalizing: {}",
                 error, value
             ));
         }
         if value.get_type() != AcornType::Bool {
-            return Normalization::Error(format!(
+            return Err(format!(
                 "normalization requires a Boolean value, got {}",
                 value.get_type()
             ));
@@ -464,11 +478,11 @@ impl Normalizer {
                 // If we handled functional types better in unification we might not need this.
                 let functional = self.normalize_cnf(value.clone(), local);
                 let primitive = self.convert_then_normalize(value, local);
-                return functional.and(primitive);
+                return functional.and(primitive).into_result();
             }
         }
 
-        self.convert_then_normalize(value, local)
+        self.convert_then_normalize(value, local).into_result()
     }
 
     // A monomorphic fact retains its original source and truthiness on every emitted step.
@@ -480,10 +494,7 @@ impl Normalizer {
             }
             _ => None,
         };
-        let clauses = match self.normalize_value(&fact.value, local) {
-            Normalization::Clauses(clauses) => clauses,
-            Normalization::Error(error) => return Err(error),
-        };
+        let clauses = self.normalize_value(&fact.value, local)?;
         Ok(clauses
             .into_iter()
             .map(|clause| {
