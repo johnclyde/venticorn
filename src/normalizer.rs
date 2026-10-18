@@ -480,8 +480,20 @@ impl Normalizer {
         self.convert_then_normalize(value, local)
     }
 
-    // A monomorphic fact retains its original source and truthiness on every emitted step.
+    // Compatibility wrapper for callers requesting a fresh collection.
     pub fn normalize_monomorphic_fact(&mut self, fact: Fact) -> Result<Vec<ProofStep>> {
+        let mut steps = vec![];
+        self.append_monomorphic_fact(fact, &mut steps)?;
+        Ok(steps)
+    }
+
+    // A monomorphic fact retains its original source and truthiness on every emitted step.
+    // Append only after conversion succeeds, preserving the caller's existing steps on error.
+    pub fn append_monomorphic_fact(
+        &mut self,
+        fact: Fact,
+        steps: &mut Vec<ProofStep>,
+    ) -> Result<()> {
         let local = fact.local();
         let defined = match &fact.source.source_type {
             SourceType::ConstantDefinition(value, _) => {
@@ -490,18 +502,16 @@ impl Normalizer {
             _ => None,
         };
         let clauses = self.normalize_value(&fact.value, local)?;
-        Ok(clauses
-            .into_iter()
-            .map(|clause| {
-                // A false definition supplies no defined-atom shortcut, as before.
-                let defined = if clause.is_impossible() {
-                    None
-                } else {
-                    defined
-                };
-                ProofStep::assumption(clause, fact.truthiness, &fact.source, defined)
-            })
-            .collect())
+        steps.extend(clauses.into_iter().map(|clause| {
+            // A false definition supplies no defined-atom shortcut, as before.
+            let defined = if clause.is_impossible() {
+                None
+            } else {
+                defined
+            };
+            ProofStep::assumption(clause, fact.truthiness, &fact.source, defined)
+        }));
+        Ok(())
     }
 
     // Variables are left unbound. Their types are accumulated.
@@ -1164,5 +1174,62 @@ mod empty_clause_tests {
         };
         assert_eq!(info.source, source);
         assert_eq!(info.defined_atom, None);
+    }
+}
+
+#[cfg(test)]
+mod append_fact_tests {
+    use super::*;
+    use crate::proof_step::{Rule, Truthiness};
+    use crate::proposition::Source;
+
+    #[test]
+    fn appended_facts_preserve_prefix_order_and_leave_it_intact_on_error() {
+        let mut normalizer = Normalizer::new();
+        let mut steps = vec![];
+        for line in [3, 8] {
+            let mut source = Source::mock();
+            source.range.start.line = line;
+            normalizer
+                .append_monomorphic_fact(
+                    Fact {
+                        value: AcornValue::Bool(false),
+                        source,
+                        truthiness: Truthiness::Factual,
+                    },
+                    &mut steps,
+                )
+                .unwrap();
+        }
+        let source_lines = |steps: &[ProofStep]| {
+            steps
+                .iter()
+                .map(|step| {
+                    let Rule::Assumption(info) = &step.rule else {
+                        panic!("expected assumption")
+                    };
+                    assert!(step.clause.is_impossible());
+                    assert_eq!(info.defined_atom, None);
+                    info.source.range.start.line
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(source_lines(&steps), vec![3, 8]);
+        let invalid = AcornValue::lambda(vec![AcornType::Bool], AcornValue::Bool(true));
+        let error = normalizer
+            .append_monomorphic_fact(
+                Fact {
+                    value: invalid,
+                    source: Source::mock(),
+                    truthiness: Truthiness::Factual,
+                },
+                &mut steps,
+            )
+            .unwrap_err();
+        assert_eq!(
+            error,
+            "normalization requires a Boolean value, got Bool -> Bool"
+        );
+        assert_eq!(source_lines(&steps), vec![3, 8]);
     }
 }
