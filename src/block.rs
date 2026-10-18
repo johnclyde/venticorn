@@ -290,7 +290,7 @@ impl Block {
     }
 
     // Convert a boolean value from the block's environment to a value in the outer environment.
-    fn export_bool(
+    fn externalize_bool(
         &self,
         outer_env: &Environment,
         inner_value: &AcornValue,
@@ -354,7 +354,16 @@ impl Block {
     }
 
     // Returns a claim usable in the outer environment, and a range where it comes from.
+    // Compatibility name for moving a block result into the enclosing scope.
     pub fn export_last_claim(
+        &self,
+        outer_env: &Environment,
+        token: &Token,
+    ) -> compilation::Result<(AcornValue, Range)> {
+        self.externalize_last_claim(outer_env, token)
+    }
+
+    pub fn externalize_last_claim(
         &self,
         outer_env: &Environment,
         token: &Token,
@@ -366,7 +375,7 @@ impl Block {
             }
         };
         let outer_claim = self
-            .export_bool(outer_env, inner_claim)
+            .externalize_bool(outer_env, inner_claim)
             .map_err(|message| token.error(&message))?;
         Ok((outer_claim, range))
     }
@@ -379,7 +388,7 @@ impl Block {
         outer_env: &Environment,
         target: &AcornValue,
     ) -> Option<(AcornValue, Range)> {
-        let (outer_claim, range) = match self.export_last_claim(outer_env, &Token::empty()) {
+        let (outer_claim, range) = match self.externalize_last_claim(outer_env, &Token::empty()) {
             Ok((c, r)) => (c, r),
             Err(_) => return None,
         };

@@ -332,7 +332,7 @@ impl Environment {
             last_line,
             Some(body),
         )?;
-        let (outer_claim, claim_range) = block.export_last_claim(self, &body.right_brace)?;
+        let (outer_claim, claim_range) = block.externalize_last_claim(self, &body.right_brace)?;
 
         let matching_branches = if let Some(if_claim) = if_claim {
             if outer_claim == if_claim {
@@ -2188,7 +2188,8 @@ impl Environment {
                     Some(&fas.body),
                 )?;
 
-                let (outer_claim, range) = block.export_last_claim(self, &fas.body.right_brace)?;
+                let (outer_claim, range) =
+                    block.externalize_last_claim(self, &fas.body.right_brace)?;
 
                 let index = self.add_node(
                     project,
@@ -2417,7 +2418,7 @@ impl Environment {
                         body.right_brace.line_number,
                         Some(body),
                     )?;
-                    let (claim, _) = block.export_last_claim(self, &body.right_brace)?;
+                    let (claim, _) = block.externalize_last_claim(self, &body.right_brace)?;
                     disjuncts.push(claim);
                     blocks.push((block, body.range()));
                 }
@@ -2485,13 +2486,22 @@ impl Environment {
     }
 
     // Get all facts that this environment exports.
+    // Compatibility names for callers collecting cross-module facts.
     pub fn exported_facts(&self) -> Vec<Fact> {
-        self.exported_facts_filtered(None)
+        self.importable_facts()
+    }
+
+    pub fn exported_facts_filtered(&self, filter: Option<&HashSet<String>>) -> Vec<Fact> {
+        self.importable_facts_filtered(filter)
+    }
+
+    pub fn importable_facts(&self) -> Vec<Fact> {
+        self.importable_facts_filtered(None)
     }
 
     // All principles with a selected source remain available, including several
     // facts generated from one datatype member. Anonymous facts use their line ID.
-    pub fn exported_facts_filtered(&self, filter: Option<&HashSet<String>>) -> Vec<Fact> {
+    pub fn importable_facts_filtered(&self, filter: Option<&HashSet<String>>) -> Vec<Fact> {
         assert!(self.top_level);
         let mut facts = vec![];
         for node in &self.nodes {
