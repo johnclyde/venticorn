@@ -104,12 +104,30 @@ impl GlobalName {
     }
 }
 
+/// Complete identity of an implementation relationship's member.
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
+pub struct InstanceName {
+    pub typeclass: Typeclass,
+    pub attribute: String,
+    pub class: Class,
+}
+
+impl fmt::Display for InstanceName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}.{}.{}",
+            self.class.name, self.typeclass.name, self.attribute
+        )
+    }
+}
+
 /// The declaration form that introduces a name into an environment.
 /// Converting it to a value identity does not grant instance membership.
 #[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub enum DefinedName {
     Local(LocalName),
-    Instance(Typeclass, String, Class),
+    Instance(InstanceName),
 }
 
 impl DefinedName {
@@ -122,7 +140,11 @@ impl DefinedName {
     }
 
     pub fn instance(class: &Typeclass, member: &str, target: Class) -> Self {
-        Self::Instance(class.clone(), member.to_owned(), target)
+        Self::Instance(InstanceName {
+            typeclass: class.clone(),
+            attribute: member.to_owned(),
+            class: target,
+        })
     }
 
     pub fn is_instance(&self) -> bool {
@@ -142,8 +164,8 @@ impl DefinedName {
 
     /// Consume a declaration only in its canonical target's defining module.
     pub fn into_identity_in(self, module: ModuleId) -> Result<LocalName, &'static str> {
-        if let Self::Instance(_, _, target) = &self {
-            if target.module_id != module {
+        if let Self::Instance(name) = &self {
+            if name.class.module_id != module {
                 return Err("instance declaration target belongs to a different module");
             }
         }
@@ -155,8 +177,8 @@ impl DefinedName {
     pub fn into_identity(self) -> LocalName {
         match self {
             Self::Local(name) => name,
-            Self::Instance(class, member, target) => {
-                LocalName::Instance(class, member, target.name)
+            Self::Instance(name) => {
+                LocalName::Instance(name.typeclass, name.attribute, name.class.name)
             }
         }
     }
