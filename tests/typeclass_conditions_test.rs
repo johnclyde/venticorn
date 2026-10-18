@@ -226,7 +226,7 @@ fn law_bearing_instances_create_a_real_obligation_before_membership_is_usable() 
         .proof_scope()
         .has_membership(env.module_id, "State", class));
     let node = env.iter_goals().next().unwrap();
-    let block = node.current().block.as_ref().unwrap();
+    let block = node.current().block().unwrap();
     assert!(!block
         .entry_scope()
         .has_membership(env.module_id, "State", class));
@@ -286,14 +286,7 @@ fn imported_same_named_classes_keep_distinct_canonical_law_metadata() {
         )
         .unwrap();
         assert_eq!(env.iter_goals().count(), 1);
-        let block = env
-            .iter_goals()
-            .next()
-            .unwrap()
-            .current()
-            .block
-            .as_ref()
-            .unwrap();
+        let block = env.iter_goals().next().unwrap().current().block().unwrap();
         assert!(!block.entry_scope().has_membership(id, "State", class));
         assert!(env
             .bindings

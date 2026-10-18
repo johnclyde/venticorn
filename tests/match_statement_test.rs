@@ -22,7 +22,7 @@ fn match_statements_retain_every_case_proof_obligation() {
         .unwrap();
     assert_eq!(env.nodes.len(), node_count + 2);
     for node in &env.nodes[node_count..] {
-        let block = node.block.as_ref().expect("case keeps its proof block");
+        let block = node.block().expect("case keeps its proof block");
         assert!(block.env.nodes.iter().any(|node| node.has_goal()));
     }
     assert_eq!(

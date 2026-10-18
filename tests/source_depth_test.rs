@@ -11,7 +11,7 @@ fn check_node_depths(env: &Environment, expected: u32) -> usize {
     for node in &env.nodes {
         total += 1;
         assert_eq!(node.claim.source.depth, expected);
-        if let Some(block) = &node.block {
+        if let Some(block) = node.block() {
             total += check_node_depths(&block.env, expected + 1);
         }
     }
@@ -44,7 +44,7 @@ fn lexical_depth_survives_same_scope_staging_and_real_children() {
         SourceType::Instance(name, class) if name == "Item" && class == "Marked")
         })
         .unwrap();
-    let instance_block = instance.block.as_ref().unwrap();
+    let instance_block = instance.block().unwrap();
     assert_eq!(instance_block.env.depth, 1);
     let Some(Goal::Prove(instance_goal)) = &instance_block.goal else {
         panic!("real instance obligation")
@@ -52,7 +52,7 @@ fn lexical_depth_survives_same_scope_staging_and_real_children() {
     assert_eq!(instance_goal.source.depth, 0);
     assert_ne!(instance_goal.value, AcornValue::Bool(true));
     let outer = env.get_node_by_name("outer");
-    let block = outer.current().block.as_ref().unwrap();
+    let block = outer.current().block().unwrap();
     let Some(Goal::Prove(goal)) = &block.goal else {
         panic!("theorem goal")
     };
@@ -63,7 +63,7 @@ fn lexical_depth_survives_same_scope_staging_and_real_children() {
         .iter()
         .find(|n| n.claim.theorem_name() == Some("inner"))
         .unwrap();
-    let inner = inner.block.as_ref().unwrap();
+    let inner = inner.block().unwrap();
     let Some(Goal::Prove(goal)) = &inner.goal else {
         panic!("nested theorem goal")
     };

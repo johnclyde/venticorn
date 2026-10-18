@@ -108,7 +108,7 @@ fn imported_family_aliases_and_reexports_keep_canonical_bounds_and_spelling() {
     let id = project.expect_ok("main");
     let env = project.get_env_by_id(id).unwrap();
     let node = env.get_node_by_name("goal");
-    let scope = &node.current().block.as_ref().unwrap().env.bindings;
+    let scope = &node.current().block().unwrap().env.bindings;
     let value = scope
         .evaluate_value(
             &project,
@@ -185,7 +185,7 @@ fn bounded_family_witness_emits_nonempty_proof_and_replays() {
     let code = prover
         .get_and_print_proof()
         .unwrap()
-        .to_code(&node.current().block.as_ref().unwrap().env.bindings)
+        .to_code(&node.current().block().unwrap().env.bindings)
         .unwrap();
     assert!(!code.is_empty());
     assert_eq!(
@@ -262,7 +262,7 @@ fn bounded_family_constraints_keep_scope_and_require_existence() {
         let nodes = env.iter_goals().collect::<Vec<_>>();
         assert_eq!(nodes.len(), 1);
         let node = &nodes[0];
-        let bindings = &node.current().block.as_ref().unwrap().env.bindings;
+        let bindings = &node.current().block().unwrap().env.bindings;
         let venticorn::acorn_type::AcornType::Arbitrary(param) =
             bindings.get_type_for_name("T").unwrap()
         else {

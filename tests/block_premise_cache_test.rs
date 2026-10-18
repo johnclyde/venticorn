@@ -71,7 +71,11 @@ fn constraint_blocks_keep_existence_obligations_and_use_named_advice() {
     let mut project = Project::new_mock();
     project.mock("/mock/main.ac", &source);
     let env = project.get_env_by_ref(&main_module()).unwrap();
-    let node = env.nodes.iter().find(|node| node.block.is_some()).unwrap();
+    let node = env
+        .nodes
+        .iter()
+        .find(|node| node.block().is_some())
+        .unwrap();
     assert_eq!(node.claim.value, AcornValue::Bool(true));
     assert_eq!(
         node.claim.source.fact_name().as_deref(),
@@ -79,7 +83,7 @@ fn constraint_blocks_keep_existence_obligations_and_use_named_advice() {
     );
     assert_eq!(node.claim.source.range.start.line, 4);
     assert_eq!(node.claim.source.range.end.line, 6);
-    let block = node.block.as_ref().unwrap();
+    let block = node.block().unwrap();
     assert!(
         matches!(block.goal.as_ref().unwrap().value(), AcornValue::Exists(types, _) if types.len() == 1)
     );

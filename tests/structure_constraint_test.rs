@@ -34,7 +34,7 @@ fn constrained_structures_create_an_earlier_scoped_existence_obligation() {
     env.add("structure Pair {\n first: Bool\n second: Bool\n} constraint {\n first or second\n} by {\n true or true\n}");
     assert_eq!(env.iter_goals().count(), 2);
     assert!(!env.nodes[0].is_structural());
-    let block = env.nodes[0].block.as_ref().unwrap();
+    let block = env.nodes[0].block().unwrap();
     assert!(
         matches!(block.goal.as_ref().unwrap().value(), AcornValue::Exists(fields, _) if fields.len() == 2)
     );

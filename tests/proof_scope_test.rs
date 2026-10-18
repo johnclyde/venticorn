@@ -59,8 +59,7 @@ fn scoped_imports_affect_later_children_and_parent_but_not_earlier_children() {
     assert!(outer.current().proof_scope().imports().is_empty());
     assert!(outer
         .current()
-        .block
-        .as_ref()
+        .block()
         .unwrap()
         .entry_scope()
         .imports()

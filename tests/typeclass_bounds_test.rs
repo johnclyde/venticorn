@@ -251,7 +251,7 @@ fn bounded_witness_proof_emits_nonempty_code_and_replays_with_false_control() {
     }
     prover.set_goal(&node.goal_context().unwrap());
     assert_eq!(prover.quick_search(), Outcome::Success);
-    let scope = &node.current().block.as_ref().unwrap().env.bindings;
+    let scope = &node.current().block().unwrap().env.bindings;
     let code = prover
         .get_and_print_proof()
         .unwrap()

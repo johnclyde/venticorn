@@ -49,7 +49,7 @@ fn declaration_roles_and_lexical_nesting_define_source_importability() {
     }
     assert!(seen.into_iter().all(|value| value));
     let outer = env.get_node_by_name("outer");
-    let children = &outer.current().block.as_ref().unwrap().env.nodes;
+    let children = &outer.current().block().unwrap().env.nodes;
     assert!(!children.is_empty());
     assert!(children.iter().all(|node| !node.claim.source.importable));
     let definition = children
@@ -139,7 +139,7 @@ fn witness_conditions_follow_the_declaration_scope_without_changing_obligations(
     assert!(witness[1].claim.source.importable);
     assert_eq!(witness[0].claim.source.range, witness[1].claim.source.range);
     let goal = env.get_node_by_name("goal");
-    let children = &goal.current().block.as_ref().unwrap().env.nodes;
+    let children = &goal.current().block().unwrap().env.nodes;
     assert_eq!(
         children
             .iter()

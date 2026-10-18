@@ -1036,7 +1036,7 @@ impl Project {
             }
         }
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
-            if let Some(block) = &node.block {
+            if let Some(block) = node.block() {
                 for child in &block.env.nodes {
                     if let Some((id, name)) = child.claim.source.qualified_fact_name() {
                         if let Some(module) = project.modules.get(id as usize) {
