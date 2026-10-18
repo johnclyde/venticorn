@@ -202,12 +202,9 @@ impl Prover {
                 // Negate the goal and add it as a counterfactual assumption.
                 let (hypo, counter) = goal_value.clone().negate_goal();
                 if let Some(hypo) = hypo {
-                    self.add_fact(Fact::Proposition(
-                        prop.with_value(hypo),
-                        Truthiness::Hypothetical,
-                    ));
+                    self.add_fact(Fact::new(prop.with_value(hypo), Truthiness::Hypothetical));
                 }
-                self.add_fact(Fact::Proposition(
+                self.add_fact(Fact::new(
                     prop.with_negated_goal(counter.clone()),
                     Truthiness::Counterfactual,
                 ));
@@ -1034,10 +1031,10 @@ mod equality_provenance_tests {
                 ..Source::mock()
             };
             prover.add_fact(Fact::new(
-                crate::proposition::Proposition {
-                    value: AcornValue::new_equals(left.clone(), right.clone()),
-                    source: source.clone(),
-                },
+                crate::proposition::Proposition::new(
+                    AcornValue::new_equals(left.clone(), right.clone()),
+                    source.clone(),
+                ),
                 truthiness,
             ));
             assert!(prover.error.is_none(), "{:?}", prover.error);
@@ -1079,10 +1076,7 @@ mod normalization_boundary_tests {
                 goal.inconsistency_okay = okay;
                 let mut prover = Prover::with_scope(&project, false, goal.proof_scope.clone());
                 prover.add_fact(Fact::new(
-                    crate::proposition::Proposition {
-                        value: AcornValue::Bool(false),
-                        source: source.clone(),
-                    },
+                    crate::proposition::Proposition::new(AcornValue::Bool(false), source.clone()),
                     truthiness,
                 ));
                 assert!(prover.has_immediate_outcome());
@@ -1141,10 +1135,7 @@ mod normalization_boundary_tests {
             ),
         );
         prover.add_fact(Fact::new(
-            crate::proposition::Proposition {
-                value: value,
-                source: Source::mock(),
-            },
+            crate::proposition::Proposition::new(value, Source::mock()),
             Truthiness::Factual,
         ));
         assert!(prover.has_immediate_outcome());
@@ -1221,15 +1212,12 @@ mod fact_batch_tests {
                 let mut source = Source::mock();
                 source.range.start.line = 17;
                 let impossible = Fact::new(
-                    crate::proposition::Proposition {
-                        value: AcornValue::Bool(false),
-                        source: source.clone(),
-                    },
+                    crate::proposition::Proposition::new(AcornValue::Bool(false), source.clone()),
                     truthiness,
                 );
                 let invalid = Fact::new(
-                    crate::proposition::Proposition {
-                        value: AcornValue::constant(
+                    crate::proposition::Proposition::new(
+                        AcornValue::constant(
                             2,
                             "item".into(),
                             vec![],
@@ -1238,8 +1226,8 @@ mod fact_batch_tests {
                                 vec![],
                             ),
                         ),
-                        source: Source::mock(),
-                    },
+                        Source::mock(),
+                    ),
                     Truthiness::Factual,
                 );
                 let facts = if false_first {
@@ -1310,5 +1298,74 @@ mod fact_batch_tests {
         assert_eq!(info.source.range, goal.goal.range());
         assert_eq!(info.defined_atom, None);
         assert_eq!(prover.verification_search(), Outcome::Success);
+    }
+}
+
+#[cfg(test)]
+mod contextual_goal_role_tests {
+    use super::*;
+    use crate::module::ModuleRef;
+
+    #[test]
+    fn goal_metadata_does_not_change_forced_assumption_roles_or_cache_policy() {
+        let mut project = Project::new_mock();
+        project.mock(
+            "/mock/main.ac",
+            "let p: Bool = axiom\nlet q: Bool = axiom\ntheorem goal { p -> q }",
+        );
+        let module = project.expect_ok("main");
+        let env = project.get_env_by_id(module).unwrap();
+        let node = env.get_node_by_name("goal");
+        let resolve = |id| (id == module).then(|| ModuleRef::Name("main".into()));
+        let mut baseline = node.goal_context().unwrap();
+        // The theorem block has already split its premise. Exercise the direct
+        // goal API with the complete admitted implication instead.
+        baseline.goal = Goal::Prove(node.current().claim.clone());
+        assert!(matches!(
+            baseline.goal.value(),
+            AcornValue::Binary(crate::acorn_value::BinaryOp::Implies, _, _)
+        ));
+        let expected_policy =
+            crate::persistent_cache::goal_policy(std::slice::from_ref(&baseline), &resolve)
+                .unwrap();
+        for depth in [0, 4] {
+            for role in [
+                Truthiness::Factual,
+                Truthiness::Hypothetical,
+                Truthiness::Counterfactual,
+            ] {
+                let mut context = node.goal_context().unwrap();
+                context.goal = baseline.goal.clone();
+                let Goal::Prove(prop) = &mut context.goal else {
+                    panic!("prove goal")
+                };
+                *prop = prop.clone().with_depth(depth).with_truthiness(role);
+                assert_eq!(
+                    crate::persistent_cache::goal_policy(std::slice::from_ref(&context), &resolve)
+                        .unwrap(),
+                    expected_policy
+                );
+                let mut prover = Prover::with_scope(&project, false, context.proof_scope.clone());
+                prover.set_goal(&context);
+                assert!(prover.error.is_none());
+                let steps: Vec<_> = prover.passive_set.iter_steps().collect();
+                assert_eq!(steps.len(), 2);
+                assert_eq!(
+                    steps
+                        .iter()
+                        .filter(|step| step.truthiness == Truthiness::Hypothetical)
+                        .count(),
+                    1
+                );
+                assert_eq!(
+                    steps
+                        .iter()
+                        .filter(|step| step.truthiness == Truthiness::Counterfactual)
+                        .count(),
+                    1
+                );
+                assert_eq!(prover.quick_verification_search(), Outcome::Exhausted);
+            }
+        }
     }
 }
