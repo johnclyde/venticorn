@@ -1663,7 +1663,7 @@ impl Project {
                 },
             };
             if let Some(env) = self.get_env_by_id(dependency) {
-                facts.extend(env.exported_facts_filtered(selected));
+                facts.extend(env.importable_facts_filtered(selected));
             }
         }
         facts
@@ -1717,7 +1717,7 @@ impl Project {
                 },
             };
             let env = self.get_env_by_id(dependency).unwrap();
-            facts.extend(env.exported_facts_filtered(selected));
+            facts.extend(env.importable_facts_filtered(selected));
         }
         facts
     }
