@@ -155,13 +155,11 @@ impl Prover {
 
     // Used to add facts internally, after the fact has already been monomorphized.
     fn add_monomorphic_fact(&mut self, fact: Fact) {
-        let mut steps = match self.normalizer.normalize_monomorphic_fact(fact) {
-            Ok(steps) => steps,
-            Err(error) => {
-                self.error = Some(error);
-                return;
-            }
-        };
+        let mut steps = vec![];
+        if let Err(error) = self.normalizer.append_monomorphic_fact(fact, &mut steps) {
+            self.error = Some(error);
+            return;
+        }
         // An empty clause is already a known outcome, before search or subset selection.
         // Keep its original truthiness and source when deciding Success versus Inconsistent.
         if let Some(index) = steps.iter().position(|step| step.clause.is_impossible()) {
