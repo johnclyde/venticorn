@@ -510,7 +510,7 @@ impl Normalizer {
         self.append_propositions(
             facts.into_iter().filter_map(|fact| match fact {
                 Fact::Proposition(proposition) => Some(proposition),
-                Fact::InstanceOf(..) => None,
+                Fact::Instance(..) => None,
             }),
             steps,
         )
@@ -533,7 +533,7 @@ impl Normalizer {
         match fact {
             Fact::Proposition(proposition) => self.normalize_monomorphic_steps(proposition, steps),
             // Membership statements have no Boolean clause and cannot grant authority.
-            Fact::InstanceOf(..) => Ok(()),
+            Fact::Instance(..) => Ok(()),
         }
     }
 

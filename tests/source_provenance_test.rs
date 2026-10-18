@@ -233,16 +233,13 @@ fn instance_relationships_keep_stable_names_and_separate_member_sources() {
     let module = project.expect_ok("main");
     let env = project.get_env_by_id(module).unwrap();
     assert_eq!(env.iter_goals().count(), 2);
-    let relationship = env.nodes.iter().find(|node| matches!(&node.proposition().unwrap().source.source_type, SourceType::Instance(name, class) if name == "Item" && class == "Marked")).unwrap();
-    assert_eq!(
-        relationship.proposition().unwrap().value,
-        AcornValue::Bool(true)
-    );
+    let relationship = env.nodes.iter().find(|node| matches!(&node.source().unwrap().source_type, SourceType::Instance(name, class) if name == "Item" && class == "Marked")).unwrap();
+    assert!(relationship.proposition().is_none());
     assert!(relationship.block().unwrap().goal.is_some());
     let names = env
         .nodes
         .iter()
-        .filter_map(|node| node.proposition().unwrap().source.fact_name())
+        .filter_map(|node| node.source().unwrap().fact_name())
         .collect::<Vec<_>>();
     for name in [
         "Item.instance.Marked",

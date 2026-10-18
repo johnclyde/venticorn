@@ -16,7 +16,7 @@ use crate::module::ModuleId;
 use crate::names::{DefinedName, GlobalName, LocalName};
 use crate::project::{LoadError, Project};
 use crate::proof_step::Truthiness;
-use crate::proposition::Proposition;
+use crate::proposition::{Proposition, Source, SourceType};
 use crate::statement::{
     Body, ClassStatement, DefineStatement, LetStatement, Statement, StatementInfo,
     TypeclassStatement, VariableSatisfyStatement,
@@ -2005,12 +2005,16 @@ impl Environment {
             &info,
         )?;
         // Every validated declaration has a source node, including law-free instances.
-        let proposition = Proposition::instance(
-            None,
-            self.module_id,
-            statement.range(),
-            name.to_string(),
-            class.name.clone(),
+        let relation = Fact::Instance(
+            target_class.clone(),
+            class.clone(),
+            Source {
+                module: self.module_id,
+                range: statement.range(),
+                source_type: SourceType::Instance(name.to_string(), class.name.clone()),
+                importable: true,
+                depth: self.depth,
+            },
         );
         if !conditions.is_empty() || instance.proof.is_some() {
             let goal = if conditions.is_empty() {
@@ -2045,12 +2049,12 @@ impl Environment {
                 statement.last_line(),
                 instance.proof.as_ref(),
             )?;
-            // Export only a vacuous marker from the obligation. Its lowered law
-            // is not a premise inside the block, nor an unconditional new axiom.
-            let index = self.push_node(Node::new_block(project, self, block, Some(proposition)));
+            // The relation reflects this declaration; its lowered law is never a premise
+            // inside its own block, and only the captured scope authorizes specialization.
+            let index = self.push_node(Node::instance(project, self, Some(block), relation));
             self.add_node_lines(index, &statement.range());
         } else {
-            let index = self.push_node(Node::structural(project, self, proposition));
+            let index = self.push_node(Node::instance(project, self, None, relation));
             self.add_node_lines(index, &statement.range());
         }
         // Later goals may use this declaration conditionally on the whole module
