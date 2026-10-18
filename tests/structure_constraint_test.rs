@@ -121,7 +121,7 @@ fn constrained_projection_equations_are_conditional_and_inputs_need_not_be_injec
         prover.quick_verification_search(),
         Outcome::Exhausted,
         "{:?}",
-        prover.error
+        prover.error()
     );
 }
 
@@ -142,7 +142,11 @@ fn proof_outcomes(source: &str) -> Vec<venticorn::prover::Outcome> {
             }
             prover.set_goal(&node.goal_context().unwrap());
             let outcome = prover.quick_verification_search();
-            assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
+            assert!(
+                !matches!(outcome, Outcome::Error(_)),
+                "{:?}",
+                prover.error()
+            );
             outcome
         })
         .collect()

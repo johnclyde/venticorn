@@ -40,7 +40,7 @@ fn identity_is_surjective_with_same_or_distinct_formal_names() {
                     prover.quick_verification_search(),
                     expected,
                     "{source}\n{:?}",
-                    prover.error
+                    prover.error()
                 );
             }
         }

@@ -470,21 +470,17 @@ impl<'a> Builder<'a> {
 
         match outcome {
             Outcome::Success => match prover.get_proof() {
-                None => self.log_proving_warning(&prover, &goal_context, "had a missing proof"),
+                None => self.log_proving_warning(&goal_context, "had a missing proof"),
                 Some(proof) => {
                     if proof.needs_simplification() {
-                        self.log_proving_warning(&prover, &goal_context, "needs simplification");
+                        self.log_proving_warning(&goal_context, "needs simplification");
                     } else {
                         // Both of these count as a success.
                         accepted = true;
                         self.num_success += 1;
                         self.record_verified_goal(goal_context);
                         if self.log_when_slow && elapsed_f64 > 0.1 {
-                            self.log_proving_info(
-                                &prover,
-                                &goal_context,
-                                &format!("took {}", elapsed_str),
-                            );
+                            self.log_proving_info(&goal_context, &format!("took {}", elapsed_str));
                         } else {
                             self.log_proving_success(
                                 goal_context.first_line,
@@ -503,28 +499,22 @@ impl<'a> Builder<'a> {
                     }
                 }
             },
-            Outcome::Exhausted => {
-                self.log_proving_warning(&prover, &goal_context, "could not be verified")
-            }
+            Outcome::Exhausted => self.log_proving_warning(&goal_context, "could not be verified"),
             Outcome::Inconsistent => {
-                self.log_proving_warning(&prover, &goal_context, "- prover found an inconsistency")
+                self.log_proving_warning(&goal_context, "- prover found an inconsistency")
             }
-            Outcome::Timeout => self.log_proving_warning(
-                &prover,
-                &goal_context,
-                &format!("timed out after {}", elapsed_str),
-            ),
+            Outcome::Timeout => {
+                self.log_proving_warning(&goal_context, &format!("timed out after {}", elapsed_str))
+            }
             Outcome::Interrupted => {
-                self.log_proving_error(&prover, &goal_context, "was interrupted");
+                self.log_proving_error(&goal_context, "was interrupted");
             }
-            Outcome::Error(_) => {
-                self.log_proving_error(&prover, &goal_context, "had an error");
+            Outcome::Error(error) => {
+                self.log_proving_error(&goal_context, &format!("had an error: {}", error));
             }
-            Outcome::Constrained => self.log_proving_warning(
-                &prover,
-                &goal_context,
-                "stopped after hitting constraints",
-            ),
+            Outcome::Constrained => {
+                self.log_proving_warning(&goal_context, "stopped after hitting constraints")
+            }
         }
         accepted
     }
@@ -542,15 +532,11 @@ impl<'a> Builder<'a> {
     // Create a build event for a proof that was other than successful.
     fn make_event(
         &mut self,
-        prover: &Prover,
         goal_context: &GoalContext,
         message: &str,
         sev: DiagnosticSeverity,
     ) -> BuildEvent {
-        let mut full_message = format!("{} {}", goal_context.description(), message);
-        if let Some(e) = &prover.error {
-            full_message.push_str(&format!(": {}", e));
-        }
+        let full_message = format!("{} {}", goal_context.description(), message);
         let diagnostic = Diagnostic {
             range: goal_context.goal.range(),
             severity: Some(sev),
@@ -565,20 +551,15 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn log_proving_info(&mut self, prover: &Prover, goal_context: &GoalContext, message: &str) {
-        let mut event = self.make_event(
-            prover,
-            goal_context,
-            message,
-            DiagnosticSeverity::INFORMATION,
-        );
+    fn log_proving_info(&mut self, goal_context: &GoalContext, message: &str) {
+        let mut event = self.make_event(goal_context, message, DiagnosticSeverity::INFORMATION);
         event.verified = Some((goal_context.first_line, goal_context.last_line));
         (self.event_handler)(event);
     }
 
     // Logs a warning. Warnings can only happen during the proving phase.
-    fn log_proving_warning(&mut self, prover: &Prover, goal_context: &GoalContext, message: &str) {
-        let event = self.make_event(prover, goal_context, message, DiagnosticSeverity::WARNING);
+    fn log_proving_warning(&mut self, goal_context: &GoalContext, message: &str) {
+        let event = self.make_event(goal_context, message, DiagnosticSeverity::WARNING);
         (self.event_handler)(event);
         if let Some(module) = &mut self.current_module {
             module.good = false;
@@ -587,8 +568,8 @@ impl<'a> Builder<'a> {
     }
 
     // Logs an error during the proving phase.
-    fn log_proving_error(&mut self, prover: &Prover, goal_context: &GoalContext, message: &str) {
-        let mut event = self.make_event(prover, goal_context, message, DiagnosticSeverity::WARNING);
+    fn log_proving_error(&mut self, goal_context: &GoalContext, message: &str) {
+        let mut event = self.make_event(goal_context, message, DiagnosticSeverity::WARNING);
 
         // Set progress as complete, because an error will halt the build
         event.progress = Some((self.goals_total, self.goals_total));
@@ -810,5 +791,45 @@ mod tests {
             );
             assert!(!text.contains("average") && !text.contains("NaN") && !text.contains("inf"));
         }
+    }
+}
+
+#[cfg(test)]
+mod error_payload_tests {
+    use super::*;
+    use crate::project::Project;
+
+    #[test]
+    fn builder_reports_the_outcome_diagnostic_without_reading_prover_state() {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "theorem goal { true }");
+        let id = project.expect_ok("main");
+        let env = project.get_env_by_id(id).unwrap();
+        let goal = env.get_node_by_name("goal").goal_context().unwrap();
+        let prover = Prover::new(&project, false);
+        assert!(prover.error().is_none());
+        let mut events = vec![];
+        {
+            let mut builder = Builder::new(|event| events.push(event));
+            builder.module_loaded(env);
+            builder.search_finished(
+                &prover,
+                &goal,
+                Outcome::Error("specific diagnostic".into()),
+                Duration::ZERO,
+            );
+            assert_eq!(builder.status, BuildStatus::Error);
+            assert_eq!(builder.goals_done, 1);
+            assert_eq!(builder.num_success, 0);
+        }
+        let diagnostics = events
+            .iter()
+            .filter_map(|event| event.diagnostic.as_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].message,
+            "goal had an error: specific diagnostic"
+        );
     }
 }

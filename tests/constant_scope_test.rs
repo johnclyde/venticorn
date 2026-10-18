@@ -158,7 +158,7 @@ fn solve_goals_inside_generic_theorems_use_the_opaque_local_type() {
                 prover.add_fact(fact);
             }
             prover.set_goal(&context);
-            assert_eq!(prover.error, None);
+            assert_eq!(prover.error(), None);
         }
     }
     assert!(saw_solve);

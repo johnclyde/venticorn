@@ -110,7 +110,7 @@ fn terminal_hint_errors_and_presearch_cancellation_do_not_fallback() {
     let (full, Some(mut guided), goal) = pair(&project, &premise("main", &["known"])) else {
         panic!()
     };
-    guided.error = Some("test an already-reported normalizer error".into());
+    guided.set_error_for_test("test an already-reported normalizer error");
     let mut builder = Builder::new(|_| {});
     let result = project
         .search_goal(full, Some(guided), &mut builder)

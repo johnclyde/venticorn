@@ -51,7 +51,7 @@ fn outcomes(source: &str, shallow: bool) -> Vec<Outcome> {
         } else {
             prover.quick_search()
         };
-        assert!(!matches!(result, Outcome::Error(_)), "{:?}", prover.error);
+        assert!(!matches!(result, Outcome::Error(_)), "{:?}", prover.error());
         results.push(result);
         true
     });
@@ -90,7 +90,7 @@ fn explicit_equality_and_language_alias_replay_nonempty_proof_at_original_positi
         prover.quick_search(),
         Outcome::Success,
         "{:?}",
-        prover.error
+        prover.error()
     );
     let names = prover.get_useful_fact_names().unwrap();
     assert!(names.contains(&(module, "same_seed".into())), "{names:?}");

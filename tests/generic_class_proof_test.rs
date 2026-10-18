@@ -17,7 +17,11 @@ fn verify(source: &str) -> Outcome {
         assert!(!context.goal.value().has_generic());
         prover.set_goal(&context);
         let outcome = prover.quick_verification_search();
-        assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
+        assert!(
+            !matches!(outcome, Outcome::Error(_)),
+            "{:?}",
+            prover.error()
+        );
         if outcome != Outcome::Success {
             return outcome;
         }
