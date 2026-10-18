@@ -1032,7 +1032,7 @@ impl Project {
                 || truthiness == crate::proof_step::Truthiness::Hypothetical
                 || (local && !selected_node.claim.source.importable)
             {
-                prover.add_fact(Fact::new(selected_node.claim.clone(), truthiness));
+                prover.add_fact(Fact::Proposition(selected_node.claim.clone(), truthiness));
             }
         }
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {

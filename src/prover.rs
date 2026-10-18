@@ -202,9 +202,12 @@ impl Prover {
                 // Negate the goal and add it as a counterfactual assumption.
                 let (hypo, counter) = goal_value.clone().negate_goal();
                 if let Some(hypo) = hypo {
-                    self.add_fact(Fact::new(prop.with_value(hypo), Truthiness::Hypothetical));
+                    self.add_fact(Fact::Proposition(
+                        prop.with_value(hypo),
+                        Truthiness::Hypothetical,
+                    ));
                 }
-                self.add_fact(Fact::new(
+                self.add_fact(Fact::Proposition(
                     prop.with_negated_goal(counter.clone()),
                     Truthiness::Counterfactual,
                 ));
@@ -1180,10 +1183,12 @@ mod goal_fact_demand_tests {
         let definitions = node
             .usable_facts(&project)
             .into_iter()
-            .filter(|fact| fact.proposition.source.name().as_deref() == Some("identity"))
+            .filter(|fact| {
+                fact.as_proposition().unwrap().source.name().as_deref() == Some("identity")
+            })
             .collect::<Vec<_>>();
         assert_eq!(definitions.len(), 1);
-        assert!(definitions[0].proposition.value.is_generic());
+        assert!(definitions[0].as_proposition().unwrap().value.is_generic());
         for fact in definitions {
             prover.add_fact(fact);
         }
@@ -1283,10 +1288,12 @@ mod fact_batch_tests {
         let facts = node
             .usable_facts(&project)
             .into_iter()
-            .filter(|fact| fact.proposition.source.name().as_deref() == Some("impossible"))
+            .filter(|fact| {
+                fact.as_proposition().unwrap().source.name().as_deref() == Some("impossible")
+            })
             .collect::<Vec<_>>();
         assert_eq!(facts.len(), 1);
-        assert!(facts[0].proposition.value.is_generic());
+        assert!(facts[0].as_proposition().unwrap().value.is_generic());
         let mut prover = Prover::new(&project, false);
         prover.add_fact(facts[0].clone());
         assert!(!prover.has_immediate_outcome());
@@ -1299,7 +1306,7 @@ mod fact_batch_tests {
         let Rule::Assumption(info) = &step.rule else {
             panic!("expected assumption")
         };
-        assert_ne!(info.source, facts[0].proposition.source);
+        assert_ne!(info.source, facts[0].as_proposition().unwrap().source);
         assert_eq!(info.source.range, goal.goal.range());
         assert_eq!(info.defined_atom, None);
         assert_eq!(prover.verification_search(), Outcome::Success);

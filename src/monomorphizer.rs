@@ -101,28 +101,29 @@ impl Monomorphizer {
 
     // Adds a fact that could be either generic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
+        let Fact::Proposition(proposition, truthiness) = fact;
         // Directly admitted facts can expose concrete instances needed by definitions.
-        self.add_monomorphs(&fact.proposition.value);
+        self.add_monomorphs(&proposition.value);
 
         let i = self.prop_info.len();
         let mut instances = vec![];
-        fact.proposition
+        proposition
             .value
             .find_constants(&|c| !c.params.is_empty() && c.is_generic(), &mut instances);
         if instances.is_empty() {
             // A generic fact without a constant demand cannot yet be specialized safely.
-            if fact.proposition.value.is_generic() {
+            if proposition.value.is_generic() {
                 return;
             }
 
             // There's nothing to monomorphize here. Just output it.
-            self.output.push((fact.proposition, fact.truthiness));
+            self.output.push((proposition, truthiness));
             return;
         }
 
         self.prop_info.push(GenericPropInfo {
-            proposition: fact.proposition,
-            truthiness: fact.truthiness,
+            proposition,
+            truthiness,
             instantiations: vec![],
         });
 
@@ -158,7 +159,7 @@ impl Monomorphizer {
     pub fn take_facts(&mut self) -> Vec<Fact> {
         self.take_output()
             .into_iter()
-            .map(|(proposition, truthiness)| Fact::new(proposition, truthiness))
+            .map(|(proposition, truthiness)| Fact::Proposition(proposition, truthiness))
             .collect()
     }
 

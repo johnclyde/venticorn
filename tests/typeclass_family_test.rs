@@ -157,7 +157,7 @@ fn bounded_family_witness_emits_nonempty_proof_and_replays() {
         for node in project.get_env_by_id(id).unwrap().iter_goals() {
             let mut prover = Prover::new(&project, false);
             for fact in node.usable_facts(&project) {
-                fact.proposition.value.validate().unwrap();
+                fact.as_proposition().unwrap().value.validate().unwrap();
                 prover.add_fact(fact);
             }
             prover.set_goal(&node.goal_context().unwrap());
@@ -233,7 +233,7 @@ fn bounded_family_projection_and_method_equations_prove_without_extra_laws() {
         let node = project.get_env_by_id(id).unwrap().get_node_by_name("goal");
         let mut prover = Prover::new(&project, false);
         for fact in node.usable_facts(&project) {
-            fact.proposition.value.validate().unwrap();
+            fact.as_proposition().unwrap().value.validate().unwrap();
             prover.add_fact(fact);
         }
         prover.set_goal(&node.goal_context().unwrap());

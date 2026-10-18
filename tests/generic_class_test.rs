@@ -120,7 +120,7 @@ fn verify(source: &str) -> Outcome {
     for node in project.get_env_by_id(id).unwrap().iter_goals() {
         let mut prover = Prover::new(&project, false);
         for fact in node.usable_facts(&project) {
-            fact.proposition.value.validate().unwrap();
+            fact.as_proposition().unwrap().value.validate().unwrap();
             prover.add_fact(fact);
         }
         let context = node.goal_context().unwrap();

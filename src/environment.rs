@@ -2502,7 +2502,7 @@ impl Environment {
             }) {
                 continue;
             }
-            facts.push(Fact::new(node.claim.clone(), Truthiness::Factual));
+            facts.push(Fact::Proposition(node.claim.clone(), Truthiness::Factual));
         }
         facts
     }

@@ -53,7 +53,7 @@ fn prove(source: &str) -> Vec<Outcome> {
             context.goal.value().validate().unwrap();
             let mut prover = Prover::new(&project, false);
             for fact in node.usable_facts(&project) {
-                fact.proposition.value.validate().unwrap();
+                fact.as_proposition().unwrap().value.validate().unwrap();
                 prover.add_fact(fact);
             }
             prover.set_goal(&context);
