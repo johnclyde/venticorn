@@ -20,6 +20,7 @@ impl Fact {
         }
     }
 
+    // Compatibility query; normalization derives locality directly from truthiness.
     pub fn local(&self) -> bool {
         self.truthiness != Truthiness::Factual
     }
