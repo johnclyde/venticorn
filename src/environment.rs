@@ -761,7 +761,8 @@ impl Environment {
         let index = self.push_node(node);
         self.add_node_lines(index, &statement.range());
         if let Some(name) = &ts.name {
-            self.bindings.mark_as_theorem(name);
+            self.bindings
+                .mark_as_theorem_named(&LocalName::unqualified(name));
         }
 
         Ok(())
@@ -1398,7 +1399,8 @@ impl Environment {
             Some(lambda_claim),
             None,
         );
-        self.bindings.mark_as_theorem(&name);
+        self.bindings
+            .mark_as_theorem_named(&LocalName::attribute(&is.name, "induction"));
 
         // The forall form is the anonymous truth of induction. We add that as a proposition.
         let forall_claim = AcornValue::forall(vec![hyp_type], unbound_claim);
@@ -1689,7 +1691,7 @@ impl Environment {
                     .name
                     .error("bounded typeclass condition must occur in the exported proposition"));
             }
-            staged.bindings.mark_as_theorem(&full_name);
+            staged.bindings.mark_as_theorem_named(&constant_name);
             info.conditions.insert(
                 name.to_string(),
                 TypeclassCondition {
