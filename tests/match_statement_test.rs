@@ -25,10 +25,7 @@ fn match_statements_retain_every_case_proof_obligation() {
         let block = node.block().expect("case keeps its proof block");
         assert!(block.env.nodes.iter().any(|node| node.has_goal()));
     }
-    assert_eq!(
-        env.nodes[node_count].proposition().unwrap().value,
-        venticorn::acorn_value::AcornValue::Bool(true)
-    );
+    assert!(env.nodes[node_count].proposition().is_none());
     env.nodes
         .last()
         .unwrap()
