@@ -168,16 +168,25 @@ fn theorem_names_are_distinct_from_fact_selection_names() {
     let mut env = Environment::new_test();
     env.add("define identity(value: Bool) -> Bool { value }\naxiom named_axiom { true }\ntheorem named_theorem { true }\naxiom { true }");
     for node in &env.nodes {
-        assert_eq!(node.proposition().name(), node.proposition().theorem_name());
-        match node.proposition().source.name().as_deref() {
-            Some("identity") => assert_eq!(node.proposition().theorem_name(), None),
+        assert_eq!(
+            node.proposition().unwrap().name(),
+            node.proposition().unwrap().theorem_name()
+        );
+        match node.proposition().unwrap().source.name().as_deref() {
+            Some("identity") => assert_eq!(node.proposition().unwrap().theorem_name(), None),
             Some("named_axiom") => {
-                assert_eq!(node.proposition().theorem_name(), Some("named_axiom"))
+                assert_eq!(
+                    node.proposition().unwrap().theorem_name(),
+                    Some("named_axiom")
+                )
             }
             Some("named_theorem") => {
-                assert_eq!(node.proposition().theorem_name(), Some("named_theorem"))
+                assert_eq!(
+                    node.proposition().unwrap().theorem_name(),
+                    Some("named_theorem")
+                )
             }
-            Some("4") => assert_eq!(node.proposition().theorem_name(), None),
+            Some("4") => assert_eq!(node.proposition().unwrap().theorem_name(), None),
             unexpected => panic!("unexpected fact source: {unexpected:?}"),
         }
     }
@@ -224,13 +233,16 @@ fn instance_relationships_keep_stable_names_and_separate_member_sources() {
     let module = project.expect_ok("main");
     let env = project.get_env_by_id(module).unwrap();
     assert_eq!(env.iter_goals().count(), 2);
-    let relationship = env.nodes.iter().find(|node| matches!(&node.proposition().source.source_type, SourceType::Instance(name, class) if name == "Item" && class == "Marked")).unwrap();
-    assert_eq!(relationship.proposition().value, AcornValue::Bool(true));
+    let relationship = env.nodes.iter().find(|node| matches!(&node.proposition().unwrap().source.source_type, SourceType::Instance(name, class) if name == "Item" && class == "Marked")).unwrap();
+    assert_eq!(
+        relationship.proposition().unwrap().value,
+        AcornValue::Bool(true)
+    );
     assert!(relationship.block().unwrap().goal.is_some());
     let names = env
         .nodes
         .iter()
-        .filter_map(|node| node.proposition().source.fact_name())
+        .filter_map(|node| node.proposition().unwrap().source.fact_name())
         .collect::<Vec<_>>();
     for name in [
         "Item.instance.Marked",

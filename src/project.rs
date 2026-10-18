@@ -1015,8 +1015,7 @@ impl Project {
         for (selected_node, truthiness, local) in selected {
             let selected = selected_node
                 .proposition()
-                .source
-                .qualified_fact_name()
+                .and_then(|p| p.source.qualified_fact_name())
                 .and_then(|(id, name)| {
                     let module = &self.modules.get(id as usize)?.descriptor;
                     if premises
@@ -1044,7 +1043,10 @@ impl Project {
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
             if let Some(block) = node.get_block() {
                 for child in &block.env.nodes {
-                    if let Some((id, name)) = child.proposition().source.qualified_fact_name() {
+                    if let Some((id, name)) = child
+                        .proposition()
+                        .and_then(|p| p.source.qualified_fact_name())
+                    {
                         if let Some(module) = project.modules.get(id as usize) {
                             if let Some(names) = remaining.get_mut(&module.descriptor) {
                                 names.remove(&name);

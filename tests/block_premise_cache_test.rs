@@ -76,13 +76,13 @@ fn constraint_blocks_keep_existence_obligations_and_use_named_advice() {
         .iter()
         .find(|node| node.block().is_some())
         .unwrap();
-    assert_eq!(node.proposition().value, AcornValue::Bool(true));
+    assert_eq!(node.proposition().unwrap().value, AcornValue::Bool(true));
     assert_eq!(
-        node.proposition().source.fact_name().as_deref(),
+        node.proposition().unwrap().source.fact_name().as_deref(),
         Some("Checked.constraint")
     );
-    assert_eq!(node.proposition().source.range.start.line, 4);
-    assert_eq!(node.proposition().source.range.end.line, 6);
+    assert_eq!(node.proposition().unwrap().source.range.start.line, 4);
+    assert_eq!(node.proposition().unwrap().source.range.end.line, 6);
     let block = node.block().unwrap();
     assert!(
         matches!(block.goal.as_ref().unwrap().value(), AcornValue::Exists(types, _) if types.len() == 1)

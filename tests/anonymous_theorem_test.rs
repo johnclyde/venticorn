@@ -21,9 +21,9 @@ fn anonymous_theorems_create_goals_without_leaking_parameter_bindings() {
         assert_eq!(env.iter_goals().count(), i + 1);
         let node = env.nodes.last().unwrap();
         assert!(!node.is_structural());
-        assert!(node.proposition().name().is_none());
+        assert!(node.proposition().unwrap().name().is_none());
         assert_eq!(
-            node.proposition().source.description(),
+            node.proposition().unwrap().source.description(),
             "an anonymous theorem"
         );
         assert!(!env.bindings.has_identifier("a"));
@@ -37,7 +37,7 @@ fn theorem_goal_ranges_end_at_the_claim_not_the_proof_body() {
     let mut env = Environment::new_test();
     env.add("theorem named(b: Bool) {\n    b or not b\n} by {\n    true\n}\n");
     let node = env.nodes.last().unwrap();
-    let range = node.proposition().source.range;
+    let range = node.proposition().unwrap().source.range;
     assert_eq!(range.start.line, 0);
     assert_eq!(range.start.character, 0);
     assert_eq!(range.end.line, 2);
@@ -117,10 +117,10 @@ fn anonymous_axioms_are_explicit_assumptions_with_scoped_parameters() {
         assert_eq!(env.iter_goals().count(), 0);
         let node = env.nodes.last().unwrap();
         assert!(node.is_structural());
-        assert!(node.proposition().name().is_none());
-        assert!(node.proposition().source.is_axiom());
+        assert!(node.proposition().unwrap().name().is_none());
+        assert!(node.proposition().unwrap().source.is_axiom());
         assert_eq!(
-            node.proposition().source.description(),
+            node.proposition().unwrap().source.description(),
             "an anonymous axiom"
         );
         assert!(!env.bindings.has_identifier("value"));
@@ -150,11 +150,11 @@ fn theorem_citations_preserve_theorem_rather_than_axiom_provenance() {
     let mut env = Environment::new_test();
     env.add("axiom foundation(value: Bool) { value or not value }\ntheorem cited(value: Bool) { foundation(value) }\ntheorem(value: Bool) { cited(value) }");
     assert_eq!(env.iter_goals().count(), 0);
-    assert!(env.nodes[0].proposition().source.is_axiom());
-    assert!(!env.nodes[1].proposition().source.is_axiom());
-    assert!(!env.nodes[2].proposition().source.is_axiom());
-    assert_eq!(env.nodes[1].proposition().name(), Some("cited"));
-    assert_eq!(env.nodes[2].proposition().name(), None);
+    assert!(env.nodes[0].proposition().unwrap().source.is_axiom());
+    assert!(!env.nodes[1].proposition().unwrap().source.is_axiom());
+    assert!(!env.nodes[2].proposition().unwrap().source.is_axiom());
+    assert_eq!(env.nodes[1].proposition().unwrap().name(), Some("cited"));
+    assert_eq!(env.nodes[2].proposition().unwrap().name(), None);
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn anonymous_claim_selection_preserves_distinct_source_ranges() {
     for (line, index, first, last) in [(1, 0, 0, 2), (6, 1, 5, 7)] {
         let path = env.path_for_line(line).unwrap();
         assert_eq!(path, vec![index]);
-        let range = env.nodes[index].proposition().source.range;
+        let range = env.nodes[index].proposition().unwrap().source.range;
         assert_eq!((range.start.line, range.start.character), (first, 0));
         assert_eq!((range.end.line, range.end.character), (last, 1));
         let cursor = venticorn::block::NodeCursor::from_path(&env, &path);

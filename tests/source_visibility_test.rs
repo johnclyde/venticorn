@@ -14,7 +14,7 @@ fn declaration_roles_and_lexical_nesting_define_source_importability() {
     let env = project.get_env_by_id(module).unwrap();
     let mut seen = [false; 7];
     for node in &env.nodes {
-        let source = &node.proposition().source;
+        let source = &node.proposition().unwrap().source;
         match &source.source_type {
             SourceType::Anonymous => {
                 seen[0] = true;
@@ -53,12 +53,15 @@ fn declaration_roles_and_lexical_nesting_define_source_importability() {
     assert!(!children.is_empty());
     assert!(children
         .iter()
-        .all(|node| !node.proposition().source.importable));
+        .all(|node| !node.proposition().unwrap().source.importable));
     let definition = children
         .iter()
-        .find(|node| node.proposition().source.fact_name().as_deref() == Some("inner"))
+        .find(|node| node.proposition().unwrap().source.fact_name().as_deref() == Some("inner"))
         .unwrap();
-    let fact = Fact::new(definition.proposition().clone(), Truthiness::Hypothetical);
+    let fact = Fact::new(
+        definition.proposition().unwrap().clone(),
+        Truthiness::Hypothetical,
+    );
     let specialized = fact.instantiate(&[("T".into(), AcornType::Bool)]);
     assert!(!specialized.as_proposition().unwrap().source.importable);
     assert_eq!(
@@ -116,13 +119,13 @@ fn anonymous_theorem_declarations_remain_importable_hint_sources() {
         .iter()
         .find(|node| {
             matches!(
-                node.proposition().source.source_type,
+                node.proposition().unwrap().source.source_type,
                 SourceType::Axiom(None)
             )
         })
         .unwrap();
     hypothetical.add_fact(Fact::new(
-        axiom.proposition().clone(),
+        axiom.proposition().unwrap().clone(),
         Truthiness::Hypothetical,
     ));
     hypothetical.set_goal(&node.goal_context().unwrap());
@@ -142,25 +145,35 @@ fn witness_conditions_follow_the_declaration_scope_without_changing_obligations(
     let witness: Vec<_> = env
         .nodes
         .iter()
-        .filter(|n| matches!(n.proposition().source.source_type, SourceType::Anonymous))
+        .filter(|n| {
+            matches!(
+                n.proposition().unwrap().source.source_type,
+                SourceType::Anonymous
+            )
+        })
         .collect();
     assert_eq!(witness.len(), 2);
-    assert!(!witness[0].proposition().source.importable);
-    assert!(witness[1].proposition().source.importable);
+    assert!(!witness[0].proposition().unwrap().source.importable);
+    assert!(witness[1].proposition().unwrap().source.importable);
     assert_eq!(
-        witness[0].proposition().source.range,
-        witness[1].proposition().source.range
+        witness[0].proposition().unwrap().source.range,
+        witness[1].proposition().unwrap().source.range
     );
     let goal = env.get_node_by_name("goal");
     let children = &goal.current().block().unwrap().env.nodes;
     assert_eq!(
         children
             .iter()
-            .filter(|n| matches!(n.proposition().source.source_type, SourceType::Anonymous))
+            .filter(|n| matches!(
+                n.proposition().unwrap().source.source_type,
+                SourceType::Anonymous
+            ))
             .count(),
         3
     );
-    assert!(children.iter().all(|n| !n.proposition().source.importable));
+    assert!(children
+        .iter()
+        .all(|n| !n.proposition().unwrap().source.importable));
     let goals: Vec<_> = env.iter_goals().collect();
     assert_eq!(goals.len(), 4);
     for node in goals {

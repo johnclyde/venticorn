@@ -365,12 +365,13 @@ impl Block {
         outer_env: &Environment,
         token: &Token,
     ) -> compilation::Result<(AcornValue, Range)> {
-        let (inner_claim, range) = match self.env.nodes.last() {
-            Some(p) => (&p.proposition().value, p.proposition().source.range),
-            None => {
-                return Err(token.error("expected a claim in this block"));
-            }
-        };
+        let proposition = self
+            .env
+            .nodes
+            .last()
+            .and_then(Node::proposition)
+            .ok_or_else(|| token.error("expected a claim in this block"))?;
+        let (inner_claim, range) = (&proposition.value, proposition.source.range);
         let outer_claim = self
             .externalize_bool(outer_env, inner_claim)
             .map_err(|message| token.error(&message))?;
@@ -425,11 +426,11 @@ enum NodeKind {
 impl Node {
     // The declaration's proposition with its effective lexical/contextual role.
     pub fn get_fact(&self) -> Option<Fact> {
-        self.get_fact_with_truthiness(self.proposition().truthiness())
+        self.get_fact_with_truthiness(self.proposition()?.truthiness())
     }
 
     pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Option<Fact> {
-        Some(Fact::new(self.proposition().clone(), truthiness))
+        Some(Fact::new(self.proposition()?.clone(), truthiness))
     }
 
     pub fn is_structural(&self) -> bool {
@@ -457,30 +458,31 @@ impl Node {
     }
 
     pub fn as_theorem(&self) -> Option<(&str, &AcornValue)> {
-        self.proposition()
+        let proposition = self.proposition()?;
+        proposition
             .theorem_name()
-            .map(|name| (name, &self.proposition().value))
+            .map(|name| (name, &proposition.value))
     }
 
     pub fn importable(&self) -> bool {
-        self.proposition().source.importable
+        self.proposition().is_some_and(|p| p.source.importable)
     }
 
     // Stable premise identity, when this source has one.
     pub fn fact_name(&self) -> Option<String> {
-        self.proposition().source.fact_name()
+        self.proposition()?.source.fact_name()
     }
 
-    pub fn proposition(&self) -> &Proposition {
+    pub fn proposition(&self) -> Option<&Proposition> {
         match &self.kind {
             NodeKind::Structural(proposition)
             | NodeKind::Claim(proposition)
-            | NodeKind::Block(_, proposition) => proposition,
+            | NodeKind::Block(_, proposition) => Some(proposition),
         }
     }
 
     pub fn is_axiom(&self) -> bool {
-        self.proposition().source.is_axiom()
+        self.proposition().is_some_and(|p| p.source.is_axiom())
     }
 
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
@@ -541,7 +543,7 @@ impl Node {
     }
 
     pub(crate) fn theorem_name(&self) -> Option<&str> {
-        match &self.proposition().source.source_type {
+        match &self.proposition()?.source.source_type {
             crate::proposition::SourceType::Theorem(name) => name.as_deref(),
             _ => None,
         }
@@ -552,7 +554,7 @@ impl Node {
         if let Some(name) = self.theorem_name() {
             return Some(Cow::Borrowed(name));
         }
-        match &self.proposition().source.source_type {
+        match &self.proposition()?.source.source_type {
             crate::proposition::SourceType::ConstantDefinition(_, name) => {
                 Some(Cow::Borrowed(name))
             }
@@ -810,12 +812,15 @@ impl<'a> NodeCursor<'a> {
                 block.env.last_line(),
             )
         } else {
+            let proposition = node
+                .proposition()
+                .ok_or_else(|| format!("node {} has no proposition", self))?;
             GoalContext::new(
                 self.env(),
-                Goal::Prove(node.proposition().clone()),
-                node.proposition().source.range.start.line,
-                node.proposition().source.range.start.line,
-                node.proposition().source.range.end.line,
+                Goal::Prove(proposition.clone()),
+                proposition.source.range.start.line,
+                proposition.source.range.start.line,
+                proposition.source.range.end.line,
             )
         };
         if node.get_block().is_none() {

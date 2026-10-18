@@ -26,13 +26,14 @@ fn match_statements_retain_every_case_proof_obligation() {
         assert!(block.env.nodes.iter().any(|node| node.has_goal()));
     }
     assert_eq!(
-        env.nodes[node_count].proposition().value,
+        env.nodes[node_count].proposition().unwrap().value,
         venticorn::acorn_value::AcornValue::Bool(true)
     );
     env.nodes
         .last()
         .unwrap()
         .proposition()
+        .unwrap()
         .value
         .validate()
         .unwrap();
@@ -86,7 +87,7 @@ fn nullary_match_case_blocks_assume_the_constructor_equality() {
     assert_eq!(block.env.nodes.len(), 1);
     assert!(block.env.nodes[0].is_structural());
     assert_eq!(
-        block.env.nodes[0].proposition().value,
+        block.env.nodes[0].proposition().unwrap().value,
         AcornValue::new_equals(value, constructor)
     );
 }
@@ -212,14 +213,14 @@ fn match_case_blocks_keep_variables_local_and_retain_body_goals() {
         .and_then(|potential| potential.resolved())
         .unwrap();
     assert_eq!(
-        block.env.nodes[0].proposition().value,
+        block.env.nodes[0].proposition().unwrap().value,
         AcornValue::new_equals(value, AcornValue::new_apply(constructor, vec![local]))
     );
     assert!(block.env.nodes[0].is_structural());
     let goal = block.env.nodes.last().unwrap();
     assert!(!goal.is_structural());
     assert!(goal.has_goal());
-    assert_eq!(goal.proposition().value, AcornValue::Bool(false));
+    assert_eq!(goal.proposition().unwrap().value, AcornValue::Bool(false));
     assert_eq!(env.nodes.len(), node_count);
     assert!(!env.bindings.has_identifier("b"));
 }

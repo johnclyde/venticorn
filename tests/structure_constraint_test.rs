@@ -109,7 +109,7 @@ fn constrained_projection_equations_are_conditional_and_inputs_need_not_be_injec
     let id = project.expect_ok("main");
     let env = project.get_env_by_id(id).unwrap();
     assert_eq!(env.nodes.iter().filter(|node| {
-        node.is_structural() && matches!(&node.proposition().value, AcornValue::ForAll(_, body) if matches!(&**body, AcornValue::Binary(BinaryOp::Implies, _, _)))
+        node.is_structural() && matches!(&node.proposition().unwrap().value, AcornValue::ForAll(_, body) if matches!(&**body, AcornValue::Binary(BinaryOp::Implies, _, _)))
     }).count(), 1);
     let node = env.get_node_by_name("goal");
     let mut prover = Prover::new(&project, false);
@@ -133,7 +133,7 @@ fn proof_outcomes(source: &str) -> Vec<venticorn::prover::Outcome> {
     let env = project.get_env_by_id(id).unwrap();
     env.nodes
         .iter()
-        .for_each(|node| node.proposition().value.validate().unwrap());
+        .for_each(|node| node.proposition().unwrap().value.validate().unwrap());
     env.iter_goals()
         .map(|node| {
             let mut prover = Prover::new(&project, false);

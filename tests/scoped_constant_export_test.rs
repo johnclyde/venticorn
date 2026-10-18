@@ -33,6 +33,7 @@ fn scoped_generic_export_reports_a_source_error_without_partial_admission() {
             .last()
             .unwrap()
             .proposition()
+            .unwrap()
             .value
             .validate()
             .unwrap();
@@ -47,6 +48,7 @@ fn ordinary_local_functions_export_with_their_concrete_type() {
         .last()
         .unwrap()
         .proposition()
+        .unwrap()
         .value
         .validate()
         .unwrap();

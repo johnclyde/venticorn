@@ -74,9 +74,12 @@ fn implicit_laws_and_explicit_proofs_create_real_scoped_obligations() {
             env.iter_goals().count(),
             if proof.is_empty() { 1 } else { 2 }
         );
-        let container = env.nodes.iter().find(|node| matches!(&node.proposition().source.source_type, SourceType::Instance(name, class) if name == "Unit" && class == "Singleton")).unwrap();
+        let container = env.nodes.iter().find(|node| matches!(&node.proposition().unwrap().source.source_type, SourceType::Instance(name, class) if name == "Unit" && class == "Singleton")).unwrap();
         let block = container.block().unwrap();
-        assert_eq!(container.proposition().value, AcornValue::Bool(true));
+        assert_eq!(
+            container.proposition().unwrap().value,
+            AcornValue::Bool(true)
+        );
         assert!(!container.is_structural());
         assert!(!block.entry_scope().has_membership(id, "Unit", class));
         assert!(!block
@@ -283,7 +286,7 @@ fn generated_existential_obligation_proof_replays_at_its_original_position() {
     project.mock("/mock/main.ac", source);
     let module = project.expect_ok("main");
     let env = project.get_env_by_id(module).unwrap();
-    let node = env.iter_goals().find(|node| matches!(&node.current().proposition().source.source_type, SourceType::Instance(name, class) if name == "State" && class == "Witness")).unwrap();
+    let node = env.iter_goals().find(|node| matches!(&node.current().proposition().unwrap().source.source_type, SourceType::Instance(name, class) if name == "State" && class == "Witness")).unwrap();
     let goal = node.goal_context().unwrap();
     assert!(goal.insert_block);
     let mut prover = project.prover_for_node(&node, false);
