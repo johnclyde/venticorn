@@ -15,7 +15,8 @@ use crate::monomorphizer::Monomorphizer;
 use crate::names::{GlobalName, LocalName};
 use crate::proof_scope::ProofScope;
 use crate::proof_step::{ProofStep, Truthiness};
-use crate::proposition::{Proposition, SourceType};
+use crate::proposition::Proposition;
+use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 use crate::type_map::TypeMap;
 
