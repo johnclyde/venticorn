@@ -424,13 +424,20 @@ enum NodeKind {
 }
 
 impl Node {
-    // The declaration's proposition with its effective lexical/contextual role.
+    // The declaration's stored fact, preserving its source and effective role.
     pub fn get_fact(&self) -> Option<Fact> {
-        self.get_fact_with_truthiness(self.proposition()?.truthiness())
+        match &self.kind {
+            NodeKind::Structural(fact) => Some(fact.clone()),
+            NodeKind::Claim(proposition) => Some(Fact::Proposition(proposition.clone())),
+            NodeKind::Block(_, fact) => fact.clone(),
+        }
     }
 
     pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Option<Fact> {
-        Some(Fact::new(self.proposition()?.clone(), truthiness))
+        self.get_fact().map(|fact| match fact {
+            Fact::Proposition(proposition) => Fact::new(proposition, truthiness),
+            relation @ Fact::Instance(..) => relation,
+        })
     }
 
     pub fn is_structural(&self) -> bool {
