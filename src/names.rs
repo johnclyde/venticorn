@@ -126,6 +126,15 @@ impl DefinedName {
         Self::Instance(class.clone(), member.to_owned(), target.to_owned())
     }
 
+    /// Return an ordinary declaration name without treating an instance as one.
+    pub fn to_local(self) -> Option<LocalName> {
+        match self {
+            Self::Unqualified(name) => Some(LocalName::Unqualified(name)),
+            Self::Attribute(owner, member) => Some(LocalName::Attribute(owner, member)),
+            Self::Instance(..) => None,
+        }
+    }
+
     /// Preserve the exact implementation identity, including its canonical class.
     pub fn into_identity(self) -> LocalName {
         match self {
@@ -166,5 +175,25 @@ mod tests {
         );
         assert_ne!(implementation, LocalName::attribute("Marked", "flag"));
         assert_ne!(implementation, LocalName::unqualified("State.Marked.flag"));
+    }
+
+    #[test]
+    fn ordinary_declaration_projection_excludes_instances() {
+        assert_eq!(
+            DefinedName::unqualified("value").to_local(),
+            Some(LocalName::unqualified("value"))
+        );
+        assert_eq!(
+            DefinedName::attribute("Item", "value").to_local(),
+            Some(LocalName::attribute("Item", "value"))
+        );
+        let class = Typeclass {
+            module_id: 3,
+            name: "Marked".into(),
+        };
+        assert_eq!(
+            DefinedName::instance(&class, "flag", "State").to_local(),
+            None
+        );
     }
 }
