@@ -2332,22 +2332,16 @@ impl Environment {
                 let prop = match block.solves(self, &target) {
                     Some((outer_claim, claim_range)) => {
                         block.goal = None;
-                        Proposition::anonymous(outer_claim, self.module_id, claim_range)
-                    }
-                    None => {
-                        // The block doesn't contain a solution.
-                        // So, it has no claim that can be exported. It doesn't really make sense
-                        // to export whatever the last proposition is.
-                        // A lot of code expects something, though, so put a vacuous "true" in here.
-                        Proposition::anonymous(
-                            AcornValue::Bool(true),
+                        Some(Proposition::anonymous(
+                            outer_claim,
                             self.module_id,
-                            statement.range(),
-                        )
+                            claim_range,
+                        ))
                     }
+                    None => None,
                 };
 
-                let index = self.push_node(Node::new_block(project, self, block, Some(prop)));
+                let index = self.push_node(Node::new_block(project, self, block, prop));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
             }
@@ -2364,15 +2358,7 @@ impl Environment {
                     Some(body),
                 )?;
 
-                // It would be nice to not have to make a vacuous "true" proposition here.
-                let vacuous_prop = Proposition::anonymous(
-                    AcornValue::Bool(true),
-                    self.module_id,
-                    statement.range(),
-                );
-
-                let index =
-                    self.push_node(Node::new_block(project, self, block, Some(vacuous_prop)));
+                let index = self.push_node(Node::new_block(project, self, block, None));
                 self.add_node_lines(index, &statement.range());
                 Ok(())
             }
@@ -2438,14 +2424,17 @@ impl Environment {
                 let mut exported = Some(AcornValue::reduce(BinaryOp::Or, disjuncts));
                 let last = blocks.len() - 1;
                 for (index, (block, range)) in blocks.into_iter().enumerate() {
-                    let claim = if index == last {
-                        exported.take().unwrap()
+                    let proposition = if index == last {
+                        Some(Proposition::anonymous(
+                            exported.take().unwrap(),
+                            self.module_id,
+                            statement.range(),
+                        ))
                     } else {
-                        AcornValue::Bool(true)
+                        None
                     };
-                    let prop = Proposition::anonymous(claim, self.module_id, statement.range());
                     let node_index =
-                        self.push_node(Node::new_block(project, self, block, Some(prop)));
+                        self.push_node(Node::new_block(project, self, block, proposition));
                     self.add_node_lines(node_index, &range);
                 }
                 self.add_line_types(
