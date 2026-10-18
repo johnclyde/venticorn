@@ -1092,8 +1092,9 @@ impl Environment {
         self.push_node(Node::structural(
             project,
             self,
-            Proposition::new(
+            Proposition::generic(
                 new_claim,
+                self.scoped_type_params(&param_names),
                 Source::type_definition(
                     self.module_id,
                     range,
@@ -1146,8 +1147,9 @@ impl Environment {
             self.push_node(Node::structural(
                 project,
                 self,
-                Proposition::new(
+                Proposition::generic(
                     member_claim.parametrize(self.module_id, &param_names),
+                    self.scoped_type_params(&param_names),
                     Source::type_definition(
                         self.module_id,
                         range,
