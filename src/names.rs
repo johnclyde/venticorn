@@ -126,6 +126,10 @@ impl DefinedName {
         Self::Instance(class.clone(), member.to_owned(), target.to_owned())
     }
 
+    pub fn is_instance(&self) -> bool {
+        matches!(self, Self::Instance(..))
+    }
+
     /// Return an ordinary declaration name without treating an instance as one.
     pub fn to_local(self) -> Option<LocalName> {
         match self {
