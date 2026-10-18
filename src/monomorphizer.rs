@@ -8,7 +8,7 @@ use crate::names::GlobalName;
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 
-// A sorted substitution of type variables belonging to one fact.
+/// A sorted substitution of type variables belonging to one fact.
 #[derive(PartialEq, Eq, Clone)]
 struct PropParams {
     params: Vec<(String, AcornType)>,
@@ -22,7 +22,7 @@ impl PropParams {
     }
 }
 
-// Actual types for a constant, kept in declaration order rather than fact-name order.
+/// Actual types for a constant, kept in declaration order rather than fact-name order.
 #[derive(PartialEq, Eq, Clone)]
 struct ConstantParams {
     params: Vec<AcornType>,
@@ -45,7 +45,7 @@ impl ConstantParams {
         Self { params }
     }
 
-    // Every replacement type must be fixed before it can drive proof search.
+    /// Every replacement type must be fixed before it can drive proof search.
     fn assert_full(&self) {
         for t in &self.params {
             assert!(!t.is_generic(), "bad monomorphization: {}", self);
@@ -53,34 +53,35 @@ impl ConstantParams {
     }
 }
 
-// A generic proposition, its proof role and the complete substitutions already emitted.
+/// A generic proposition, its proof role and the complete substitutions already emitted.
 #[derive(Clone)]
 struct GenericPropInfo {
     proposition: Proposition,
-    // Partial substitutions from several constants are not combined.
+    /// Partial substitutions from several constants are not combined.
     instantiations: Vec<PropParams>,
 }
 
-// A canonical generic constant's demands and occurrences share one index entry.
+/// A canonical generic constant's demands and occurrences share one index entry.
 #[derive(Clone, Default)]
 struct GenericConstantInfo {
     instantiations: Vec<ConstantParams>,
     occurrences: Vec<(usize, ConstantParams)>,
 }
 
-// A helper structure to determine which monomorphs are necessary.
-// Tracks the generic constants used by each fact and the concrete instances needed by proofs.
+/// A helper structure to determine which monomorphs are necessary.
+/// Tracks the generic constants used by each fact and the concrete instances needed by proofs.
 #[derive(Clone)]
 pub struct Monomorphizer {
+    /// Immutable lexical authority; relation facts cannot grant or revive memberships.
     scope: crate::proof_scope::ProofScope,
-    // Generic propositions retain their own independent type-variable namespaces.
+    /// Generic propositions retain their own independent type-variable namespaces.
     prop_info: Vec<GenericPropInfo>,
 
-    // Facts that are fully monomorphized.
-    // The Monomorphizer only writes to this, never reads.
+    /// Facts that are fully monomorphized.
+    /// The Monomorphizer only writes to this, never reads.
     output: Vec<Proposition>,
 
-    // Facts, goals and definitions request concrete instances in declaration order.
+    /// Facts, goals and definitions request concrete instances in declaration order.
     constant_info: HashMap<GlobalName, GenericConstantInfo>,
 }
 
@@ -98,7 +99,7 @@ impl Monomorphizer {
         }
     }
 
-    // Adds a fact that could be either generic or monomorphic.
+    /// Adds a fact that could be either generic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
         match fact {
             Fact::Proposition(proposition) => {
@@ -164,12 +165,12 @@ impl Monomorphizer {
         }
     }
 
-    // Extract monomorphic facts from the prover.
+    /// Extract monomorphic facts from the prover.
     pub fn take_propositions(&mut self) -> Vec<Proposition> {
         std::mem::take(&mut self.output)
     }
 
-    // Compatibility output derives each role from the moved proposition.
+    /// Compatibility output derives each role from the moved proposition.
     pub fn take_output(&mut self) -> Vec<(Proposition, Truthiness)> {
         self.take_propositions()
             .into_iter()
@@ -180,7 +181,7 @@ impl Monomorphizer {
             .collect()
     }
 
-    // Compatibility collection; each proposition and role move without cloning.
+    /// Compatibility collection; each proposition and role move without cloning.
     pub fn take_facts(&mut self) -> Vec<Fact> {
         self.take_propositions()
             .into_iter()
@@ -188,9 +189,9 @@ impl Monomorphizer {
             .collect()
     }
 
-    // Monomorphizes a generic constant.
-    // For every fact that uses this constant, we want to monomorphize the fact to use this
-    // form of the generic constant.
+    /// Monomorphizes a generic constant.
+    /// For every fact that uses this constant, we want to monomorphize the fact to use this
+    /// form of the generic constant.
     fn monomorphize_matching_props(
         &mut self,
         constant_key: &GlobalName,
@@ -209,12 +210,12 @@ impl Monomorphizer {
         }
     }
 
-    // Try to monomorphize the given fact so that the given params match.
-    // The instance params are the way this instance was parametrized in the fact.
-    // The monomorph params are how we would like to parametrize this instance.
-    // It may or may not be possible to match them up.
-    // For example, this may be a fact about foo<bool, T>, and our goal
-    // is saying something about foo<Nat, Nat>.
+    /// Try to monomorphize the given fact so that the given params match.
+    /// The instance params are the way this instance was parametrized in the fact.
+    /// The monomorph params are how we would like to parametrize this instance.
+    /// It may or may not be possible to match them up.
+    /// For example, this may be a fact about `foo<bool, T>`, and our goal
+    /// is saying something about `foo<Nat, Nat>`.
     fn try_to_monomorphize_prop(
         &mut self,
         prop_id: usize,
@@ -267,7 +268,7 @@ impl Monomorphizer {
         self.output.push(monomorphic_prop);
     }
 
-    // Make sure that we are generating any monomorphizations that are used in this value.
+    /// Make sure that we are generating any monomorphizations that are used in this value.
     pub fn add_monomorphs(&mut self, value: &AcornValue) {
         let mut monomorphs = vec![];
         value.find_constants(
