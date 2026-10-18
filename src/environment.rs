@@ -2133,7 +2133,7 @@ impl Environment {
 
             StatementInfo::Theorem(ts) => self.add_theorem_statement(project, statement, ts),
 
-            StatementInfo::Prop(ps) => {
+            StatementInfo::Claim(ps) => {
                 let claim =
                     self.bindings
                         .evaluate_value(project, &ps.claim, Some(&AcornType::Bool))?;
