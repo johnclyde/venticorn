@@ -154,6 +154,14 @@ impl DefinedName {
         )
     }
 
+    /// Borrow an ordinary declaration name without treating an instance as one.
+    pub fn as_local(&self) -> Option<&LocalName> {
+        match self {
+            Self::Local(LocalName::Instance(..)) | Self::Instance(..) => None,
+            Self::Local(name) => Some(name),
+        }
+    }
+
     /// Return an ordinary declaration name without treating an instance as one.
     pub fn to_local(self) -> Option<LocalName> {
         match self {
@@ -278,5 +286,36 @@ mod tests {
             wrapped.into_identity_in(5),
             Ok(LocalName::instance(&class, "flag", "State"))
         );
+    }
+}
+
+#[cfg(test)]
+mod borrowed_declaration_tests {
+    use super::*;
+
+    #[test]
+    fn borrowed_projection_retains_ordinary_identity_and_excludes_both_instance_forms() {
+        for name in [
+            LocalName::unqualified("value"),
+            LocalName::attribute("State", "value"),
+        ] {
+            let declaration = DefinedName::Local(name.clone());
+            assert_eq!(declaration.as_local(), Some(&name));
+            assert_eq!(declaration.clone().to_local(), Some(name.clone()));
+            assert_eq!(declaration.into_identity(), name);
+        }
+        let class = Typeclass {
+            module_id: 3,
+            name: "Marked".into(),
+        };
+        let local = LocalName::instance(&class, "flag", "State");
+        for declaration in [
+            DefinedName::Local(local.clone()),
+            DefinedName::instance(&class, "flag", Class::new(5, "State".into())),
+        ] {
+            assert!(declaration.as_local().is_none());
+            assert!(declaration.is_instance());
+            assert_eq!(declaration.into_identity_in(5), Ok(local.clone()));
+        }
     }
 }

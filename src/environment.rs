@@ -507,7 +507,7 @@ impl Environment {
         ds: &DefineStatement,
         range: Range,
     ) -> compilation::Result<()> {
-        let allow_recursive_binding = !defined_name.is_instance();
+        let allow_recursive_binding = defined_name.as_local().is_some();
         let constant_name = defined_name
             .into_identity_in(self.module_id)
             .map_err(|message| ds.name_token.error(message))?;
