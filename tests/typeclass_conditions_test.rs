@@ -98,8 +98,8 @@ fn generic_conditions_retain_the_bound_source_and_callable_metadata() {
     );
     assert_eq!(env.nodes.len(), 1);
     assert!(env.nodes[0].is_structural());
-    assert_eq!(env.nodes[0].claim.value, condition.claim);
-    assert_eq!(env.nodes[0].claim.source.range, condition.range);
+    assert_eq!(env.nodes[0].proposition().value, condition.claim);
+    assert_eq!(env.nodes[0].proposition().source.range, condition.range);
     assert!(env.iter_goals().next().is_none());
     assert!(!env.bindings.name_in_use("S"));
     assert_eq!(
@@ -236,7 +236,7 @@ fn law_bearing_instances_create_a_real_obligation_before_membership_is_usable() 
         .proof_scope()
         .has_membership(env.module_id, "State", class));
     assert_eq!(
-        node.current().claim.value,
+        node.current().proposition().value,
         venticorn::acorn_value::AcornValue::Bool(true)
     );
     assert!(!block.goal.as_ref().unwrap().value().is_generic());

@@ -192,7 +192,7 @@ fn recursion_and_identity_facts_keep_ordered_phantom_class_formals() {
     }
     let mut identity = vec![];
     for node in &env.nodes {
-        node.claim.value.find_constants(
+        node.proposition().value.find_constants(
             &|c| c.name.local_name.to_string() == "repeat",
             &mut identity,
         );

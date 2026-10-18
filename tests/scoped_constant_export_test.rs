@@ -29,7 +29,13 @@ fn scoped_generic_export_reports_a_source_error_without_partial_admission() {
         assert!(!env.bindings.has_identifier("flag"));
         assert!(!env.bindings.has_type_name("T"));
         env.add("forall(flag: Bool) {\n let local: Bool = flag\n forall(other: Bool) { local = flag or other }\n}");
-        env.nodes.last().unwrap().claim.value.validate().unwrap();
+        env.nodes
+            .last()
+            .unwrap()
+            .proposition()
+            .value
+            .validate()
+            .unwrap();
     }
 }
 
@@ -37,5 +43,11 @@ fn scoped_generic_export_reports_a_source_error_without_partial_admission() {
 fn ordinary_local_functions_export_with_their_concrete_type() {
     let mut env = Environment::new_test();
     env.add("forall(flag: Bool) {\n define identity(value: Bool) -> Bool { value }\n forall(other: Bool) { identity(flag) = flag or other }\n}");
-    env.nodes.last().unwrap().claim.value.validate().unwrap();
+    env.nodes
+        .last()
+        .unwrap()
+        .proposition()
+        .value
+        .validate()
+        .unwrap();
 }

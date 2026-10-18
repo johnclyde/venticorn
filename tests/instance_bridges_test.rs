@@ -63,11 +63,11 @@ fn canonical_method_bridges_keep_the_owner_actual_and_signature() {
     let mut bridges = vec![];
     for (target_name, class_module) in [("State", left), ("Other", right)] {
         let target = env.bindings.get_type_for_name(target_name).unwrap();
-        let bridge = env.nodes.iter().find(|node| matches!(&node.claim.source.source_type, SourceType::TypeDefinition(name, member) if name == target_name && member == "instance.Painted.is_red")).unwrap();
+        let bridge = env.nodes.iter().find(|node| matches!(&node.proposition().source.source_type, SourceType::TypeDefinition(name, member) if name == target_name && member == "instance.Painted.is_red")).unwrap();
         assert!(bridge.is_structural());
         assert!(bridge.block().is_none());
         let mut references = vec![];
-        bridge.claim.value.find_constants(
+        bridge.proposition().value.find_constants(
             &|constant| constant.name.local_name.to_string() == "Painted.is_red",
             &mut references,
         );
@@ -87,8 +87,8 @@ fn canonical_method_bridges_keep_the_owner_actual_and_signature() {
             .resolved()
             .unwrap();
         assert_eq!(generic.instance_type, implementation.get_type());
-        bridge.claim.value.validate().unwrap();
-        bridges.push(bridge.claim.value.clone());
+        bridge.proposition().value.validate().unwrap();
+        bridges.push(bridge.proposition().value.clone());
     }
     assert_ne!(bridges[0], bridges[1]);
     let mut results = vec![];
@@ -113,8 +113,8 @@ fn bridge_facts_are_after_the_obligation_and_absent_from_its_own_proof() {
     let module = project.expect_ok("main");
     let env = project.get_env_by_id(module).unwrap();
     let class = env.bindings.get_typeclass_for_name("Painted").unwrap();
-    let obligation_index = env.nodes.iter().position(|node| matches!(&node.claim.source.source_type, SourceType::Instance(name, class) if name == "State" && class == "Painted")).unwrap();
-    let bridge_index = env.nodes.iter().position(|node| matches!(&node.claim.source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")).unwrap();
+    let obligation_index = env.nodes.iter().position(|node| matches!(&node.proposition().source.source_type, SourceType::Instance(name, class) if name == "State" && class == "Painted")).unwrap();
+    let bridge_index = env.nodes.iter().position(|node| matches!(&node.proposition().source.source_type, SourceType::TypeDefinition(name, member) if name == "State" && member == "instance.Painted.is_red")).unwrap();
     assert!(obligation_index < bridge_index);
     let obligation = env.iter_goals().next().unwrap();
     assert!(!obligation

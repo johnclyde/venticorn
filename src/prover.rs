@@ -1320,7 +1320,7 @@ mod contextual_goal_role_tests {
         let mut baseline = node.goal_context().unwrap();
         // The theorem block has already split its premise. Exercise the direct
         // goal API with the complete admitted implication instead.
-        baseline.goal = Goal::Prove(node.current().claim.clone());
+        baseline.goal = Goal::Prove(node.current().proposition().clone());
         assert!(matches!(
             baseline.goal.value(),
             AcornValue::Binary(crate::acorn_value::BinaryOp::Implies, _, _)
