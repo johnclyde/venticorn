@@ -359,12 +359,12 @@ impl Environment {
                 Some(outer_claim),
             )
         };
-        let index = self.add_node(
+        let index = self.push_node(Node::new_block(
             project,
-            false,
+            self,
+            block,
             Proposition::anonymous(external_claim, self.module_id, claim_range),
-            Some(block),
-        );
+        ));
         self.add_line_types(
             LineType::Node(index),
             first_line,
@@ -708,19 +708,19 @@ impl Environment {
             )?)
         };
 
-        let node = Node::new(
-            project,
-            &staged,
-            already_proven,
-            Proposition::theorem(
+        let node = {
+            let proposition = Proposition::theorem(
                 ts.axiomatic,
                 external_claim,
                 self.module_id,
                 range,
                 ts.name.clone(),
-            ),
-            block,
-        );
+            );
+            match block {
+                Some(block) => Node::new_block(project, &staged, block, proposition),
+                None => Node::structural(project, &staged, proposition),
+            }
+        };
         for param in &ts.type_params {
             if param.typeclass.is_some()
                 && !node
@@ -738,8 +738,7 @@ impl Environment {
             self.definition_ranges
                 .insert(LocalConstantName::unqualified(name), range);
         }
-        let index = self.nodes.len();
-        self.nodes.push(node);
+        let index = self.push_node(node);
         self.add_node_lines(index, &statement.range());
         if let Some(name) = &ts.name {
             self.bindings.mark_as_theorem(name);
@@ -1721,12 +1720,11 @@ impl Environment {
             Some(&AcornType::Bool),
         )?;
         let general_claim = AcornValue::Exists(quant_types.clone(), Box::new(general_claim_value));
-        let index = self.add_node(
+        let index = self.push_node(Node::claim(
             project,
-            false,
+            self,
             Proposition::anonymous(general_claim, self.module_id, statement.range()),
-            None,
-        );
+        ));
         self.add_node_lines(index, &statement.range());
 
         // Define the quantifiers as constants
@@ -1753,7 +1751,7 @@ impl Environment {
         // The named witness has no value definition: this condition is its public
         // declaration contract. Node admission still restricts nested declarations.
         condition.source.importable = true;
-        self.add_node(project, true, condition, None);
+        self.push_node(Node::structural(project, self, condition));
 
         Ok(())
     }
