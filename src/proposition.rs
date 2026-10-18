@@ -4,6 +4,7 @@ use tower_lsp::lsp_types::Range;
 use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
 use crate::module::ModuleId;
+use crate::proof_step::Truthiness;
 
 // The different reasons that can lead us to create a proposition.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +141,18 @@ pub struct Proposition {
 }
 
 impl Proposition {
+    // Default role of a source in its lexical declaration context.
+    // Explicit roles remain authoritative until the contextual-role migration.
+    pub fn truthiness(&self) -> Truthiness {
+        if matches!(self.source.source_type, SourceType::NegatedGoal) {
+            Truthiness::Counterfactual
+        } else if self.source.depth == 0 {
+            Truthiness::Factual
+        } else {
+            Truthiness::Hypothetical
+        }
+    }
+
     // Set the declaration location without changing exportability or source identity.
     pub fn with_depth(mut self, depth: u32) -> Self {
         self.source.depth = depth;
