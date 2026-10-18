@@ -182,21 +182,14 @@ impl Prover {
         // Use that same value for fact demand and for the counterfactual assumption.
         let goal_value = goal_context.goal.value();
         assert!(!goal_value.is_generic());
-        for fact in self.normalizer.monomorphize_for_value(&goal_value) {
-            self.add_monomorphic_fact(fact);
-        }
-
         match &goal_context.goal {
             Goal::Prove(prop) => {
                 // Negate the goal and add it as a counterfactual assumption.
                 let (hypo, counter) = goal_value.clone().negate_goal();
                 if let Some(hypo) = hypo {
-                    self.add_monomorphic_fact(Fact::new(
-                        prop.with_value(hypo),
-                        Truthiness::Hypothetical,
-                    ));
+                    self.add_fact(Fact::new(prop.with_value(hypo), Truthiness::Hypothetical));
                 }
-                self.add_monomorphic_fact(Fact::new(
+                self.add_fact(Fact::new(
                     prop.with_negated_goal(counter.clone()),
                     Truthiness::Counterfactual,
                 ));
@@ -205,14 +198,20 @@ impl Prover {
                     goal_context.inconsistency_okay,
                 ));
             }
-            Goal::Solve(value, _) => match self.normalizer.term_from_value(value, true) {
-                Ok(term) => {
-                    self.goal = Some(NormalizedGoal::Solve(term));
+            Goal::Solve(value, _) => {
+                // Solve has no counterfactual fact to request its generic instances.
+                for fact in self.normalizer.monomorphize_for_value(value) {
+                    self.add_monomorphic_fact(fact);
                 }
-                Err(s) => {
-                    self.error = Some(s);
+                match self.normalizer.term_from_value(value, true) {
+                    Ok(term) => {
+                        self.goal = Some(NormalizedGoal::Solve(term));
+                    }
+                    Err(s) => {
+                        self.error = Some(s);
+                    }
                 }
-            },
+            }
         }
     }
 
@@ -1124,5 +1123,52 @@ mod normalization_boundary_tests {
             Some("normalization requires a Boolean value, got Item")
         );
         assert_eq!(prover.verification_search(), Outcome::Error);
+    }
+}
+
+#[cfg(test)]
+mod goal_fact_demand_tests {
+    use super::*;
+    use crate::acorn_value::BinaryOp;
+
+    #[test]
+    fn solve_goals_request_generic_facts_without_counterfactual_assumptions() {
+        let mut project = Project::new_mock();
+        project.mock(
+            "/mock/main.ac",
+            "define identity<T>(x: T) -> T { x }\ntheorem goal { identity(true) = true }",
+        );
+        let id = project.expect_ok("main");
+        let env = project.get_env_by_id(id).unwrap();
+        let node = env.get_node_by_name("goal");
+        let mut goal = node.goal_context().unwrap();
+        let AcornValue::Binary(BinaryOp::Equals, left, _) = goal.goal.value() else {
+            panic!("expected equality goal")
+        };
+        goal.goal = Goal::Solve(*left.clone(), goal.goal.range());
+        let mut prover = Prover::new(&project, false);
+        let definitions = node
+            .usable_facts(&project)
+            .into_iter()
+            .filter(|fact| fact.source.name().as_deref() == Some("identity"))
+            .collect::<Vec<_>>();
+        assert_eq!(definitions.len(), 1);
+        assert!(definitions[0].value.is_generic());
+        for fact in definitions {
+            prover.add_fact(fact);
+        }
+        assert_eq!(prover.passive_set.iter_steps().count(), 0);
+        prover.set_goal(&goal);
+        assert!(prover.error.is_none(), "{:?}", prover.error);
+        assert!(matches!(prover.goal, Some(NormalizedGoal::Solve(_))));
+        let steps = prover.passive_set.iter_steps().collect::<Vec<_>>();
+        assert!(!steps.is_empty());
+        assert!(steps
+            .iter()
+            .all(|step| step.truthiness == Truthiness::Factual));
+        assert!(steps.iter().any(|step| matches!(
+            &step.rule,
+            Rule::Assumption(info) if info.source.name().as_deref() == Some("identity")
+        )));
     }
 }
