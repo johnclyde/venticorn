@@ -2508,7 +2508,9 @@ impl Environment {
             {
                 continue;
             }
-            facts.push(node.get_fact_with_truthiness(Truthiness::Factual));
+            if let Some(fact) = node.get_fact_with_truthiness(Truthiness::Factual) {
+                facts.push(fact);
+            }
         }
         facts
     }

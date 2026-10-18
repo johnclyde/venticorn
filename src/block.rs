@@ -424,12 +424,12 @@ enum NodeKind {
 
 impl Node {
     // The declaration's proposition with its effective lexical/contextual role.
-    pub fn get_fact(&self) -> Fact {
+    pub fn get_fact(&self) -> Option<Fact> {
         self.get_fact_with_truthiness(self.proposition().truthiness())
     }
 
-    pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Fact {
-        Fact::new(self.proposition().clone(), truthiness)
+    pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Option<Fact> {
+        Some(Fact::new(self.proposition().clone(), truthiness))
     }
 
     pub fn is_structural(&self) -> bool {
@@ -699,7 +699,7 @@ impl<'a> NodeCursor<'a> {
     }
 
     // The fact at the current node.
-    pub fn get_fact(&self) -> Fact {
+    pub fn get_fact(&self) -> Option<Fact> {
         let truthiness = if self.env().top_level {
             Truthiness::Factual
         } else {
@@ -782,7 +782,7 @@ impl<'a> NodeCursor<'a> {
         facts.extend(
             self.local_nodes(include_children)
                 .into_iter()
-                .map(|(node, truthiness)| node.get_fact_with_truthiness(truthiness)),
+                .filter_map(|(node, truthiness)| node.get_fact_with_truthiness(truthiness)),
         );
         facts
     }
