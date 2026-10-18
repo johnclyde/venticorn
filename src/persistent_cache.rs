@@ -12,9 +12,9 @@ use sha2::{Digest, Sha256};
 use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::build_cache::PremiseSet;
-use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::goal::{Goal, GoalContext};
 use crate::module::{ModuleHash, ModuleId, ModuleRef, FIRST_NORMAL};
+use crate::names::{GlobalName, LocalName};
 use crate::proof_scope::{MembershipKey, ProofScope};
 
 const MAX_RECORD_BYTES: u64 = 16 * 1024;
@@ -383,19 +383,19 @@ impl<F: Fn(ModuleId) -> Option<ModuleRef>> PolicyHasher<'_, F> {
         self.module_key_value(identity);
         Some(())
     }
-    fn constant_name(&mut self, name: &GlobalConstantName) -> Option<()> {
+    fn constant_name(&mut self, name: &GlobalName) -> Option<()> {
         self.module(name.module_id)?;
         match &name.local_name {
-            LocalConstantName::Unqualified(name) => {
+            LocalName::Unqualified(name) => {
                 self.tag(0);
                 self.text(name);
             }
-            LocalConstantName::Attribute(owner, member) => {
+            LocalName::Attribute(owner, member) => {
                 self.tag(1);
                 self.text(owner);
                 self.text(member);
             }
-            LocalConstantName::Instance(class, member, target) => {
+            LocalName::Instance(class, member, target) => {
                 self.tag(2);
                 self.module(class.module_id)?;
                 self.text(&class.name);
@@ -601,6 +601,7 @@ mod tests {
     use super::*;
     use crate::acorn_type::TypeClass;
     use crate::acorn_value::ConstantInstance;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
     use crate::project::Project;
     use std::sync::Arc;
 
@@ -961,6 +962,7 @@ mod constant_identity_tests {
     use super::*;
     use crate::acorn_type::Typeclass;
     use crate::acorn_value::ConstantInstance;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
 
     fn instance(owner: ModuleId, class_owner: ModuleId) -> AcornValue {
         AcornValue::Constant(ConstantInstance {

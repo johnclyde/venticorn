@@ -1,13 +1,13 @@
 use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::AcornValue;
 use crate::compilation::{self, ErrorSource};
-use crate::constant_name::GlobalConstantName;
+use crate::names::GlobalName;
 use crate::proof_scope::ProofScope;
 
 // A generic declaration whose type arguments have not been inferred yet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnresolvedConstant {
-    pub(crate) name: GlobalConstantName,
+    pub(crate) name: GlobalName,
     // Complete formal parameters remain in declaration order, including phantom bounds.
     pub(crate) params: Vec<TypeParam>,
     pub(crate) generic_type: AcornType,

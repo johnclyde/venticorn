@@ -8,10 +8,10 @@ use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
 use crate::compilation::{self, Error, ErrorSource};
-use crate::constant_name::{GlobalConstantName, LocalConstantName};
 use crate::expression::{Declaration, Expression, Terminator, TypeParamExpr};
 use crate::module::{ModuleId, FIRST_NORMAL};
 use crate::named_entity::NamedEntity;
+use crate::names::{GlobalName, LocalName};
 use crate::project::Project;
 use crate::proof_scope::ProofScope;
 use crate::proposition::Proposition;
@@ -109,9 +109,9 @@ pub struct BindingMap {
     // entirety of this environment.
     // Aliases retain their canonical values in the same records, without ownership.
     // Includes "<datatype>.<constant>" for members.
-    constant_info: HashMap<LocalConstantName, ConstantInfo>,
+    constant_info: HashMap<LocalName, ConstantInfo>,
     // Compatibility and presentation index: stores actual inserted identities.
-    constant_spellings: HashMap<String, LocalConstantName>,
+    constant_spellings: HashMap<String, LocalName>,
 
     // Ordered member spellings for completion, separate from canonical class requirements.
     member_names: HashMap<String, BTreeMap<String, ()>>,
@@ -121,7 +121,7 @@ pub struct BindingMap {
     // Whenever a name from some other scope has a local alias in this one,
     // if we're generating code, we prefer to use the local name.
     // Type names use an Unqualified surrogate; constants retain their full identity.
-    canonical_to_alias: HashMap<GlobalConstantName, String>,
+    canonical_to_alias: HashMap<GlobalName, String>,
 
     // Names that refer to other modules.
     // For example after "import foo", "foo" refers to a module.
@@ -238,7 +238,7 @@ impl BindingMap {
         self.position
     }
 
-    fn record_constant_name(&mut self, name: &LocalConstantName, spelling: &str) {
+    fn record_constant_name(&mut self, name: &LocalName, spelling: &str) {
         assert!(!self.constant_spellings.contains_key(spelling));
         self.constant_spellings
             .insert(spelling.to_owned(), name.clone());
@@ -247,12 +247,12 @@ impl BindingMap {
             self.unqualified_names.insert(spelling.to_owned(), ());
         }
         let member = match name {
-            LocalConstantName::Attribute(owner, member) => Some((owner.clone(), member.clone())),
-            LocalConstantName::Instance(class, member, target) => {
+            LocalName::Attribute(owner, member) => Some((owner.clone(), member.clone())),
+            LocalName::Instance(class, member, target) => {
                 Some((format!("{}.{}", target, class.name), member.clone()))
             }
             // Legacy raw spellings are indexed for presentation only.
-            LocalConstantName::Unqualified(raw) => raw
+            LocalName::Unqualified(raw) => raw
                 .rsplit_once('.')
                 .map(|(owner, member)| (owner.to_owned(), member.to_owned())),
         };
@@ -333,10 +333,7 @@ impl BindingMap {
                             if actuals.is_empty() {
                                 result
                                     .canonical_to_alias
-                                    .entry(GlobalConstantName::new(
-                                        *module,
-                                        LocalConstantName::unqualified(family),
-                                    ))
+                                    .entry(GlobalName::new(*module, LocalName::unqualified(family)))
                                     .or_insert_with(|| name.clone());
                             }
                         }
@@ -348,9 +345,9 @@ impl BindingMap {
                             .or_insert_with(|| name.clone());
                         result
                             .canonical_to_alias
-                            .entry(GlobalConstantName::new(
+                            .entry(GlobalName::new(
                                 ty.class.module_id,
-                                LocalConstantName::unqualified(&ty.class.name),
+                                LocalName::unqualified(&ty.class.name),
                             ))
                             .or_insert_with(|| name.clone());
                     }
@@ -404,13 +401,13 @@ impl BindingMap {
     // Availability checks deliberately cover every namespace. Dotted spelling
     // collisions must be rejected even when structured canonical identities differ.
     pub fn lowercase_name_in_use(&self, name: &str) -> bool {
-        self.constant_name_in_use(&LocalConstantName::unqualified(name))
+        self.constant_name_in_use(&LocalName::unqualified(name))
     }
 
     pub fn check_constant_name_available(
         &self,
         source: &dyn ErrorSource,
-        name: &LocalConstantName,
+        name: &LocalName,
     ) -> compilation::Result<()> {
         if self.constant_name_in_use(name) {
             return Err(source.error(&format!("constant name {} is already in use", name)));
@@ -423,10 +420,10 @@ impl BindingMap {
         source: &dyn ErrorSource,
         name: &str,
     ) -> compilation::Result<()> {
-        self.check_constant_name_available(source, &LocalConstantName::unqualified(name))
+        self.check_constant_name_available(source, &LocalName::unqualified(name))
     }
 
-    pub fn constant_name_in_use(&self, name: &LocalConstantName) -> bool {
+    pub fn constant_name_in_use(&self, name: &LocalName) -> bool {
         self.name_in_use(&name.to_string())
     }
 
@@ -542,10 +539,9 @@ impl BindingMap {
                     name: type_name,
                 },
                 actuals,
-            ) if actuals.is_empty() => Some(GlobalConstantName::new(
-                *module,
-                LocalConstantName::unqualified(type_name),
-            )),
+            ) if actuals.is_empty() => {
+                Some(GlobalName::new(*module, LocalName::unqualified(type_name)))
+            }
             _ => None,
         };
         // Complete the checked forward insertion before updating preferred aliases.
@@ -568,9 +564,9 @@ impl BindingMap {
                     .entry((t.class.module_id, t.class.name.clone(), t.params.len()))
                     .or_insert_with(|| name.to_string());
                 self.canonical_to_alias
-                    .entry(GlobalConstantName::new(
+                    .entry(GlobalName::new(
                         t.class.module_id,
-                        LocalConstantName::unqualified(&t.class.name),
+                        LocalName::unqualified(&t.class.name),
                     ))
                     .or_insert_with(|| name.to_string());
                 self.typename_to_type
@@ -745,7 +741,7 @@ impl BindingMap {
     }
 
     // Exact inserted key for compatibility and declaration-position bookkeeping only.
-    pub(crate) fn stored_constant_name(&self, spelling: &str) -> Option<&LocalConstantName> {
+    pub(crate) fn stored_constant_name(&self, spelling: &str) -> Option<&LocalName> {
         self.constant_spellings.get(spelling)
     }
 
@@ -766,18 +762,16 @@ impl BindingMap {
 
     // Structured instance names are looked up through their canonical owner.
     // A coincidentally identical display string cannot establish an instance.
-    pub fn get_constant_value_named(&self, name: &LocalConstantName) -> Option<PotentialValue> {
+    pub fn get_constant_value_named(&self, name: &LocalName) -> Option<PotentialValue> {
         match name {
-            LocalConstantName::Unqualified(name) if name.contains('.') => return None,
-            LocalConstantName::Attribute(owner, member)
-                if owner.contains('.') || member.contains('.') =>
-            {
+            LocalName::Unqualified(name) if name.contains('.') => return None,
+            LocalName::Attribute(owner, member) if owner.contains('.') || member.contains('.') => {
                 return None
             }
-            LocalConstantName::Instance(class, _, target) => {
+            LocalName::Instance(class, _, target) => {
                 self.instance_scope(target, class)?;
                 let info = self.constant_info.get(name)?;
-                let expected = GlobalConstantName::new(self.module, name.clone());
+                let expected = GlobalName::new(self.module, name.clone());
                 let declared = info.canonical && Self::value_name(&info.value) == Some(&expected);
                 let checked_alias = info.checked_instance_alias;
                 return (declared || checked_alias).then(|| info.value.clone());
@@ -786,8 +780,7 @@ impl BindingMap {
         }
         let info = self.constant_info.get(name)?;
         if info.canonical
-            && Self::value_name(&info.value)
-                != Some(&GlobalConstantName::new(self.module, name.clone()))
+            && Self::value_name(&info.value) != Some(&GlobalName::new(self.module, name.clone()))
         {
             return None;
         }
@@ -795,7 +788,7 @@ impl BindingMap {
     }
 
     // Transitional raw indexes may only return metadata for the exact typed identity.
-    pub(crate) fn canonical_name_matches(&self, name: &GlobalConstantName) -> bool {
+    pub(crate) fn canonical_name_matches(&self, name: &GlobalName) -> bool {
         name.module_id == self.module
             && self
                 .constant_info
@@ -803,7 +796,7 @@ impl BindingMap {
                 .is_some_and(|info| info.canonical && Self::value_name(&info.value) == Some(name))
     }
 
-    fn value_name(value: &PotentialValue) -> Option<&GlobalConstantName> {
+    fn value_name(value: &PotentialValue) -> Option<&GlobalName> {
         match value {
             PotentialValue::Unresolved(value) => Some(&value.name),
             PotentialValue::Resolved(value) => value.constant_name(),
@@ -815,7 +808,7 @@ impl BindingMap {
     pub fn checked_constant_value(
         &self,
         source: &dyn ErrorSource,
-        name: &LocalConstantName,
+        name: &LocalName,
     ) -> compilation::Result<PotentialValue> {
         self.get_constant_value_named(name).ok_or_else(|| {
             let kind = if name.is_qualified() {
@@ -884,8 +877,8 @@ impl BindingMap {
 
     /// Read definition metadata only for this exact canonical declaration identity.
     /// Prepared instance definitions do not require published membership here.
-    pub fn get_definition_named(&self, name: &LocalConstantName) -> Option<&AcornValue> {
-        if !self.canonical_name_matches(&GlobalConstantName::new(self.module, name.clone())) {
+    pub fn get_definition_named(&self, name: &LocalName) -> Option<&AcornValue> {
+        if !self.canonical_name_matches(&GlobalName::new(self.module, name.clone())) {
             return None;
         }
         self.constant_info.get(name)?.definition.as_ref()
@@ -902,9 +895,9 @@ impl BindingMap {
     /// Read the complete declared formal order together with the canonical definition.
     pub fn get_definition_and_params_named(
         &self,
-        name: &LocalConstantName,
+        name: &LocalName,
     ) -> Option<(&AcornValue, &[TypeParam])> {
-        if !self.canonical_name_matches(&GlobalConstantName::new(self.module, name.clone())) {
+        if !self.canonical_name_matches(&GlobalName::new(self.module, name.clone())) {
             return None;
         }
         let info = self.constant_info.get(name)?;
@@ -938,7 +931,7 @@ impl BindingMap {
         constructor: Option<(AcornType, usize, usize)>,
     ) {
         self.add_constant_named(
-            LocalConstantName::from_legacy(name),
+            LocalName::from_legacy(name),
             params,
             constant_type,
             definition,
@@ -949,7 +942,7 @@ impl BindingMap {
     // Structured declaration names do not by themselves grant instance membership.
     pub fn add_constant_named(
         &mut self,
-        name: impl Into<LocalConstantName>,
+        name: impl Into<LocalName>,
         params: Vec<TypeParam>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
@@ -961,7 +954,7 @@ impl BindingMap {
     // Return an independent value only when the caller needs the inserted declaration.
     pub fn add_constant_value(
         &mut self,
-        name: impl Into<LocalConstantName>,
+        name: impl Into<LocalName>,
         params: Vec<TypeParam>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
@@ -973,7 +966,7 @@ impl BindingMap {
 
     fn insert_constant_named(
         &mut self,
-        name: LocalConstantName,
+        name: LocalName,
         params: Vec<TypeParam>,
         constant_type: AcornType,
         definition: Option<AcornValue>,
@@ -1011,7 +1004,7 @@ impl BindingMap {
         }
         self.record_constant_name(&local_name, name);
         let value = PotentialValue::constant_named(
-            GlobalConstantName::new(self.module, local_name.clone()),
+            GlobalName::new(self.module, local_name.clone()),
             constant_type,
             params,
         );
@@ -1036,11 +1029,8 @@ impl BindingMap {
         value: PotentialValue,
     ) {
         self.add_alias_named(
-            &LocalConstantName::from_legacy(name),
-            GlobalConstantName::new(
-                canonical_module,
-                LocalConstantName::from_legacy(&canonical_name),
-            ),
+            &LocalName::from_legacy(name),
+            GlobalName::new(canonical_module, LocalName::from_legacy(&canonical_name)),
             value,
         );
     }
@@ -1048,8 +1038,8 @@ impl BindingMap {
     // Aliases carry canonical identity for naming, never declaration or instance authority.
     pub fn add_alias_named(
         &mut self,
-        local_name: &LocalConstantName,
-        canonical_name: GlobalConstantName,
+        local_name: &LocalName,
+        canonical_name: GlobalName,
         value: PotentialValue,
     ) {
         let name = local_name.to_string();
@@ -1080,14 +1070,14 @@ impl BindingMap {
     // General aliases, including typed aliases, cannot grant member ownership.
     pub(crate) fn add_checked_instance_alias(
         &mut self,
-        local_name: &LocalConstantName,
-        canonical_name: GlobalConstantName,
+        local_name: &LocalName,
+        canonical_name: GlobalName,
         value: PotentialValue,
     ) {
-        assert!(matches!(local_name, LocalConstantName::Instance(..)));
+        assert!(matches!(local_name, LocalName::Instance(..)));
         assert_ne!(
             canonical_name,
-            GlobalConstantName::new(self.module, local_name.clone())
+            GlobalName::new(self.module, local_name.clone())
         );
         self.add_alias_named(local_name, canonical_name, value);
         self.constant_info
@@ -1112,8 +1102,8 @@ impl BindingMap {
             .is_some_and(|info| info.theorem)
     }
 
-    pub fn is_theorem_named(&self, name: &LocalConstantName) -> bool {
-        self.canonical_name_matches(&GlobalConstantName::new(self.module, name.clone()))
+    pub fn is_theorem_named(&self, name: &LocalName) -> bool {
+        self.canonical_name_matches(&GlobalName::new(self.module, name.clone()))
             && self
                 .constant_info
                 .get(name)
@@ -1779,7 +1769,7 @@ impl BindingMap {
         var_name: &str,
     ) -> Option<PotentialValue> {
         let bindings = self.bindings_for_module(project, module)?;
-        let constant_name = LocalConstantName::attribute(type_name, var_name);
+        let constant_name = LocalName::attribute(type_name, var_name);
         bindings.get_constant_value_named(&constant_name)
     }
 
@@ -1835,7 +1825,7 @@ impl BindingMap {
         let bindings = self
             .bindings_for_module(project, module)
             .ok_or_else(|| source.error("could not load bindings for attribute module"))?;
-        let constant_name = LocalConstantName::attribute(&type_name, name);
+        let constant_name = LocalName::attribute(&type_name, name);
         let function = bindings.checked_constant_value(source, &constant_name)?;
         self.apply_potential(source, function, vec![instance], None)
     }
@@ -1970,8 +1960,7 @@ impl BindingMap {
                         .instance_scopes
                         .iter()
                         .find(|(_, registered)| *registered == &scope)?;
-                    bindings
-                        .get_constant_value_named(&LocalConstantName::instance(class, name, target))
+                    bindings.get_constant_value_named(&LocalName::instance(class, name, target))
                 })
                 .map(NamedEntity::new)
                 .ok_or_else(|| {
@@ -2013,7 +2002,7 @@ impl BindingMap {
                         } else {
                             Ok(NamedEntity::new(self.checked_constant_value(
                                 name_token,
-                                &LocalConstantName::unqualified(name),
+                                &LocalName::unqualified(name),
                             )?))
                         }
                     }
@@ -2181,7 +2170,7 @@ impl BindingMap {
                 // Add a local alias that mirrors this constant's name in the imported module.
                 if let Some(name) = value.simple_constant_name() {
                     self.add_alias_named(
-                        &LocalConstantName::unqualified(name_token.text()),
+                        &LocalName::unqualified(name_token.text()),
                         name.clone(),
                         PotentialValue::Resolved(value),
                     );
@@ -2208,7 +2197,7 @@ impl BindingMap {
             }
             NamedEntity::Unresolved(unresolved) => {
                 self.add_alias_named(
-                    &LocalConstantName::unqualified(name_token.text()),
+                    &LocalName::unqualified(name_token.text()),
                     unresolved.name.clone(),
                     PotentialValue::Unresolved(unresolved),
                 );
@@ -2798,7 +2787,7 @@ impl BindingMap {
         Option<AcornValue>,
         AcornType,
     )> {
-        let function_name = function_name.map(LocalConstantName::from_legacy);
+        let function_name = function_name.map(LocalName::from_legacy);
         self.evaluate_scoped_value_named(
             project,
             type_params,
@@ -2818,7 +2807,7 @@ impl BindingMap {
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
         class_type: Option<&AcornType>,
-        function_name: Option<&LocalConstantName>,
+        function_name: Option<&LocalName>,
     ) -> compilation::Result<(
         Vec<TypeParam>,
         Vec<String>,
@@ -2846,7 +2835,7 @@ impl BindingMap {
         value_type_expr: Option<&Expression>,
         value_expr: &Expression,
         class_type: Option<&AcornType>,
-        function_name: Option<&LocalConstantName>,
+        function_name: Option<&LocalName>,
     ) -> compilation::Result<(
         Vec<TypeParam>,
         Vec<String>,
@@ -2891,7 +2880,7 @@ impl BindingMap {
                 self.evaluate_value_with_stack(&mut stack, project, value_expr, Some(&value_type))?;
             if let Some(name) = function_name {
                 let mut checker = TerminationChecker::new_named(
-                    GlobalConstantName::new(self.module, name.clone()),
+                    GlobalName::new(self.module, name.clone()),
                     arg_types.len(),
                 );
                 if !checker.check(&value) {
@@ -2931,7 +2920,7 @@ impl BindingMap {
                             c.name.local_name
                         ));
                     }
-                    let LocalConstantName::Unqualified(name) = &c.name.local_name else {
+                    let LocalName::Unqualified(name) = &c.name.local_name else {
                         return Err(format!(
                             "cannot export unknown qualified constant '{}' from this block",
                             c.name.local_name
@@ -3103,7 +3092,7 @@ impl BindingMap {
     }
 
     // Render a canonical name without reconstructing its identity from display text.
-    fn name_to_expr(&self, name: &GlobalConstantName) -> Result<Expression, CodeGenError> {
+    fn name_to_expr(&self, name: &GlobalName) -> Result<Expression, CodeGenError> {
         let module = name.module_id;
         let spelling = name.local_name.to_string();
         if module == self.module && self.hidden_codegen_names.contains(&spelling) {
@@ -3112,7 +3101,7 @@ impl BindingMap {
             ));
         }
         let parts: Vec<&str> = match &name.local_name {
-            LocalConstantName::Instance(class, member, target) => {
+            LocalName::Instance(class, member, target) => {
                 let registered = if module == self.module {
                     self.instance_scope(target, class).is_some_and(|scope| {
                         self.get_constant_value(scope).is_none()
@@ -3135,7 +3124,7 @@ impl BindingMap {
                 CodeGenError::UnhandledValue("invalid structured constant name".into())
             })?,
         };
-        if let LocalConstantName::Attribute(owner, member) = &name.local_name {
+        if let LocalName::Attribute(owner, member) = &name.local_name {
             if !member.is_empty() && member.chars().all(|ch| ch.is_ascii_digit()) {
                 let numeral = TokenType::Numeral.new_token(member);
                 if self
@@ -3145,10 +3134,8 @@ impl BindingMap {
                 {
                     return Ok(Expression::Singleton(numeral));
                 }
-                let numeric_type = self.name_to_expr(&GlobalConstantName::new(
-                    module,
-                    LocalConstantName::unqualified(owner),
-                ))?;
+                let numeric_type =
+                    self.name_to_expr(&GlobalName::new(module, LocalName::unqualified(owner)))?;
                 return Ok(Expression::generate_dot(
                     numeric_type,
                     Expression::Singleton(numeral),
@@ -3169,7 +3156,7 @@ impl BindingMap {
             return Ok(Expression::generate_identifier(alias));
         }
         match &name.local_name {
-            LocalConstantName::Instance(class, member, target) => {
+            LocalName::Instance(class, member, target) => {
                 let data_type = AcornType::Data(Class::new(module, target.clone()), vec![]);
                 if let Some(alias) = self.type_to_typename.get(&data_type) {
                     return Ok(Expression::generate_identifier_chain(&[
@@ -3179,11 +3166,11 @@ impl BindingMap {
                     ]));
                 }
             }
-            LocalConstantName::Attribute(owner, member) => {
-                if let Some(alias) = self.canonical_to_alias.get(&GlobalConstantName::new(
-                    module,
-                    LocalConstantName::unqualified(owner),
-                )) {
+            LocalName::Attribute(owner, member) => {
+                if let Some(alias) = self
+                    .canonical_to_alias
+                    .get(&GlobalName::new(module, LocalName::unqualified(owner)))
+                {
                     return Ok(Expression::generate_identifier_chain(&[alias, member]));
                 }
                 let data_type = AcornType::Data(Class::new(module, owner.clone()), vec![]);
@@ -3954,6 +3941,7 @@ mod name_insertion_tests {
 #[cfg(test)]
 mod constant_metadata_tests {
     use super::*;
+    use crate::constant_name::LocalConstantName;
 
     #[test]
     fn typed_declarations_preserve_phantom_bounds_without_granting_membership() {
@@ -4042,6 +4030,7 @@ mod constant_metadata_tests {
 #[cfg(test)]
 mod alias_metadata_tests {
     use super::*;
+    use crate::constant_name::LocalConstantName;
 
     #[test]
     fn aliases_preserve_values_without_owning_declarations_or_instance_members() {
@@ -4111,6 +4100,7 @@ mod alias_metadata_tests {
 #[cfg(test)]
 mod insertion_value_tests {
     use super::*;
+    use crate::constant_name::LocalConstantName;
 
     #[test]
     fn inserted_values_are_complete_independent_and_do_not_grant_membership() {
@@ -4189,6 +4179,7 @@ mod theorem_metadata_tests {
 #[cfg(test)]
 mod member_index_tests {
     use super::*;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
 
     #[test]
     fn member_inventory_is_sorted_alias_aware_and_lexically_pruned() {
@@ -4277,6 +4268,7 @@ mod unqualified_index_tests {
 #[cfg(test)]
 mod constant_storage_tests {
     use super::*;
+    use crate::constant_name::LocalConstantName;
 
     #[test]
     fn imported_member_positions_are_independent_of_hash_and_insertion_order() {
@@ -4355,6 +4347,7 @@ mod constant_storage_tests {
 #[cfg(test)]
 mod structured_lookup_tests {
     use super::*;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
 
     #[test]
     fn checked_alias_provenance_requires_publication_and_survives_cloning() {
@@ -4416,6 +4409,7 @@ mod structured_lookup_tests {
 #[cfg(test)]
 mod structured_expression_tests {
     use super::*;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
 
     #[test]
     fn local_member_names_have_real_member_expression_nodes() {
@@ -4459,6 +4453,7 @@ mod structured_expression_tests {
 #[cfg(test)]
 mod typed_storage_tests {
     use super::*;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     fn check_indexes(bindings: &BindingMap) {
@@ -4553,6 +4548,7 @@ mod typed_storage_tests {
 #[cfg(test)]
 mod canonical_alias_inventory_tests {
     use super::*;
+    use crate::constant_name::{GlobalConstantName, LocalConstantName};
 
     #[test]
     fn preferred_aliases_distinguish_class_owners_and_rebuild_at_the_selected_position() {

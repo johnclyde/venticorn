@@ -10,10 +10,10 @@ use crate::acorn_type::{AcornType, TypeParam};
 use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
-use crate::constant_name::LocalConstantName;
 use crate::environment::{Environment, LineType};
 use crate::fact::Fact;
 use crate::goal::{Goal, GoalContext};
+use crate::names::LocalName;
 use crate::project::{ImportFilter, Project};
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
@@ -134,7 +134,7 @@ impl Block {
         let mut internal_args = Vec::new();
         for (arg_name, generic_arg_type) in &args {
             let specific_arg_type = generic_arg_type.instantiate(&param_pairs);
-            let name = LocalConstantName::unqualified(arg_name);
+            let name = LocalName::unqualified(arg_name);
             if needs_internal_args {
                 let value =
                     subenv
@@ -173,7 +173,7 @@ impl Block {
                     // Within the theorem block, the theorem is treated like a function,
                     // with propositions to define its identity.
                     // This makes it less annoying to define inductive hypotheses.
-                    subenv.add_identity_props_named(project, &LocalConstantName::unqualified(name));
+                    subenv.add_identity_props_named(project, &LocalName::unqualified(name));
                 }
 
                 if let Some((unbound_premise, premise_range)) = premise {
@@ -218,7 +218,7 @@ impl Block {
                 let mut arg_values = vec![];
                 for (arg_name, arg_type) in pattern_args {
                     let value = subenv.bindings.add_constant_value(
-                        LocalConstantName::unqualified(&arg_name),
+                        LocalName::unqualified(&arg_name),
                         vec![],
                         arg_type,
                         None,
@@ -335,7 +335,7 @@ impl Block {
         let replaced = replaced.replace_constants(0, &|c, _depth| {
             // These variables already refer to the enclosing exported quantifiers.
             if c.name.module_id == outer_env.module_id {
-                let LocalConstantName::Unqualified(name) = &c.name.local_name else {
+                let LocalName::Unqualified(name) = &c.name.local_name else {
                     return None;
                 };
                 map.get(name)

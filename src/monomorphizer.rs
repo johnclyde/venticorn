@@ -3,8 +3,8 @@ use std::fmt;
 
 use crate::acorn_type::AcornType;
 use crate::acorn_value::AcornValue;
-use crate::constant_name::GlobalConstantName;
 use crate::fact::Fact;
+use crate::names::GlobalName;
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 
@@ -81,7 +81,7 @@ pub struct Monomorphizer {
     output: Vec<Proposition>,
 
     // Facts, goals and definitions request concrete instances in declaration order.
-    constant_info: HashMap<GlobalConstantName, GenericConstantInfo>,
+    constant_info: HashMap<GlobalName, GenericConstantInfo>,
 }
 
 impl Monomorphizer {
@@ -193,7 +193,7 @@ impl Monomorphizer {
     // form of the generic constant.
     fn monomorphize_matching_props(
         &mut self,
-        constant_key: &GlobalConstantName,
+        constant_key: &GlobalName,
         monomorph_params: &ConstantParams,
     ) {
         monomorph_params.assert_full();
