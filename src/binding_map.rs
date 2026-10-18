@@ -702,10 +702,16 @@ impl BindingMap {
         implementation
             .validate()
             .map_err(|error| source.error(&error))?;
-        let generic = AcornValue::constant(
-            class.module_id,
-            generic_name,
-            vec![target.clone()],
+        let AcornType::Data(target_class, actuals) = target else {
+            return Err(source.error("instance target must be a concrete data type"));
+        };
+        if !actuals.is_empty() {
+            return Err(source.error("instance target cannot have type arguments"));
+        }
+        let generic = AcornValue::instance_constant(
+            class.clone(),
+            member.to_owned(),
+            target_class.clone(),
             expected,
         );
         generic.validate().map_err(|error| source.error(&error))?;
