@@ -4,7 +4,7 @@ use std::fmt;
 use crate::atom::Atom;
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::proposition::{Source, SourceType};
+use crate::proposition::{Proposition, Source, SourceType};
 use crate::term::Term;
 
 // The different sorts of proof steps.
@@ -243,6 +243,20 @@ impl fmt::Display for ProofStep {
 }
 
 impl ProofStep {
+    // Build an assumption from the proposition's effective role and exact source.
+    pub fn assumption_from_proposition(
+        proposition: &Proposition,
+        clause: Clause,
+        defined_atom: Option<Atom>,
+    ) -> Self {
+        Self::assumption(
+            clause,
+            proposition.truthiness(),
+            &proposition.source,
+            defined_atom,
+        )
+    }
+
     // Construct a new assumption ProofStep that is not dependent on any other steps.
     // Assumptions are always depth zero, but eventually we may have to revisit that.
     pub fn assumption(

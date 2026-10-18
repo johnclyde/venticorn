@@ -556,7 +556,7 @@ impl Normalizer {
             } else {
                 defined
             };
-            ProofStep::assumption(clause, truthiness, &proposition.source, defined)
+            ProofStep::assumption_from_proposition(&proposition, clause, defined)
         }));
         Ok(())
     }
