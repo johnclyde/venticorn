@@ -76,14 +76,27 @@ fn constraint_blocks_keep_existence_obligations_and_use_named_advice() {
         .iter()
         .find(|node| node.block().is_some())
         .unwrap();
-    assert_eq!(node.proposition().unwrap().value, AcornValue::Bool(true));
-    assert_eq!(
-        node.proposition().unwrap().source.fact_name().as_deref(),
-        Some("Checked.constraint")
-    );
-    assert_eq!(node.proposition().unwrap().source.range.start.line, 4);
-    assert_eq!(node.proposition().unwrap().source.range.end.line, 6);
+    assert!(node.proposition().is_none());
+    assert!(node.source().is_none());
+    assert!(node.get_fact().is_none());
     let block = node.block().unwrap();
+    let context = env.iter_goals().next().unwrap().goal_context().unwrap();
+    assert_eq!((context.first_line, context.last_line), (4, 6));
+    assert_eq!(block.goal.as_ref().unwrap().range().start.line, 6);
+    assert_eq!(block.goal.as_ref().unwrap().range().end.line, 6);
+    let exported = env
+        .nodes
+        .iter()
+        .find(|candidate| {
+            candidate.is_structural()
+                && candidate.source_name().as_deref() == Some("Checked.constraint")
+        })
+        .unwrap();
+    assert!(exported.importable());
+    assert!(matches!(
+        exported.proposition().unwrap().value,
+        AcornValue::ForAll(_, _)
+    ));
     assert!(
         matches!(block.goal.as_ref().unwrap().value(), AcornValue::Exists(types, _) if types.len() == 1)
     );
