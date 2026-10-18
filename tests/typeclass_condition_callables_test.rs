@@ -215,5 +215,5 @@ fn later_conditions_expand_earlier_callable_laws_without_erasing_the_class_bound
         [info.instance_param.clone()]
     );
     assert_eq!(env.nodes.len(), 2);
-    assert_eq!(env.nodes[1].proposition().value, condition.claim);
+    assert_eq!(env.nodes[1].proposition().unwrap().value, condition.claim);
 }

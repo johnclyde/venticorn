@@ -46,7 +46,7 @@ fn bounded_families_retain_formals_and_reopening_inherits_bounds_positionally() 
         assert!(!env.bindings.name_in_use(name));
     }
     for node in &env.nodes {
-        node.proposition().value.validate().unwrap();
+        node.proposition().unwrap().value.validate().unwrap();
     }
 }
 
