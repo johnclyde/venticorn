@@ -101,7 +101,23 @@ impl Monomorphizer {
 
     // Adds a fact that could be either generic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
-        let Fact::Proposition(proposition, truthiness) = fact;
+        match fact {
+            Fact::Proposition(proposition, truthiness) => {
+                self.add_proposition(proposition, truthiness);
+            }
+            Fact::InstanceOf(data, class) => {
+                // Reflections must already belong to the captured lexical scope.
+                // They cannot revive denied or not-yet-visible memberships.
+                if !self.scope.has_class_membership(&data, &class) {
+                    return;
+                }
+                // The immutable scope already contains all allowed relations;
+                // no output or mutable membership table is needed.
+            }
+        }
+    }
+
+    fn add_proposition(&mut self, proposition: Proposition, truthiness: Truthiness) {
         // Directly admitted facts can expose concrete instances needed by definitions.
         self.add_monomorphs(&proposition.value);
 
@@ -259,6 +275,95 @@ impl Monomorphizer {
                 &c.name,
                 &ConstantParams::new(c.type_arguments().cloned().collect()),
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod membership_fact_tests {
+    use super::*;
+    use crate::acorn_type::{Class, TypeParam, Typeclass};
+    use crate::project::Project;
+    use crate::proof_scope::ProofScope;
+    use crate::proposition::Source;
+    use crate::prover::{Outcome, Prover};
+
+    #[test]
+    fn reflected_membership_cannot_grant_or_revive_bounded_proof_authority() {
+        let class = Typeclass {
+            module_id: 2,
+            name: "Marked".into(),
+        };
+        let foreign = Typeclass {
+            module_id: 9,
+            name: "Marked".into(),
+        };
+        let data = Class::new(3, "Item".into());
+        let actual = AcornType::Data(data.clone(), vec![]);
+        let formal = AcornType::Variable(TypeParam {
+            name: "T".into(),
+            typeclass: Some(class.clone()),
+        });
+        let predicate =
+            |actual| AcornValue::constant(2, "flag".into(), vec![actual], AcornType::Bool);
+        let law = Fact::new(
+            Proposition {
+                value: predicate(formal),
+                source: Source::mock(),
+            },
+            Truthiness::Factual,
+        );
+        let goal = Proposition {
+            value: predicate(actual),
+            source: Source::mock(),
+        };
+        let reflection = Fact::InstanceOf(data.clone(), class.clone());
+        assert!(reflection.as_proposition().is_none());
+        assert!(reflection.truthiness().is_none());
+        assert!(reflection.clone().into_proposition().is_none());
+        let mut allowed = ProofScope::default();
+        allowed.record_instance(data.module_id, &data.name, &class);
+        let mut denied = allowed.clone();
+        denied.deny_instance(data.module_id, &data.name, &class);
+        let mut wrong_owner = ProofScope::default();
+        wrong_owner.record_instance(data.module_id, &data.name, &foreign);
+        let project = Project::new_mock();
+        for (scope, expected) in [
+            (ProofScope::default(), Outcome::Exhausted),
+            (denied, Outcome::Exhausted),
+            (wrong_owner, Outcome::Exhausted),
+            (allowed, Outcome::Success),
+        ] {
+            for reflect_first in [true, false] {
+                let original_scope = scope.clone();
+                let mut mono = Monomorphizer::with_scope(scope.clone());
+                mono.add_fact(reflection.clone());
+                assert_eq!(mono.scope, original_scope);
+                assert!(mono.take_output().is_empty());
+                let mut prover = Prover::with_scope(&project, false, scope.clone());
+                if reflect_first {
+                    prover.add_fact(reflection.clone());
+                }
+                prover.add_fact(law.clone());
+                if !reflect_first {
+                    prover.add_fact(reflection.clone());
+                }
+                let mut context = crate::goal::GoalContext::new(
+                    &crate::environment::Environment::new(2),
+                    crate::goal::Goal::Prove(goal.clone()),
+                    0,
+                    0,
+                    0,
+                );
+                context.proof_scope = scope.clone();
+                prover.set_goal(&context);
+                let mut shallow = prover.clone();
+                assert_eq!(prover.quick_search(), expected);
+                assert_eq!(shallow.quick_verification_search(), expected);
+                if expected == Outcome::Success {
+                    assert!(prover.get_proof().is_some());
+                }
+            }
         }
     }
 }
