@@ -415,23 +415,14 @@ pub struct Node {
     codegen_position: usize,
     // Captured before the declaration enters the enclosing scope.
     proof_scope: crate::proof_scope::ProofScope,
-    // Whether this proposition has already been proved structurally.
-    // For example, this could be an axiom, or a definition.
-    structural: bool,
+    kind: NodeKind,
+}
 
-    // The proposition represented by this tree.
-    // If this proposition has a block, this represents the "external claim".
-    // It is the value we can assume is true, in the outer environment, when everything
-    // in the inner environment has been proven.
-    // Besides the claim, nothing else from the block is visible externally.
-    //
-    // This claim needs to be proved for nonstructural propositions, when there is no block.
-    claim: Proposition,
-
-    // The body of the proposition, when it has an associated block.
-    // When there is a block, proving every proposition in the block implies that the
-    // claim is proven as well.
-    block: Option<Block>,
+// Private variants prevent constructing a node without its captured scope.
+enum NodeKind {
+    Structural(Proposition),
+    Claim(Proposition),
+    Block(Block, Proposition),
 }
 
 impl Node {
@@ -445,16 +436,22 @@ impl Node {
     }
 
     pub fn is_structural(&self) -> bool {
-        self.structural
+        matches!(&self.kind, NodeKind::Structural(_))
     }
 
     pub fn block(&self) -> Option<&Block> {
-        self.block.as_ref()
+        match &self.kind {
+            NodeKind::Block(block, _) => Some(block),
+            _ => None,
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn block_mut(&mut self) -> Option<&mut Block> {
-        self.block.as_mut()
+        match &mut self.kind {
+            NodeKind::Block(block, _) => Some(block),
+            _ => None,
+        }
     }
 
     pub fn as_theorem(&self) -> Option<(&str, &AcornValue)> {
@@ -473,7 +470,11 @@ impl Node {
     }
 
     pub fn proposition(&self) -> &Proposition {
-        &self.claim
+        match &self.kind {
+            NodeKind::Structural(proposition)
+            | NodeKind::Claim(proposition)
+            | NodeKind::Block(_, proposition) => proposition,
+        }
     }
 
     pub fn is_axiom(&self) -> bool {
@@ -529,9 +530,11 @@ impl Node {
         Node {
             codegen_position: env.bindings.codegen_position(),
             proof_scope: env.bindings.proof_scope().clone(),
-            structural,
-            claim,
-            block,
+            kind: match block {
+                Some(block) => NodeKind::Block(block, claim),
+                None if structural => NodeKind::Structural(claim),
+                None => NodeKind::Claim(claim),
+            },
         }
     }
 
