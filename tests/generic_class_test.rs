@@ -128,7 +128,7 @@ fn verify(source: &str) -> Outcome {
         context.goal.value().validate().unwrap();
         prover.set_goal(&context);
         let outcome = prover.quick_verification_search();
-        assert_ne!(outcome, Outcome::Error, "{:?}", prover.error);
+        assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
         if outcome != Outcome::Success {
             return outcome;
         }

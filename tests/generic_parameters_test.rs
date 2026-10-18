@@ -19,7 +19,11 @@ fn prove(source: &str) -> Outcome {
     }
     prover.set_goal(&context);
     let outcome = prover.quick_verification_search();
-    assert_ne!(outcome, Outcome::Error, "{:?}\n{source}", prover.error);
+    assert!(
+        !matches!(outcome, Outcome::Error(_)),
+        "{:?}\n{source}",
+        prover.error
+    );
     outcome
 }
 

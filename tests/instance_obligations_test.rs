@@ -25,7 +25,7 @@ fn outcomes(source: &str, shallow: bool) -> Vec<Outcome> {
         } else {
             prover.quick_search()
         };
-        assert_ne!(outcome, Outcome::Error, "{:?}", prover.error);
+        assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
         answers.push(outcome);
         true
     });

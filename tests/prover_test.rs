@@ -33,7 +33,7 @@ mod prover_test {
         prover.set_goal(&goal_context);
         prover.verbose = true;
         let outcome = prover.quick_search();
-        if outcome == Outcome::Error {
+        if matches!(outcome, Outcome::Error(_)) {
             panic!("prover error: {}", prover.error.unwrap());
         }
         let code = match prover.get_and_print_proof() {
@@ -76,7 +76,7 @@ mod prover_test {
             prover.verbose = true;
             let outcome = prover.quick_verification_search();
             if outcome != Outcome::Success {
-                if outcome == Outcome::Error {
+                if matches!(outcome, Outcome::Error(_)) {
                     println!(
                         "prover error: {}",
                         prover.error.as_deref().unwrap_or("unknown error")

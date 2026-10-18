@@ -107,7 +107,7 @@ fn verify(source: &str, ordinary: bool) -> Outcome {
         } else {
             prover.quick_verification_search()
         };
-        assert_ne!(result, Outcome::Error);
+        assert!(!matches!(result, Outcome::Error(_)));
         if result != Outcome::Success {
             return result;
         }

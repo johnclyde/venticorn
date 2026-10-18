@@ -115,7 +115,10 @@ fn terminal_hint_errors_and_presearch_cancellation_do_not_fallback() {
     let result = project
         .search_goal(full, Some(guided), &mut builder)
         .unwrap();
-    assert_eq!(result.outcome, Outcome::Error);
+    assert_eq!(
+        result.outcome,
+        Outcome::Error("test an already-reported normalizer error".into())
+    );
     assert!(result.hinted);
     builder.finish_search(&result.prover, &goal, result.outcome, result.elapsed);
     assert_eq!(

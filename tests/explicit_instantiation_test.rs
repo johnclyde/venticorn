@@ -18,7 +18,11 @@ fn prove(source: &str) -> Outcome {
     }
     prover.set_goal(&context);
     let outcome = prover.quick_verification_search();
-    assert_ne!(outcome, Outcome::Error, "{:?}\n{source}", prover.error);
+    assert!(
+        !matches!(outcome, Outcome::Error(_)),
+        "{:?}\n{source}",
+        prover.error
+    );
     outcome
 }
 
@@ -206,7 +210,7 @@ fn verify_all(source: &str) -> Outcome {
         }
         prover.set_goal(&node.goal_context().unwrap());
         let outcome = prover.quick_verification_search();
-        assert_ne!(outcome, Outcome::Error, "{:?}", prover.error);
+        assert!(!matches!(outcome, Outcome::Error(_)), "{:?}", prover.error);
         if outcome != Outcome::Success {
             return outcome;
         }
