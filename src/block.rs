@@ -477,8 +477,13 @@ impl Node {
     }
 
     // Stable premise identity, when this source has one.
+    pub fn source_name(&self) -> Option<String> {
+        self.source()?.name()
+    }
+
+    // Compatibility name for callers selecting a premise source.
     pub fn fact_name(&self) -> Option<String> {
-        self.source()?.fact_name()
+        self.source_name()
     }
 
     pub fn proposition(&self) -> Option<&Proposition> {
