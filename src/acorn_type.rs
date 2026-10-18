@@ -4,10 +4,22 @@ use crate::compilation::{self, ErrorSource};
 use crate::module::ModuleId;
 use crate::proof_scope::ProofScope;
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct UnresolvedType {
+// Canonical identity of a data type or generic family.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
+pub struct Class {
     pub module_id: ModuleId,
     pub name: String,
+}
+
+impl Class {
+    pub fn new(module_id: ModuleId, name: String) -> Self {
+        Self { module_id, name }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct UnresolvedType {
+    pub class: Class,
     pub params: Vec<TypeParam>,
 }
 
@@ -44,11 +56,11 @@ impl PotentialType {
                         )));
                     }
                 }
-                Ok(AcornType::Data(t.module_id, t.name, params))
+                Ok(AcornType::Data(t.class.module_id, t.class.name, params))
             }
             Self::Unresolved(t) => Err(source.error(&format!(
                 "type {} expects {} parameters, but got {}",
-                t.name,
+                t.class.name,
                 t.params.len(),
                 params.len()
             ))),

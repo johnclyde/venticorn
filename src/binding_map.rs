@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Range};
 
-use crate::acorn_type::{AcornType, PotentialType, TypeParam, Typeclass, UnresolvedType};
+use crate::acorn_type::{AcornType, Class, PotentialType, TypeParam, Typeclass, UnresolvedType};
 use crate::acorn_value::{AcornValue, BinaryOp, ConstantInstance};
 use crate::atom::AtomId;
 use crate::code_gen_error::CodeGenError;
@@ -336,13 +336,13 @@ impl BindingMap {
                     PotentialType::Unresolved(ty) => {
                         result
                             .generic_type_aliases
-                            .entry((ty.module_id, ty.name.clone(), ty.params.len()))
+                            .entry((ty.class.module_id, ty.class.name.clone(), ty.params.len()))
                             .or_insert_with(|| name.clone());
                         result
                             .canonical_to_alias
                             .entry(GlobalConstantName::new(
-                                ty.module_id,
-                                LocalConstantName::unqualified(&ty.name),
+                                ty.class.module_id,
+                                LocalConstantName::unqualified(&ty.class.name),
                             ))
                             .or_insert_with(|| name.clone());
                     }
@@ -476,8 +476,7 @@ impl BindingMap {
             return PotentialType::Resolved(self.add_data_type(name));
         }
         let potential = PotentialType::Unresolved(UnresolvedType {
-            module_id: self.module,
-            name: name.into(),
+            class: Class::new(self.module, name.into()),
             params,
         });
         self.insert_type_name(name.to_string(), potential.clone());
@@ -551,12 +550,12 @@ impl BindingMap {
                 assert!(!self.name_in_use(name), "type alias {} already bound", name);
                 self.record_name(name);
                 self.generic_type_aliases
-                    .entry((t.module_id, t.name.clone(), t.params.len()))
+                    .entry((t.class.module_id, t.class.name.clone(), t.params.len()))
                     .or_insert_with(|| name.to_string());
                 self.canonical_to_alias
                     .entry(GlobalConstantName::new(
-                        t.module_id,
-                        LocalConstantName::unqualified(&t.name),
+                        t.class.module_id,
+                        LocalConstantName::unqualified(&t.class.name),
                     ))
                     .or_insert_with(|| name.to_string());
                 self.typename_to_type
@@ -1301,7 +1300,7 @@ impl BindingMap {
                 NamedEntity::Unresolved(_) => Some(vec![]),
                 NamedEntity::UnresolvedType(t) => self.get_member_completions(
                     project,
-                    &AcornType::Data(t.module_id, t.name, vec![]),
+                    &AcornType::Data(t.class.module_id, t.class.name, vec![]),
                     partial,
                     None,
                     visible,
@@ -1354,7 +1353,7 @@ impl BindingMap {
                         *module == self.module && canonical == name
                     }
                     Some(PotentialType::Unresolved(t)) => {
-                        t.module_id == self.module && &t.name == name
+                        t.class.module_id == self.module && &t.class.name == name
                     }
                     _ => false,
                 };
@@ -1406,7 +1405,7 @@ impl BindingMap {
             PotentialType::Resolved(t) => Ok(t),
             PotentialType::Unresolved(t) => Err(expression.error(&format!(
                 "type {} requires {} type parameters",
-                t.name,
+                t.class.name,
                 t.params.len()
             ))),
         }
@@ -1905,10 +1904,10 @@ impl BindingMap {
                 }
             }
             Some(NamedEntity::UnresolvedType(t)) => self
-                .evaluate_type_attribute(project, t.module_id, &t.name, name)
+                .evaluate_type_attribute(project, t.class.module_id, &t.class.name, name)
                 .map(NamedEntity::new)
                 .ok_or_else(|| {
-                    name_token.error(&format!("{} has no member named '{}'", t.name, name))
+                    name_token.error(&format!("{} has no member named '{}'", t.class.name, name))
                 }),
             Some(NamedEntity::Typeclass(class)) => self
                 .evaluate_type_attribute(project, class.module_id, &class.name, name)

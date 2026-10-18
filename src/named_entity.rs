@@ -77,7 +77,7 @@ impl NamedEntity {
             NamedEntity::Type(t) => Ok(t),
             NamedEntity::UnresolvedType(t) => Err(source.error(&format!(
                 "type {} requires {} type parameters",
-                t.name,
+                t.class.name,
                 t.params.len()
             ))),
             NamedEntity::Module(_) => {
