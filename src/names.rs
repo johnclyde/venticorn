@@ -108,18 +108,17 @@ impl GlobalName {
 /// Converting it to a value identity does not grant instance membership.
 #[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub enum DefinedName {
-    Unqualified(String),
-    Attribute(String, String),
+    Local(LocalName),
     Instance(Typeclass, String, String),
 }
 
 impl DefinedName {
     pub fn unqualified(name: &str) -> Self {
-        Self::Unqualified(name.to_owned())
+        Self::Local(LocalName::unqualified(name))
     }
 
     pub fn attribute(owner: &str, member: &str) -> Self {
-        Self::Attribute(owner.to_owned(), member.to_owned())
+        Self::Local(LocalName::attribute(owner, member))
     }
 
     pub fn instance(class: &Typeclass, member: &str, target: &str) -> Self {
@@ -127,23 +126,24 @@ impl DefinedName {
     }
 
     pub fn is_instance(&self) -> bool {
-        matches!(self, Self::Instance(..))
+        matches!(
+            self,
+            Self::Instance(..) | Self::Local(LocalName::Instance(..))
+        )
     }
 
     /// Return an ordinary declaration name without treating an instance as one.
     pub fn to_local(self) -> Option<LocalName> {
         match self {
-            Self::Unqualified(name) => Some(LocalName::Unqualified(name)),
-            Self::Attribute(owner, member) => Some(LocalName::Attribute(owner, member)),
-            Self::Instance(..) => None,
+            Self::Local(LocalName::Instance(..)) | Self::Instance(..) => None,
+            Self::Local(name) => Some(name),
         }
     }
 
     /// Preserve the exact implementation identity, including its canonical class.
     pub fn into_identity(self) -> LocalName {
         match self {
-            Self::Unqualified(name) => LocalName::Unqualified(name),
-            Self::Attribute(owner, member) => LocalName::Attribute(owner, member),
+            Self::Local(name) => name,
             Self::Instance(class, member, target) => LocalName::Instance(class, member, target),
         }
     }
@@ -198,6 +198,25 @@ mod tests {
         assert_eq!(
             DefinedName::instance(&class, "flag", "State").to_local(),
             None
+        );
+    }
+
+    #[test]
+    fn wrapped_instance_names_do_not_become_ordinary_declarations() {
+        let class = Typeclass {
+            module_id: 3,
+            name: "Marked".into(),
+        };
+        let name = LocalName::instance(&class, "flag", "State");
+        let declaration = DefinedName::Local(name.clone());
+        assert!(declaration.is_instance());
+        assert_eq!(declaration.clone().to_local(), None);
+        assert_eq!(declaration.into_identity(), name);
+        let ordinary = DefinedName::Local(LocalName::attribute("State", "flag"));
+        assert!(!ordinary.is_instance());
+        assert_eq!(
+            ordinary.to_local(),
+            Some(LocalName::attribute("State", "flag"))
         );
     }
 }
