@@ -14,7 +14,7 @@ fn outcomes(source: &str) -> Vec<Outcome> {
             assert!(!context.goal.value().is_generic());
             let mut prover = Prover::new(&project, false);
             for fact in node.usable_facts(&project) {
-                fact.proposition.value.validate().unwrap();
+                fact.as_proposition().unwrap().value.validate().unwrap();
                 prover.add_fact(fact);
             }
             prover.set_goal(&context);

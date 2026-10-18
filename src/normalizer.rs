@@ -505,12 +505,7 @@ impl Normalizer {
         facts: impl IntoIterator<Item = Fact>,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        self.append_propositions(
-            facts
-                .into_iter()
-                .map(|fact| (fact.proposition, fact.truthiness)),
-            steps,
-        )
+        self.append_propositions(facts.into_iter().filter_map(Fact::into_proposition), steps)
     }
 
     // Compatibility wrapper for callers requesting a fresh collection.
@@ -527,7 +522,11 @@ impl Normalizer {
         fact: Fact,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        self.normalize_monomorphic_steps(fact.proposition, fact.truthiness, steps)
+        match fact {
+            Fact::Proposition(proposition, truthiness) => {
+                self.normalize_monomorphic_steps(proposition, truthiness, steps)
+            }
+        }
     }
 
     fn normalize_monomorphic_steps(
@@ -1068,7 +1067,7 @@ mod ownership_tests {
         for normalizer in [&mut allowed, &mut copied] {
             let facts = normalizer.monomorphize_for_value(&demand);
             assert_eq!(facts.len(), 1);
-            assert!(!facts[0].proposition.value.is_generic());
+            assert!(!facts[0].as_proposition().unwrap().value.is_generic());
             assert!(normalizer.monomorphize_for_value(&demand).is_empty());
         }
         for mut normalizer in [Normalizer::with_scope(denied), Normalizer::new()] {

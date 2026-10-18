@@ -89,7 +89,7 @@ fn generic_demand_does_not_cross_same_spelling_class_owners() {
     monomorphizer.add_monomorphs(&expected);
     let output = monomorphizer.take_facts();
     assert_eq!(output.len(), 1);
-    assert_eq!(output[0].proposition.value, expected);
+    assert_eq!(output[0].as_proposition().unwrap().value, expected);
 }
 
 #[test]

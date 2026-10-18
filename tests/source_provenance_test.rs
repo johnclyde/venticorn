@@ -13,40 +13,57 @@ fn definition_source_names_survive_generic_instantiation() {
     let fact = env
         .exported_facts()
         .into_iter()
-        .find(|fact| fact.proposition.source.name().as_deref() == Some("identity"))
+        .find(|fact| fact.as_proposition().unwrap().source.name().as_deref() == Some("identity"))
         .unwrap();
-    let generic_description = fact.proposition.source.description();
+    let generic_description = fact.as_proposition().unwrap().source.description();
     for actual in [
         AcornType::Bool,
         AcornType::new_functional(vec![AcornType::Bool], AcornType::Bool),
     ] {
         let specialized = fact.instantiate(&[("T".into(), actual.clone())]);
-        specialized.proposition.value.validate().unwrap();
+        specialized
+            .as_proposition()
+            .unwrap()
+            .value
+            .validate()
+            .unwrap();
         assert_eq!(
-            specialized.proposition.source.name().as_deref(),
+            specialized
+                .as_proposition()
+                .unwrap()
+                .source
+                .name()
+                .as_deref(),
             Some("identity")
         );
         assert_eq!(
-            specialized.proposition.source.module,
-            fact.proposition.source.module
+            specialized.as_proposition().unwrap().source.module,
+            fact.as_proposition().unwrap().source.module
         );
         assert_eq!(
-            specialized.proposition.source.qualified_name(),
-            Some((fact.proposition.source.module, "identity".into()))
+            specialized
+                .as_proposition()
+                .unwrap()
+                .source
+                .qualified_name(),
+            Some((
+                fact.as_proposition().unwrap().source.module,
+                "identity".into()
+            ))
         );
         assert_eq!(
-            specialized.proposition.source.range,
-            fact.proposition.source.range
+            specialized.as_proposition().unwrap().source.range,
+            fact.as_proposition().unwrap().source.range
         );
         let SourceType::ConstantDefinition(AcornValue::Constant(constant), name) =
-            &specialized.proposition.source.source_type
+            &specialized.as_proposition().unwrap().source.source_type
         else {
             panic!("missing constant provenance")
         };
         assert_eq!(name, "identity");
         assert_eq!(constant.params, vec![actual]);
         assert_ne!(
-            specialized.proposition.source.description(),
+            specialized.as_proposition().unwrap().source.description(),
             generic_description
         );
     }
@@ -59,7 +76,7 @@ fn datatype_sources_name_members_and_keep_shared_principles() {
     let names = env
         .exported_facts()
         .iter()
-        .filter_map(|fact| fact.proposition.source.name())
+        .filter_map(|fact| fact.as_proposition().unwrap().source.name())
         .collect::<Vec<_>>();
     for expected in [
         "Pair.new",
