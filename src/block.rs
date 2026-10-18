@@ -454,6 +454,10 @@ impl Node {
             .map(|name| (name, &self.claim.value))
     }
 
+    pub fn importable(&self) -> bool {
+        self.claim.source.importable
+    }
+
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
         &self.proof_scope
     }

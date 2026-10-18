@@ -2495,7 +2495,7 @@ impl Environment {
         assert!(self.top_level);
         let mut facts = vec![];
         for node in &self.nodes {
-            if !node.claim.source.importable {
+            if !node.importable() {
                 continue;
             }
             if filter.is_some_and(|names| {

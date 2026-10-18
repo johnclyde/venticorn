@@ -1000,7 +1000,7 @@ impl Project {
                 dependency
                     .nodes
                     .iter()
-                    .filter(|node| node.claim.source.importable)
+                    .filter(|node| node.importable())
                     .map(|n| (n, crate::proof_step::Truthiness::Factual, false))
             })
             .chain(
@@ -1030,7 +1030,7 @@ impl Project {
                 .is_some();
             if selected
                 || truthiness == crate::proof_step::Truthiness::Hypothetical
-                || (local && !selected_node.claim.source.importable)
+                || (local && !selected_node.importable())
             {
                 prover.add_fact(selected_node.get_fact_with_truthiness(truthiness));
             }
