@@ -103,3 +103,68 @@ impl GlobalName {
         }
     }
 }
+
+/// The declaration form that introduces a name into an environment.
+/// Converting it to a value identity does not grant instance membership.
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
+pub enum DefinedName {
+    Unqualified(String),
+    Attribute(String, String),
+    Instance(Typeclass, String, String),
+}
+
+impl DefinedName {
+    pub fn unqualified(name: &str) -> Self {
+        Self::Unqualified(name.to_owned())
+    }
+
+    pub fn attribute(owner: &str, member: &str) -> Self {
+        Self::Attribute(owner.to_owned(), member.to_owned())
+    }
+
+    pub fn instance(class: &Typeclass, member: &str, target: &str) -> Self {
+        Self::Instance(class.clone(), member.to_owned(), target.to_owned())
+    }
+
+    /// Preserve the exact implementation identity, including its canonical class.
+    pub fn into_identity(self) -> LocalName {
+        match self {
+            Self::Unqualified(name) => LocalName::Unqualified(name),
+            Self::Attribute(owner, member) => LocalName::Attribute(owner, member),
+            Self::Instance(class, member, target) => LocalName::Instance(class, member, target),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn declaration_forms_preserve_exact_value_identities() {
+        assert_eq!(
+            DefinedName::unqualified("value").into_identity(),
+            LocalName::unqualified("value")
+        );
+        assert_eq!(
+            DefinedName::attribute("Item", "value").into_identity(),
+            LocalName::attribute("Item", "value")
+        );
+        let first = Typeclass {
+            module_id: 3,
+            name: "Marked".into(),
+        };
+        let other = Typeclass {
+            module_id: 4,
+            name: "Marked".into(),
+        };
+        let implementation = DefinedName::instance(&first, "flag", "State").into_identity();
+        assert_eq!(implementation, LocalName::instance(&first, "flag", "State"));
+        assert_ne!(
+            implementation,
+            DefinedName::instance(&other, "flag", "State").into_identity()
+        );
+        assert_ne!(implementation, LocalName::attribute("Marked", "flag"));
+        assert_ne!(implementation, LocalName::unqualified("State.Marked.flag"));
+    }
+}
