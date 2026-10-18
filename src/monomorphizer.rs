@@ -59,6 +59,13 @@ struct GenericFactInfo {
     instantiations: Vec<FactParams>,
 }
 
+// A canonical generic constant's demands and occurrences share one index entry.
+#[derive(Clone, Default)]
+struct GenericConstantInfo {
+    instantiations: Vec<ConstantParams>,
+    occurrences: Vec<(usize, ConstantParams)>,
+}
+
 // A helper structure to determine which monomorphs are necessary.
 // Tracks the generic constants used by each fact and the concrete instances needed by proofs.
 #[derive(Clone)]
@@ -71,14 +78,8 @@ pub struct Monomorphizer {
     // The Monomorphizer only writes to this, never reads.
     output_facts: Vec<Fact>,
 
-    // The concrete constant instances requested by facts, goals, or their definitions.
-    // Indexed by constant id.
-    instantiations_for_constant: HashMap<GlobalConstantName, Vec<ConstantParams>>,
-
-    // An index tracking how each generic constant is used in the generic facts.
-    // This is updated whenever we add a fact.
-    // Lists (index in generic facts, params for the constant) for each occurrence.
-    generic_constants: HashMap<GlobalConstantName, Vec<(usize, ConstantParams)>>,
+    // Facts, goals and definitions request concrete instances in declaration order.
+    constant_info: HashMap<GlobalConstantName, GenericConstantInfo>,
 }
 
 impl Monomorphizer {
@@ -91,8 +92,7 @@ impl Monomorphizer {
             scope,
             fact_info: vec![],
             output_facts: vec![],
-            instantiations_for_constant: HashMap::new(),
-            generic_constants: HashMap::new(),
+            constant_info: HashMap::new(),
         }
     }
 
@@ -125,9 +125,10 @@ impl Monomorphizer {
         for c in &instances {
             let constant_key = c.name.clone();
             let params = ConstantParams::new(c.type_arguments().cloned().collect());
-            self.generic_constants
+            self.constant_info
                 .entry(constant_key)
-                .or_insert(vec![])
+                .or_default()
+                .occurrences
                 .push((i, params));
         }
 
@@ -135,8 +136,8 @@ impl Monomorphizer {
         for c in instances {
             let constant_key = c.name.clone();
             let instance_params = ConstantParams::new(c.type_arguments().cloned().collect());
-            if let Some(monomorphs) = self.instantiations_for_constant.get(&constant_key) {
-                for monomorph_params in monomorphs.clone() {
+            if let Some(info) = self.constant_info.get(&constant_key) {
+                for monomorph_params in info.instantiations.clone() {
                     self.try_to_monomorphize_fact(i, &instance_params, &monomorph_params);
                 }
             }
@@ -157,21 +158,15 @@ impl Monomorphizer {
         monomorph_params: &ConstantParams,
     ) {
         monomorph_params.assert_full();
-        let monomorphs = self
-            .instantiations_for_constant
-            .entry(constant_key.clone())
-            .or_insert(vec![]);
-        if monomorphs.contains(&monomorph_params) {
-            // We already have this monomorph
+        let info = self.constant_info.entry(constant_key.clone()).or_default();
+        if info.instantiations.contains(monomorph_params) {
             return;
         }
-        monomorphs.push(monomorph_params.clone());
+        info.instantiations.push(monomorph_params.clone());
 
-        // Handle all the facts that mention this constant without monomorphizing it.
-        if let Some(instances) = self.generic_constants.get(&constant_key) {
-            for (fact_id, instance_params) in instances.clone() {
-                self.try_to_monomorphize_fact(fact_id, &instance_params, monomorph_params);
-            }
+        // Clone only this constant's occurrences before recursive demand updates.
+        for (fact_id, instance_params) in info.occurrences.clone() {
+            self.try_to_monomorphize_fact(fact_id, &instance_params, monomorph_params);
         }
     }
 
