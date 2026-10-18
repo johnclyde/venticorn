@@ -2004,6 +2004,14 @@ impl Environment {
             &scope_name,
             &info,
         )?;
+        // Every validated declaration has a source node, including law-free instances.
+        let proposition = Proposition::instance(
+            None,
+            self.module_id,
+            statement.range(),
+            name.to_string(),
+            class.name.clone(),
+        );
         if !conditions.is_empty() || instance.proof.is_some() {
             let goal = if conditions.is_empty() {
                 // An optional law-free proof body is still checked in full.
@@ -2039,14 +2047,10 @@ impl Environment {
             )?;
             // Export only a vacuous marker from the obligation. Its lowered law
             // is not a premise inside the block, nor an unconditional new axiom.
-            let proposition = Proposition::instance(
-                None,
-                self.module_id,
-                statement.range(),
-                name.to_string(),
-                class.name.clone(),
-            );
             let index = self.push_node(Node::new_block(project, self, block, Some(proposition)));
+            self.add_node_lines(index, &statement.range());
+        } else {
+            let index = self.push_node(Node::structural(project, self, proposition));
             self.add_node_lines(index, &statement.range());
         }
         // Later goals may use this declaration conditionally on the whole module
