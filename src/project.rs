@@ -787,7 +787,7 @@ impl Project {
                 let keep_going = match self.reuse_verified_block(&node, &mut context, builder) {
                     Some(keep_going) => keep_going,
                     None => {
-                        let guided = if context.hints_enabled && node.current().num_goals() > 0 {
+                        let guided = if context.hints_enabled && node.node().num_goals() > 0 {
                             node.top_block_name()
                                 .and_then(|name| {
                                     builder
@@ -836,7 +836,7 @@ impl Project {
             return None;
         }
         let hash = context.hash?;
-        let end = context.goal_index + node.current().num_goals();
+        let end = context.goal_index + node.node().num_goals();
         let goals = &context.goals[context.goal_index..end];
         if !goals.iter().enumerate().all(|(offset, goal)| {
             builder.previous_cache().matches_prefix(
@@ -874,7 +874,7 @@ impl Project {
         if builder.stop_if_requested(&self.build_stopped) {
             return false;
         }
-        if node.num_children() == 0 && !node.current().has_goal() {
+        if node.num_children() == 0 && !node.node().has_goal() {
             return true;
         }
         let changed = prover.proof_scope() != node.entry_scope();
@@ -905,7 +905,7 @@ impl Project {
             }
             node.ascend();
         }
-        if node.current().has_goal() {
+        if node.node().has_goal() {
             // A child completion callback can cancel before its parent is reached.
             if builder.stop_if_requested(&self.build_stopped) {
                 return false;
@@ -1032,7 +1032,7 @@ impl Project {
                 || truthiness == crate::proof_step::Truthiness::Hypothetical
                 || (local && !selected_node.claim.source.importable)
             {
-                prover.add_fact(Fact::new(selected_node.claim.clone(), truthiness));
+                prover.add_fact(selected_node.get_fact_with_truthiness(truthiness));
             }
         }
         fn recognize_body(project: &Project, node: &Node, remaining: &mut PremiseSet) {
@@ -1158,7 +1158,7 @@ impl Project {
         filter: Option<&ImportFilter>,
         callback: &mut impl FnMut(Prover, GoalContext) -> bool,
     ) -> bool {
-        if node.num_children() == 0 && !node.current().has_goal() {
+        if node.num_children() == 0 && !node.node().has_goal() {
             // There's nothing to do here
             return true;
         }
@@ -1186,7 +1186,7 @@ impl Project {
             node.ascend();
         }
 
-        if node.current().has_goal() {
+        if node.node().has_goal() {
             let goal_context = self.cache_goal_context(&node);
             if prover.proof_scope() != &goal_context.proof_scope {
                 prover = self.prover_at_scope(node, &goal_context.proof_scope, filter, true, false);
