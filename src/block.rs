@@ -420,7 +420,7 @@ pub struct Node {
 enum NodeKind {
     Structural(Proposition),
     Claim(Proposition),
-    Block(Block, Proposition),
+    Block(Block, Option<Proposition>),
 }
 
 impl Node {
@@ -475,9 +475,8 @@ impl Node {
 
     pub fn proposition(&self) -> Option<&Proposition> {
         match &self.kind {
-            NodeKind::Structural(proposition)
-            | NodeKind::Claim(proposition)
-            | NodeKind::Block(_, proposition) => Some(proposition),
+            NodeKind::Structural(proposition) | NodeKind::Claim(proposition) => Some(proposition),
+            NodeKind::Block(_, proposition) => proposition.as_ref(),
         }
     }
 
@@ -490,18 +489,18 @@ impl Node {
     }
 
     pub fn structural(project: &Project, env: &Environment, proposition: Proposition) -> Self {
-        Self::from_parts(project, env, true, proposition, None)
+        Self::from_parts(project, env, true, Some(proposition), None)
     }
 
     pub fn claim(project: &Project, env: &Environment, proposition: Proposition) -> Self {
-        Self::from_parts(project, env, false, proposition, None)
+        Self::from_parts(project, env, false, Some(proposition), None)
     }
 
     pub fn new_block(
         project: &Project,
         env: &Environment,
         block: Block,
-        proposition: Proposition,
+        proposition: Option<Proposition>,
     ) -> Self {
         Self::from_parts(project, env, false, proposition, Some(block))
     }
@@ -514,30 +513,34 @@ impl Node {
         proposition: Proposition,
         block: Option<Block>,
     ) -> Self {
-        Self::from_parts(project, env, structural, proposition, block)
+        Self::from_parts(project, env, structural, Some(proposition), block)
     }
 
     fn from_parts(
         project: &Project,
         env: &Environment,
         structural: bool,
-        proposition: Proposition,
+        proposition: Option<Proposition>,
         block: Option<Block>,
     ) -> Self {
         if structural {
             assert!(block.is_none());
         }
-        let mut claim = env.bindings.expand_theorems(project, proposition);
-        // A nested declaration stays local even when it has a reusable source name.
-        claim.source.importable &= env.top_level;
-        claim.source.depth = env.depth;
+        let claim = proposition.map(|proposition| {
+            let mut claim = env.bindings.expand_theorems(project, proposition);
+            // A nested declaration stays local even when it has a reusable source name.
+            claim.source.importable &= env.top_level;
+            claim.source.depth = env.depth;
+            claim
+        });
         Node {
             codegen_position: env.bindings.codegen_position(),
             proof_scope: env.bindings.proof_scope().clone(),
-            kind: match block {
-                Some(block) => NodeKind::Block(block, claim),
-                None if structural => NodeKind::Structural(claim),
-                None => NodeKind::Claim(claim),
+            kind: match (block, claim) {
+                (Some(block), claim) => NodeKind::Block(block, claim),
+                (None, Some(claim)) if structural => NodeKind::Structural(claim),
+                (None, Some(claim)) => NodeKind::Claim(claim),
+                (None, None) => unreachable!("non-block nodes require a proposition"),
             },
         }
     }
