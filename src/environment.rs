@@ -386,7 +386,9 @@ impl Environment {
         ls: &LetStatement,
         range: Range,
     ) -> compilation::Result<()> {
-        let constant_name = defined_name.into_identity();
+        let constant_name = defined_name
+            .into_identity_in(self.module_id)
+            .map_err(|message| ls.name_token.error(message))?;
         if !class_params.is_empty() && ls.name_token.token_type == TokenType::Numeral {
             return Err(ls
                 .name_token
@@ -497,7 +499,9 @@ impl Environment {
         range: Range,
     ) -> compilation::Result<()> {
         let allow_recursive_binding = !defined_name.is_instance();
-        let constant_name = defined_name.into_identity();
+        let constant_name = defined_name
+            .into_identity_in(self.module_id)
+            .map_err(|message| ds.name_token.error(message))?;
         if ds.name == "new" || ds.name == "self" {
             return Err(ds.name_token.error(&format!(
                 "'{}' is a reserved word. use a different name",
@@ -1879,6 +1883,9 @@ impl Environment {
                 ))
             }
         };
+        let AcornType::Data(target_class, _) = &target else {
+            unreachable!("validated concrete instance target")
+        };
         let class = self
             .bindings
             .evaluate_typeclass(project, &instance.typeclass)?;
@@ -1932,7 +1939,7 @@ impl Environment {
                 StatementInfo::Let(ls) => {
                     self.add_let_statement(
                         project,
-                        DefinedName::instance(&class, &ls.name, name),
+                        DefinedName::instance(&class, &ls.name, target_class.clone()),
                         &[],
                         ls,
                         member.range(),
@@ -1945,7 +1952,7 @@ impl Environment {
                     }
                     self.add_define_statement(
                         project,
-                        DefinedName::instance(&class, &ds.name, name),
+                        DefinedName::instance(&class, &ds.name, target_class.clone()),
                         Some(&target),
                         &[],
                         ds,
@@ -2771,5 +2778,67 @@ mod definition_range_tests {
         assert!(!env
             .definition_ranges
             .contains_key(&LocalConstantName::unqualified("State.temporary")));
+    }
+}
+
+#[cfg(test)]
+mod declaration_owner_tests {
+    use super::*;
+
+    #[test]
+    fn foreign_instance_descriptors_fail_before_let_or_define_publication() {
+        for source in [
+            "let flag: Bool = true",
+            "define flag(self) -> Bool { true }",
+        ] {
+            let mut env = Environment::new_test();
+            env.add("typeclass T: Marked {\n flag: Bool\n}\ninductive State {\n only\n}");
+            let project = Project::new_mock();
+            let statement = Statement::parse_str(source).unwrap();
+            let nodes = env.nodes.len();
+            let line = env.last_line();
+            let ranges = env.definition_ranges.clone();
+            let scope = env.bindings.proof_scope().clone();
+            let class = Typeclass {
+                module_id: env.module_id,
+                name: "Marked".into(),
+            };
+            let descriptor = DefinedName::instance(
+                &class,
+                "flag",
+                Class::new(env.module_id + 1, "State".into()),
+            );
+            let target = env.bindings.get_type_for_name("State").unwrap().clone();
+            let error = match &statement.statement {
+                StatementInfo::Let(ls) => env
+                    .add_let_statement(&project, descriptor, &[], ls, statement.range())
+                    .unwrap_err(),
+                StatementInfo::Define(ds) => env
+                    .add_define_statement(
+                        &project,
+                        descriptor,
+                        Some(&target),
+                        &[],
+                        ds,
+                        statement.range(),
+                    )
+                    .unwrap_err(),
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                error.message(),
+                "instance declaration target belongs to a different module"
+            );
+            assert_eq!(env.nodes.len(), nodes);
+            assert_eq!(env.last_line(), line);
+            assert_eq!(env.definition_ranges, ranges);
+            assert_eq!(env.bindings.proof_scope(), &scope);
+            assert!(!env.bindings.name_in_use("State.Marked.flag"));
+            env.add("instance State: Marked {\n let flag: Bool = true\n}");
+            assert!(env
+                .bindings
+                .get_constant_value("State.Marked.flag")
+                .is_some());
+        }
     }
 }

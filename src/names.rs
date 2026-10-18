@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::acorn_type::Typeclass;
+use crate::acorn_type::{Class, Typeclass};
 use crate::module::ModuleId;
 
 /// How a constant is named in its defining module.
@@ -109,7 +109,7 @@ impl GlobalName {
 #[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub enum DefinedName {
     Local(LocalName),
-    Instance(Typeclass, String, String),
+    Instance(Typeclass, String, Class),
 }
 
 impl DefinedName {
@@ -121,8 +121,8 @@ impl DefinedName {
         Self::Local(LocalName::attribute(owner, member))
     }
 
-    pub fn instance(class: &Typeclass, member: &str, target: &str) -> Self {
-        Self::Instance(class.clone(), member.to_owned(), target.to_owned())
+    pub fn instance(class: &Typeclass, member: &str, target: Class) -> Self {
+        Self::Instance(class.clone(), member.to_owned(), target)
     }
 
     pub fn is_instance(&self) -> bool {
@@ -140,11 +140,24 @@ impl DefinedName {
         }
     }
 
-    /// Preserve the exact implementation identity, including its canonical class.
+    /// Consume a declaration only in its canonical target's defining module.
+    pub fn into_identity_in(self, module: ModuleId) -> Result<LocalName, &'static str> {
+        if let Self::Instance(_, _, target) = &self {
+            if target.module_id != module {
+                return Err("instance declaration target belongs to a different module");
+            }
+        }
+        Ok(self.into_identity())
+    }
+
+    /// Extract the local identity; declaration admission uses `into_identity_in`
+    /// to check the target owner before attaching the containing module.
     pub fn into_identity(self) -> LocalName {
         match self {
             Self::Local(name) => name,
-            Self::Instance(class, member, target) => LocalName::Instance(class, member, target),
+            Self::Instance(class, member, target) => {
+                LocalName::Instance(class, member, target.name)
+            }
         }
     }
 }
@@ -171,11 +184,12 @@ mod tests {
             module_id: 4,
             name: "Marked".into(),
         };
-        let implementation = DefinedName::instance(&first, "flag", "State").into_identity();
+        let implementation =
+            DefinedName::instance(&first, "flag", Class::new(5, "State".into())).into_identity();
         assert_eq!(implementation, LocalName::instance(&first, "flag", "State"));
         assert_ne!(
             implementation,
-            DefinedName::instance(&other, "flag", "State").into_identity()
+            DefinedName::instance(&other, "flag", Class::new(5, "State".into())).into_identity()
         );
         assert_ne!(implementation, LocalName::attribute("Marked", "flag"));
         assert_ne!(implementation, LocalName::unqualified("State.Marked.flag"));
@@ -196,7 +210,7 @@ mod tests {
             name: "Marked".into(),
         };
         assert_eq!(
-            DefinedName::instance(&class, "flag", "State").to_local(),
+            DefinedName::instance(&class, "flag", Class::new(5, "State".into())).to_local(),
             None
         );
     }
@@ -217,6 +231,30 @@ mod tests {
         assert_eq!(
             ordinary.to_local(),
             Some(LocalName::attribute("State", "flag"))
+        );
+    }
+
+    #[test]
+    fn instance_declarations_check_canonical_target_ownership() {
+        let class = Typeclass {
+            module_id: 3,
+            name: "Marked".into(),
+        };
+        let local = DefinedName::instance(&class, "flag", Class::new(5, "State".into()));
+        let foreign = DefinedName::instance(&class, "flag", Class::new(6, "State".into()));
+        assert_ne!(local, foreign);
+        assert_eq!(
+            local.into_identity_in(5),
+            Ok(LocalName::instance(&class, "flag", "State"))
+        );
+        assert_eq!(
+            foreign.into_identity_in(5),
+            Err("instance declaration target belongs to a different module")
+        );
+        let wrapped = DefinedName::Local(LocalName::instance(&class, "flag", "State"));
+        assert_eq!(
+            wrapped.into_identity_in(5),
+            Ok(LocalName::instance(&class, "flag", "State"))
         );
     }
 }
