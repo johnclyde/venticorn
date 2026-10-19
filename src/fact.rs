@@ -1,6 +1,8 @@
 use crate::acorn_type::{AcornType, Class, Typeclass};
-use crate::acorn_value::AcornValue;
+use crate::acorn_value::{AcornValue, ConstantInstance};
+use crate::names::{GlobalName, LocalName};
 use crate::potential_value::PotentialValue;
+use crate::proof_scope::ProofScope;
 use crate::proof_step::Truthiness;
 use crate::proposition::Proposition;
 use crate::source::Source;
@@ -12,6 +14,14 @@ pub struct DefinitionFact {
     potential: PotentialValue,
     definition: AcornValue,
     proposition: Proposition,
+    instance_alias: Option<InstanceAlias>,
+}
+
+#[derive(Clone, Debug)]
+struct InstanceAlias {
+    data: Class,
+    class: Typeclass,
+    source: Source,
 }
 
 impl DefinitionFact {
@@ -36,7 +46,79 @@ impl DefinitionFact {
             potential,
             definition,
             proposition: Proposition::generic(value, params, source),
+            instance_alias: None,
         })
+    }
+
+    // Only checked instance admission may seal this optimization. Public definitions
+    // retain an equality and cannot confer declaration or membership authority.
+    pub(crate) fn checked_instance_alias(
+        potential: PotentialValue,
+        definition: AcornValue,
+        source: Source,
+        data: Class,
+        class: Typeclass,
+        member: &str,
+        scope: &ProofScope,
+    ) -> Result<Self, String> {
+        let generic_name =
+            GlobalName::new(class.module_id, LocalName::attribute(&class.name, member));
+        let PotentialValue::Resolved(AcornValue::Constant(generic)) = &potential else {
+            return Err("instance alias requires a fixed generic member".into());
+        };
+        let AcornValue::Constant(implementation) = &definition else {
+            return Err("instance alias requires a checked implementation constant".into());
+        };
+        if generic.name != generic_name
+            || generic.params != [AcornType::Data(data.clone(), vec![])]
+            || !implementation.params.is_empty()
+            || generic.instance_type != implementation.instance_type
+            || !generic.instance_type.is_normalized()
+            || source.module != data.module_id
+            || source.depth != 0
+            || !source.importable
+            || source.source_type
+                != crate::source::SourceType::TypeDefinition(
+                    data.name.clone(),
+                    format!("instance.{}.{}", class.name, member),
+                )
+            || !scope.has_class_membership(&data, &class)
+        {
+            return Err("invalid checked instance alias metadata".into());
+        }
+        let mut result = Self::new(potential, definition, source.clone())?;
+        if result.proposition.has_generic()
+            || result.proposition.truthiness() != Truthiness::Factual
+        {
+            return Err("instance alias must be a fixed factual definition".into());
+        }
+        result.instance_alias = Some(InstanceAlias {
+            data,
+            class,
+            source,
+        });
+        Ok(result)
+    }
+
+    pub(crate) fn instance_alias_in_scope(
+        &self,
+        scope: &ProofScope,
+    ) -> Option<(&ConstantInstance, &ConstantInstance)> {
+        let alias = self.instance_alias.as_ref()?;
+        if self.proposition.has_generic()
+            || self.proposition.truthiness() != Truthiness::Factual
+            || self.proposition.source != alias.source
+            || !scope.has_class_membership(&alias.data, &alias.class)
+        {
+            return None;
+        }
+        let PotentialValue::Resolved(AcornValue::Constant(generic)) = &self.potential else {
+            return None;
+        };
+        let AcornValue::Constant(implementation) = &self.definition else {
+            return None;
+        };
+        Some((generic, implementation))
     }
 
     pub fn potential(&self) -> &PotentialValue {
@@ -56,6 +138,9 @@ impl DefinitionFact {
     }
 
     pub(crate) fn with_truthiness(mut self, role: Truthiness) -> Self {
+        if role != self.proposition.truthiness() {
+            self.instance_alias = None;
+        }
         self.proposition = self.proposition.with_truthiness(role);
         self
     }
@@ -67,8 +152,16 @@ impl DefinitionFact {
         if proposition.value == self.proposition.value
             && proposition.params == self.proposition.params
         {
+            let instance_alias = if proposition.source == self.proposition.source
+                && proposition.truthiness() == self.proposition.truthiness()
+            {
+                self.instance_alias
+            } else {
+                None
+            };
             Fact::Definition(Self {
                 proposition,
+                instance_alias,
                 ..self
             })
         } else {

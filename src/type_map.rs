@@ -117,6 +117,10 @@ impl TypeMap {
         }
     }
 
+    pub(crate) fn monomorph_mapping(&self, instance: &ConstantInstance) -> Option<(Atom, TypeId)> {
+        self.monomorph_to_id.get(instance).copied()
+    }
+
     pub(crate) fn alias_monomorph(
         &mut self,
         instance: ConstantInstance,

@@ -99,6 +99,10 @@ impl Monomorphizer {
         }
     }
 
+    pub(crate) fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
+        &self.scope
+    }
+
     /// Adds a fact that could be either generic or monomorphic.
     pub fn add_fact(&mut self, fact: Fact) {
         match fact {
