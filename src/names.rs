@@ -105,10 +105,14 @@ impl GlobalName {
 }
 
 /// Complete identity of an implementation relationship's member.
+/// For `Ring.add<Int>`, retain the canonical owners of both `Ring` and `Int`.
 #[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub struct InstanceName {
+    /// The canonical typeclass, such as `Ring`.
     pub typeclass: Typeclass,
+    /// The implemented member, such as `add`.
     pub attribute: String,
+    /// The canonical concrete type, such as `Int`.
     pub class: Class,
 }
 
