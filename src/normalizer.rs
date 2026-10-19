@@ -189,12 +189,22 @@ impl Normalizer {
     /// But there's a redundant arg here. The simpler form is just
     ///   forall(x, f(x) & g(skolem()))
     /// which is what we get if we don't convert to prenex first.
-    pub fn skolemize(&mut self, stack: &Vec<AcornType>, value: AcornValue) -> AcornValue {
-        match value {
+    pub fn skolemize(&mut self, stack: &Vec<AcornType>, value: AcornValue) -> Result<AcornValue> {
+        let checkpoint = self.skolem_types.len();
+        let result = self.skolemize_inner(stack, value);
+        if result.is_err() {
+            self.skolem_types.truncate(checkpoint);
+        }
+        result
+    }
+
+    // Only the public entry owns rollback; recursive calls share its checkpoint.
+    fn skolemize_inner(&mut self, stack: &Vec<AcornType>, value: AcornValue) -> Result<AcornValue> {
+        Ok(match value {
             AcornValue::ForAll(quants, subvalue) => {
                 let mut new_stack = stack.clone();
                 new_stack.extend(quants.clone());
-                let new_subvalue = self.skolemize(&new_stack, *subvalue);
+                let new_subvalue = self.skolemize_inner(&new_stack, *subvalue)?;
                 AcornValue::ForAll(quants, Box::new(new_subvalue))
             }
 
@@ -217,21 +227,21 @@ impl Normalizer {
 
                 // Replace references to the existential quantifiers
                 let stack_size = stack.len() as AtomId;
-                self.skolemize(
+                return self.skolemize_inner(
                     stack,
                     subvalue.bind_values(stack_size, stack_size, &replacements),
-                )
+                );
             }
 
             AcornValue::Binary(BinaryOp::And, left, right) => {
-                let left = self.skolemize(stack, *left);
-                let right = self.skolemize(stack, *right);
+                let left = self.skolemize_inner(stack, *left)?;
+                let right = self.skolemize_inner(stack, *right)?;
                 AcornValue::Binary(BinaryOp::And, Box::new(left), Box::new(right))
             }
 
             AcornValue::Binary(BinaryOp::Or, left, right) => {
-                let left = self.skolemize(stack, *left);
-                let right = self.skolemize(stack, *right);
+                let left = self.skolemize_inner(stack, *left)?;
+                let right = self.skolemize_inner(stack, *right)?;
                 AcornValue::Binary(BinaryOp::Or, Box::new(left), Box::new(right))
             }
 
@@ -243,11 +253,13 @@ impl Normalizer {
             | AcornValue::Bool(_)
             | AcornValue::Constant(_) => value,
 
-            _ => panic!(
-                "moving negation inwards should have eliminated this node: {:?}",
-                value
-            ),
-        }
+            _ => {
+                return Err(format!(
+                    "moving negation inwards should have eliminated this node: {:?}",
+                    value
+                ));
+            }
+        })
     }
 
     /// Constructs a new term from a function application
@@ -432,7 +444,7 @@ impl Normalizer {
         let value = value.replace_if();
         let value = value.move_negation_inwards(true, false);
         // println!("negin'd: {}", value);
-        let value = self.skolemize(&vec![], value);
+        let value = self.skolemize(&vec![], value)?;
         // println!("skolemized: {}", value);
 
         self.normalize_cnf(value, local)
@@ -1554,5 +1566,81 @@ mod prepared_instance_normalization_tests {
             .normalize(value, true)
             .expect_clauses()
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod skolemization_error_tests {
+    use super::*;
+    use crate::acorn_type::TypeParam;
+
+    #[test]
+    fn failed_skolemization_rolls_back_allocations_after_a_valid_left_branch() {
+        for operator in [BinaryOp::And, BinaryOp::Or] {
+            let mut normalizer = Normalizer::new();
+            let prior = normalizer.new_skolem_value(AcornType::Bool);
+            let before = normalizer.skolem_types.clone();
+            let witness = AcornValue::Exists(
+                vec![AcornType::Bool],
+                Box::new(AcornValue::Variable(0, AcornType::Bool)),
+            );
+            let unsupported = AcornValue::IfThenElse(
+                Box::new(AcornValue::Bool(true)),
+                Box::new(AcornValue::Bool(false)),
+                Box::new(AcornValue::Bool(true)),
+            );
+            let expected_error = format!(
+                "moving negation inwards should have eliminated this node: {:?}",
+                unsupported
+            );
+            let value =
+                AcornValue::Binary(operator, Box::new(witness.clone()), Box::new(unsupported));
+            value.validate().unwrap();
+            assert_eq!(value.get_type(), AcornType::Bool);
+            assert_eq!(normalizer.skolemize(&vec![], value), Err(expected_error));
+            assert_eq!(normalizer.skolem_types, before);
+
+            let mut control = Normalizer::new();
+            assert_eq!(control.new_skolem_value(AcornType::Bool), prior);
+            let expected = control.skolemize(&vec![], witness.clone()).unwrap();
+            assert_eq!(control.skolem_types.len(), before.len() + 1);
+            let actual = normalizer.skolemize(&vec![], witness).unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(normalizer.skolem_types, control.skolem_types);
+            actual.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn checked_skolemization_preserves_parameterized_term_validation() {
+        let concrete = AcornValue::constant_named(
+            GlobalName::new(5, LocalName::unqualified("flag")),
+            vec![AcornType::Bool],
+            AcornType::Bool,
+        );
+        let mut normalizer = Normalizer::new();
+        assert_eq!(
+            normalizer.skolemize(&vec![], concrete.clone()).unwrap(),
+            concrete
+        );
+        assert!(normalizer.skolem_types.is_empty());
+        assert!(!normalizer
+            .normalize(&concrete, false)
+            .expect_clauses()
+            .is_empty());
+        let generic = AcornValue::constant_named(
+            GlobalName::new(5, LocalName::unqualified("flag")),
+            vec![AcornType::Variable(TypeParam::unconstrained("Phantom"))],
+            AcornType::Bool,
+        );
+        // This transform does not replace the complete type boundary at normalization.
+        assert_eq!(
+            normalizer.skolemize(&vec![], generic.clone()).unwrap(),
+            generic
+        );
+        let Normalization::Error(error) = normalizer.normalize(&generic, false) else {
+            panic!("generic actual must not enter fixed normalization")
+        };
+        assert!(error.contains("must be instantiated"), "{error}");
     }
 }
