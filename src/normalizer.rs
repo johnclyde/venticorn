@@ -23,9 +23,8 @@ type Result<T> = std::result::Result<T, String>;
 
 #[derive(Debug)]
 pub enum Normalization {
-    // A successfully normalized value turns into a bunch of clauses.
-    // Logically, this is an "and of ors". Each Clause is an "or" of its literals.
-    // True is an empty list; false is one empty clause.
+    /// A normalized value is a conjunction of clauses. Each clause is a
+    /// disjunction of its literals. True is an empty list; false is one empty clause.
     Clauses(Vec<Clause>),
 
     // A user-visible error.
@@ -120,8 +119,8 @@ pub struct Normalizer {
     // Generic demands and facts share the exact immutable authority of this normalizer.
     monomorphizer: Monomorphizer,
 
-    // Types of the skolem functions produced
-    // Some of them are just constants, so we store an AcornType rather than a FunctionType
+    /// Types of the skolem functions produced
+    /// Some of them are just constants, so we store an AcornType rather than a FunctionType
     skolem_types: Vec<AcornType>,
 
     map: NormalizationMap,
@@ -173,23 +172,23 @@ impl Normalizer {
         matches!(atom, Atom::Skolem(_))
     }
 
-    // The input should already have negations moved inwards.
-    // The stack must be entirely universal quantifiers.
-    //
-    // The value does *not* need to be in prenex normal form.
-    // I.e., it can still have quantifier nodes, either "exists" or "forall", inside of
-    // logical nodes, like "and" and "or".
-    // All negations must be moved inside quantifiers, though.
-    //
-    // In general I think converting to prenex seems bad. Consider:
-    //   forall(x, f(x)) & exists(y, g(y))
-    // If we convert to prenex, we get:
-    //   forall(x, exists(y, f(x) & g(y)))
-    // which skolemizes to
-    //   forall(x, f(x) & g(skolem(x)))
-    // But there's a redundant arg here. The simpler form is just
-    //   forall(x, f(x) & g(skolem()))
-    // which is what we get if we don't convert to prenex first.
+    /// The input should already have negations moved inwards.
+    /// The stack must be entirely universal quantifiers.
+    ///
+    /// The value does *not* need to be in prenex normal form.
+    /// I.e., it can still have quantifier nodes, either "exists" or "forall", inside of
+    /// logical nodes, like "and" and "or".
+    /// All negations must be moved inside quantifiers, though.
+    ///
+    /// In general I think converting to prenex seems bad. Consider:
+    ///   forall(x, f(x)) & exists(y, g(y))
+    /// If we convert to prenex, we get:
+    ///   forall(x, exists(y, f(x) & g(y)))
+    /// which skolemizes to
+    ///   forall(x, f(x) & g(skolem(x)))
+    /// But there's a redundant arg here. The simpler form is just
+    ///   forall(x, f(x) & g(skolem()))
+    /// which is what we get if we don't convert to prenex first.
     pub fn skolemize(&mut self, stack: &Vec<AcornType>, value: AcornValue) -> AcornValue {
         match value {
             AcornValue::ForAll(quants, subvalue) => {
@@ -251,8 +250,8 @@ impl Normalizer {
         }
     }
 
-    // Constructs a new term from a function application
-    // Function applications that are nested like f(x)(y) are flattened to f(x, y)
+    /// Constructs a new term from a function application
+    /// Function applications that are nested like f(x)(y) are flattened to f(x, y)
     fn term_from_application(
         &mut self,
         application: &FunctionApplication,
@@ -271,10 +270,10 @@ impl Normalizer {
         Ok(Term::new(term_type, head_type, head, args))
     }
 
-    // Constructs a new term from an AcornValue
-    // Returns an error if it's inconvertible.
-    // The "local" flag here and elsewhere controls whether any newly discovered variables
-    // are local variables.
+    /// Constructs a new term from an AcornValue
+    /// Returns an error if it's inconvertible.
+    /// The "local" flag here and elsewhere controls whether any newly discovered variables
+    /// are represented as local atoms rather than global atoms.
     pub fn term_from_value(&mut self, value: &AcornValue, local: bool) -> Result<Term> {
         match value {
             AcornValue::Variable(i, var_type) => {
@@ -312,10 +311,10 @@ impl Normalizer {
             _ => Err(format!("Cannot convert {} to term", value)),
         }
     }
-    // Panics if this value cannot be converted to a literal.
-    // Swaps left and right if needed, to sort.
-    // Normalizes literals to <larger> = <smaller>, because that's the logical direction
-    // to do rewrite-type lookups, on the larger literal first.
+    /// Returns an error if the value cannot be converted to a literal.
+    /// Swaps left and right if needed, to sort.
+    /// Normalizes literals to <larger> = <smaller>, because that's the logical direction
+    /// to do rewrite-type lookups, on the larger literal first.
     fn literal_from_value(&mut self, value: &AcornValue, local: bool) -> Result<Literal> {
         match value {
             AcornValue::Variable(_, _) | AcornValue::Constant(_) => {
@@ -341,12 +340,12 @@ impl Normalizer {
         }
     }
 
-    // Converts a value that is already in CNF into lists of literals.
-    // Each Vec<Literal> is a conjunction, an "or" node.
-    // The CNF form is expressing that each of these conjunctions are true.
-    // Returns Ok(Some(cnf)) if it can be turned into CNF.
-    // Returns Ok(None) if it's an impossibility.
-    // Returns an error if we failed in some user-reportable way.
+    /// Converts a value that is already in CNF into lists of literals.
+    /// Each Vec<Literal> is a disjunction, an "or" node.
+    /// The outer list is a conjunction requiring every disjunction to hold.
+    /// Returns Ok(Some(cnf)) if it can be turned into CNF.
+    /// Returns Ok(None) if it's an impossibility.
+    /// Returns an error if we failed in some user-reportable way.
     fn into_literal_lists(
         &mut self,
         value: &AcornValue,
@@ -427,8 +426,8 @@ impl Normalizer {
         clauses
     }
 
-    // Converts a value to CNF, then to clauses.
-    // Does not handle the "definition" sorts of values.
+    /// Converts a value to CNF, then to clauses.
+    /// Does not handle the "definition" sorts of values.
     fn convert_then_normalize(&mut self, value: &AcornValue, local: bool) -> Result<Vec<Clause>> {
         // println!("\nnormalizing: {}", value);
         let value = value.replace_function_equality(0);
@@ -569,7 +568,7 @@ impl Normalizer {
         Ok(())
     }
 
-    // Variables are left unbound. Their types are accumulated.
+    /// Variables are left unbound. Their types are accumulated.
     fn denormalize_atom(
         &self,
         atom_type: TypeId,
@@ -637,8 +636,8 @@ impl Normalizer {
         }
     }
 
-    // Converts backwards, from a clause to a value.
-    // This will panic on a skolem.
+    /// Converts backwards, from a clause to a value.
+    /// This will panic on a skolem.
     pub fn denormalize(&self, clause: &Clause) -> AcornValue {
         if clause.is_impossible() {
             return AcornValue::Bool(false);
@@ -666,7 +665,7 @@ impl Normalizer {
         }
     }
 
-    // When you denormalize and renormalize a clause, you should get the same thing.
+    /// When you denormalize and renormalize a clause, you should get the same thing.
     #[cfg(test)]
     fn check_denormalize_renormalize(&mut self, clause: &Clause) {
         let denormalized = self.denormalize(clause);
