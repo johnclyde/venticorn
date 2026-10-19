@@ -3,7 +3,6 @@ use crate::acorn_type::AcornType;
 use crate::acorn_value::{AcornValue, BinaryOp, FunctionApplication};
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
-use crate::constant_map::ConstantMap;
 #[cfg(test)]
 use crate::display::DisplayClause;
 #[cfg(test)]
@@ -13,12 +12,12 @@ use crate::literal::Literal;
 use crate::module::SKOLEM;
 use crate::monomorphizer::Monomorphizer;
 use crate::names::{GlobalName, LocalName};
+use crate::normalization_map::NormalizationMap;
 use crate::proof_scope::ProofScope;
 use crate::proof_step::{ProofStep, Truthiness};
 use crate::proposition::MonomorphicProposition;
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
-use crate::type_map::TypeMap;
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -125,9 +124,7 @@ pub struct Normalizer {
     // Some of them are just constants, so we store an AcornType rather than a FunctionType
     skolem_types: Vec<AcornType>,
 
-    type_map: TypeMap,
-
-    constant_map: ConstantMap,
+    map: NormalizationMap,
 }
 
 impl Normalizer {
@@ -139,8 +136,7 @@ impl Normalizer {
         Normalizer {
             monomorphizer: Monomorphizer::with_scope(scope),
             skolem_types: vec![],
-            type_map: TypeMap::new(),
-            constant_map: ConstantMap::new(),
+            map: NormalizationMap::new(),
         }
     }
 
@@ -158,7 +154,7 @@ impl Normalizer {
     /// Check every literal and term against this normalizer's type state.
     /// Panics if a clause contains an invalid or inconsistent type ID.
     pub fn check_clause(&self, clause: &Clause) {
-        self.type_map.check_clause(clause);
+        self.map.check_clause(clause);
     }
 
     fn new_skolem_value(&mut self, acorn_type: AcornType) -> AcornValue {
@@ -264,7 +260,7 @@ impl Normalizer {
     ) -> Result<Term> {
         let application_type = application.get_type();
         check_normalized_type(&application_type)?;
-        let term_type = self.type_map.add_type(&application_type);
+        let term_type = self.map.add_type(&application_type);
         let func_term = self.term_from_value(&application.function, local)?;
         let head = func_term.head;
         let head_type = func_term.head_type;
@@ -283,7 +279,7 @@ impl Normalizer {
         match value {
             AcornValue::Variable(i, var_type) => {
                 check_normalized_type(var_type)?;
-                let type_id = self.type_map.add_type(var_type);
+                let type_id = self.map.add_type(var_type);
                 Ok(Term::new(type_id, type_id, Atom::Variable(*i), vec![]))
             }
             AcornValue::Application(application) => {
@@ -295,7 +291,7 @@ impl Normalizer {
                     check_normalized_type(argument)?;
                 }
                 if c.params.is_empty() {
-                    let type_id = self.type_map.add_type(&c.instance_type);
+                    let type_id = self.map.add_type(&c.instance_type);
                     let constant_atom = if c.name.module_id == SKOLEM {
                         // Hacky. Turn the s-name back to an int
                         match &c.name.local_name {
@@ -305,11 +301,11 @@ impl Normalizer {
                             _ => return Err("invalid structured skolem name".into()),
                         }
                     } else {
-                        self.constant_map.add_constant_named(c.name.clone(), local)
+                        self.map.add_constant_named(c.name.clone(), local)
                     };
                     Ok(Term::new(type_id, type_id, constant_atom, vec![]))
                 } else {
-                    Ok(self.type_map.term_from_monomorph(c))
+                    Ok(self.map.term_from_monomorph(c))
                 }
             }
             AcornValue::Bool(true) => Ok(Term::new_true()),
@@ -580,18 +576,18 @@ impl Normalizer {
         atom: &Atom,
         var_types: &mut Vec<AcornType>,
     ) -> AcornValue {
-        let acorn_type = self.type_map.get_type(atom_type).clone();
+        let acorn_type = self.map.get_type(atom_type).clone();
         match atom {
             Atom::True => AcornValue::Bool(true),
             Atom::GlobalConstant(i) => {
-                let name = self.constant_map.name_for_global_id(*i).clone();
+                let name = self.map.name_for_global_id(*i).clone();
                 AcornValue::constant_named(name, vec![], acorn_type)
             }
             Atom::LocalConstant(i) => {
-                let name = self.constant_map.name_for_local_id(*i).clone();
+                let name = self.map.name_for_local_id(*i).clone();
                 AcornValue::constant_named(name, vec![], acorn_type)
             }
-            Atom::Monomorph(i) => AcornValue::Constant(self.type_map.get_monomorph(*i).clone()),
+            Atom::Monomorph(i) => AcornValue::Constant(self.map.get_monomorph(*i).clone()),
             Atom::Variable(i) => {
                 let index = *i as usize;
                 if index < var_types.len() {
@@ -662,17 +658,9 @@ impl Normalizer {
     pub fn atom_str(&self, atom: &Atom) -> String {
         match atom {
             Atom::True => "true".to_string(),
-            Atom::GlobalConstant(i) => self
-                .constant_map
-                .name_for_global_id(*i)
-                .local_name
-                .to_string(),
-            Atom::LocalConstant(i) => self
-                .constant_map
-                .name_for_local_id(*i)
-                .local_name
-                .to_string(),
-            Atom::Monomorph(i) => self.type_map.get_monomorph(*i).to_string(),
+            Atom::GlobalConstant(i) => self.map.name_for_global_id(*i).local_name.to_string(),
+            Atom::LocalConstant(i) => self.map.name_for_local_id(*i).local_name.to_string(),
+            Atom::Monomorph(i) => self.map.get_monomorph(*i).to_string(),
             Atom::Variable(i) => format!("x{}", i),
             Atom::Skolem(i) => format!("s{}", i),
         }
