@@ -24,13 +24,11 @@ pub struct TypeMap {
     // type_id_to_type[type_id] is the AcornType
     type_id_to_type: Vec<AcornType>,
 
-    // One entry for each monomorphization.
-    // Maps the rich constant to the AtomId of the monomorph.
-    monomorph_map: HashMap<ConstantInstance, AtomId>,
+    // Complete instances map to their atom and effective type ID.
+    monomorph_to_id: HashMap<ConstantInstance, (Atom, TypeId)>,
 
-    // Indexed by the AtomId of the monomorph.
-    // Stores the corresponding rich constant and its type ID.
-    monomorph_info: Vec<(ConstantInstance, TypeId)>,
+    // Reverse entries retain every ordered actual and the canonical owner.
+    id_to_monomorph: Vec<ConstantInstance>,
 }
 
 impl TypeMap {
@@ -38,8 +36,8 @@ impl TypeMap {
         let mut map = TypeMap {
             type_to_type_id: HashMap::new(),
             type_id_to_type: vec![],
-            monomorph_info: vec![],
-            monomorph_map: HashMap::new(),
+            id_to_monomorph: vec![],
+            monomorph_to_id: HashMap::new(),
         };
         map.add_type(&AcornType::Empty);
         map.add_type(&AcornType::Bool);
@@ -99,28 +97,28 @@ impl TypeMap {
 
     // The supplied instance must be fully monomorphic.
     pub fn term_from_monomorph(&mut self, instance: &ConstantInstance) -> Term {
-        let (monomorph_id, type_id) = if let Some(monomorph_id) = self.monomorph_map.get(instance) {
-            let (_, type_id) = self.monomorph_info[*monomorph_id as usize];
-            (*monomorph_id, type_id)
+        let (atom, type_id) = if let Some(mapping) = self.monomorph_to_id.get(instance) {
+            *mapping
         } else {
-            // Construct an atom and appropriate entries for this monomorph
             let type_id = self.add_type(&instance.instance_type);
-            let monomorph_id = self.monomorph_info.len() as AtomId;
-            self.monomorph_info.push((instance.clone(), type_id));
-            self.monomorph_map.insert(instance.clone(), monomorph_id);
-            (monomorph_id, type_id)
+            let id = self.id_to_monomorph.len() as AtomId;
+            let atom = Atom::Monomorph(id);
+            self.id_to_monomorph.push(instance.clone());
+            self.monomorph_to_id
+                .insert(instance.clone(), (atom, type_id));
+            (atom, type_id)
         };
 
         Term {
             term_type: type_id,
             head_type: type_id,
-            head: Atom::Monomorph(monomorph_id),
+            head: atom,
             args: vec![],
         }
     }
 
     pub fn get_monomorph(&self, id: AtomId) -> &ConstantInstance {
-        &self.monomorph_info[id as usize].0
+        &self.id_to_monomorph[id as usize]
     }
 }
 
