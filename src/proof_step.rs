@@ -4,7 +4,7 @@ use std::fmt;
 use crate::atom::Atom;
 use crate::clause::Clause;
 use crate::literal::Literal;
-use crate::proposition::Proposition;
+use crate::proposition::{MonomorphicProposition, Proposition};
 use crate::source::{Source, SourceType};
 use crate::term::Term;
 
@@ -244,6 +244,15 @@ impl fmt::Display for ProofStep {
 }
 
 impl ProofStep {
+    /// Build an assumption from a checked fixed proposition, preserving its contextual role.
+    pub fn assumption_from_monomorphic(
+        proposition: &MonomorphicProposition,
+        clause: Clause,
+        defined_atom: Option<Atom>,
+    ) -> Self {
+        Self::assumption_from_proposition(proposition.proposition(), clause, defined_atom)
+    }
+
     // Build an assumption from the proposition's effective role and exact source.
     pub fn assumption_from_proposition(
         proposition: &Proposition,

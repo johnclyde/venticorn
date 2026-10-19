@@ -29,6 +29,38 @@ pub struct Proposition {
     contextual_truthiness: Option<Truthiness>,
 }
 
+/// A checked fixed proposition. Recovering the general representation consumes this guarantee.
+#[derive(Debug, Clone)]
+pub struct MonomorphicProposition(Proposition);
+
+impl MonomorphicProposition {
+    pub fn proposition(&self) -> &Proposition {
+        &self.0
+    }
+
+    pub fn value(&self) -> &AcornValue {
+        &self.0.value
+    }
+
+    pub fn source(&self) -> &Source {
+        &self.0.source
+    }
+
+    pub fn truthiness(&self) -> Truthiness {
+        self.0.truthiness()
+    }
+
+    pub fn into_proposition(self) -> Proposition {
+        self.0
+    }
+}
+
+impl fmt::Display for MonomorphicProposition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl fmt::Display for Proposition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.value.fmt(f)
@@ -67,6 +99,24 @@ impl Proposition {
             || self.value.is_generic()
             || matches!(&self.source.source_type,
                 SourceType::ConstantDefinition(value, _) if value.is_generic())
+    }
+
+    /// Check every explicit formal, value, and definition field before fixed proof use.
+    /// Failure returns the complete original proposition without modifying it.
+    pub fn into_monomorphic(self) -> Result<MonomorphicProposition, Self> {
+        if self.has_generic() {
+            Err(self)
+        } else {
+            Ok(MonomorphicProposition(self))
+        }
+    }
+
+    pub fn as_monomorphic(&self) -> Option<MonomorphicProposition> {
+        if self.has_generic() {
+            None
+        } else {
+            Some(MonomorphicProposition(self.clone()))
+        }
     }
 
     /// Supply a role for this proof context without rewriting source provenance.

@@ -6,7 +6,7 @@ use crate::acorn_value::AcornValue;
 use crate::fact::Fact;
 use crate::names::GlobalName;
 use crate::proof_step::Truthiness;
-use crate::proposition::Proposition;
+use crate::proposition::{MonomorphicProposition, Proposition};
 
 /// A sorted substitution of type variables belonging to one fact.
 #[derive(PartialEq, Eq, Clone)]
@@ -79,7 +79,7 @@ pub struct Monomorphizer {
 
     /// Facts that are fully monomorphized.
     /// The Monomorphizer only writes to this, never reads.
-    output: Vec<Proposition>,
+    output: Vec<MonomorphicProposition>,
 
     /// Facts, goals and definitions request concrete instances in declaration order.
     constant_info: HashMap<GlobalName, GenericConstantInfo>,
@@ -128,9 +128,9 @@ impl Monomorphizer {
             .find_constants(&|c| !c.params.is_empty() && c.is_generic(), &mut instances);
         if instances.is_empty() {
             // A generic fact without a constant demand cannot yet be specialized safely.
-            if proposition.has_generic() {
+            let Ok(proposition) = proposition.into_monomorphic() else {
                 return;
-            }
+            };
 
             // There's nothing to monomorphize here. Just output it.
             self.output.push(proposition);
@@ -165,9 +165,17 @@ impl Monomorphizer {
         }
     }
 
-    /// Extract monomorphic facts from the prover.
-    pub fn take_propositions(&mut self) -> Vec<Proposition> {
+    /// Extract checked monomorphic propositions without weakening their metadata guarantee.
+    pub fn take_monomorphic(&mut self) -> Vec<MonomorphicProposition> {
         std::mem::take(&mut self.output)
+    }
+
+    /// Compatibility output recovers the general representation without cloning.
+    pub fn take_propositions(&mut self) -> Vec<Proposition> {
+        self.take_monomorphic()
+            .into_iter()
+            .map(MonomorphicProposition::into_proposition)
+            .collect()
     }
 
     /// Compatibility output derives each role from the moved proposition.
@@ -256,15 +264,15 @@ impl Monomorphizer {
         else {
             return;
         };
-        if monomorphic_prop.has_generic() {
+        let Ok(monomorphic_prop) = monomorphic_prop.into_monomorphic() else {
             // Matching one constant may leave other type variables in the fact unresolved.
             // Do not emit or remember an incomplete substitution.
             return;
-        }
+        };
         self.prop_info[prop_id].instantiations.push(prop_params);
         // Definitions can introduce concrete generic calls needed by the current proof.
         // Record this substitution before following those calls to break repeated demand.
-        self.add_monomorphs(&monomorphic_prop.value);
+        self.add_monomorphs(monomorphic_prop.value());
         self.output.push(monomorphic_prop);
     }
 
