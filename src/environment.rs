@@ -11,7 +11,7 @@ use crate::atom::AtomId;
 use crate::binding_map::{BindingMap, PotentialValue, Stack, TypeclassCondition, TypeclassInfo};
 use crate::block::{Block, BlockParams, Node, NodeCursor};
 use crate::compilation::{self, Error, ErrorSource};
-use crate::fact::Fact;
+use crate::fact::{DefinitionFact, Fact};
 use crate::module::ModuleId;
 use crate::names::{DefinedName, GlobalName, LocalName};
 use crate::project::{LoadError, Project};
@@ -247,14 +247,9 @@ impl Environment {
             potential.clone().to_generic_value(),
             name.to_string(),
         );
-        let params = potential.unresolved_params().to_vec();
-        let constant = potential.to_generic_value();
-        let claim = constant.inflate_function_definition(definition);
-        self.push_node(Node::structural(
-            project,
-            self,
-            Proposition::generic(claim, params, source),
-        ));
+        let definition = DefinitionFact::new(potential, definition, source)
+            .expect("a validated declaration must have a consistent defining equation");
+        self.push_node(Node::definition(project, self, definition));
     }
 
     /// Store a validated declaration, its source range, and its defining equations.
