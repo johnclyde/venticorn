@@ -68,6 +68,10 @@ impl ConstantMap {
         self.has_constant_named(&GlobalName::new(module, LocalName::from_legacy(name)))
     }
 
+    pub(crate) fn atom_for_name(&self, name: &GlobalName) -> Option<Atom> {
+        self.name_to_atom.get(name).copied()
+    }
+
     pub fn has_constant_named(&self, name: &GlobalName) -> bool {
         self.name_to_atom.contains_key(name)
     }

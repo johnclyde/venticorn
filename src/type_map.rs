@@ -117,6 +117,24 @@ impl TypeMap {
         }
     }
 
+    pub(crate) fn alias_monomorph(
+        &mut self,
+        instance: ConstantInstance,
+        atom: Atom,
+        type_id: TypeId,
+    ) -> Result<(), String> {
+        let mapping = (atom, type_id);
+        if let Some(existing) = self.monomorph_to_id.get(&instance) {
+            return if *existing == mapping {
+                Ok(())
+            } else {
+                Err("instantiated constant already has a different atom".into())
+            };
+        }
+        self.monomorph_to_id.insert(instance, mapping);
+        Ok(())
+    }
+
     pub fn get_monomorph(&self, id: AtomId) -> &ConstantInstance {
         &self.id_to_monomorph[id as usize]
     }
