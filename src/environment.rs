@@ -227,11 +227,12 @@ impl Environment {
         definition: AcornValue,
     ) {
         // A canonical definition may be prepared before its instance scope is published.
-        let constant = self
+        let potential = self
             .bindings
             .get_constant_value(&name.to_string())
-            .expect("a stored definition must have a declaration value")
-            .to_generic_value();
+            .expect("a stored definition must have a declaration value");
+        let params = potential.unresolved_params().to_vec();
+        let constant = potential.to_generic_value();
 
         // Expand function definitions into equality for every argument.
         let claim = if let AcornValue::Lambda(acorn_types, return_value) = definition {
@@ -257,8 +258,9 @@ impl Environment {
         self.push_node(Node::structural(
             project,
             self,
-            Proposition::new(
+            Proposition::generic(
                 claim,
+                params,
                 Source::constant_definition(
                     self.module_id,
                     range,
