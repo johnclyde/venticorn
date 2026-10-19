@@ -75,16 +75,7 @@ impl NormalizationMap {
         target: &GlobalName,
         constant_type: &AcornType,
     ) -> Result<(), String> {
-        if instance.params.is_empty()
-            || instance.name.module_id == SKOLEM
-            || target.module_id == SKOLEM
-            || &instance.instance_type != constant_type
-            || !constant_type.is_normalized()
-            || instance.params.iter().any(|actual| !actual.is_normalized())
-        {
-            return Err("invalid instantiated alias type metadata".into());
-        }
-        AcornValue::Constant(instance.clone()).validate()?;
+        Self::check_alias_metadata(&instance, target, constant_type)?;
         let atom = self
             .constants
             .atom_for_name(target)
@@ -97,6 +88,45 @@ impl NormalizationMap {
             return Err("alias target has a different type".into());
         }
         self.types.alias_monomorph(instance, atom, type_id)
+    }
+
+    fn check_alias_metadata(
+        instance: &ConstantInstance,
+        target: &GlobalName,
+        constant_type: &AcornType,
+    ) -> Result<(), String> {
+        if instance.params.is_empty()
+            || instance.name.module_id == SKOLEM
+            || target.module_id == SKOLEM
+            || &instance.instance_type != constant_type
+            || !constant_type.is_normalized()
+            || instance.params.iter().any(|actual| !actual.is_normalized())
+        {
+            return Err("invalid instantiated alias type metadata".into());
+        }
+        AcornValue::Constant(instance.clone()).validate()?;
+        Ok(())
+    }
+
+    // Validate all rejection paths before interning a previously unseen target.
+    pub(crate) fn alias_monomorph_to_constant(
+        &mut self,
+        instance: ConstantInstance,
+        target: &ConstantInstance,
+    ) -> Result<(), String> {
+        Self::check_alias_metadata(&instance, &target.name, &target.instance_type)?;
+        if !target.params.is_empty() {
+            return Err("alias target must be a non-parameterized constant".into());
+        }
+        if let Some((atom, type_id)) = self.types.monomorph_mapping(&instance) {
+            if self.constants.atom_for_name(&target.name) != Some(atom)
+                || self.get_type(type_id) != &target.instance_type
+            {
+                return Err("instantiated constant already has a different atom".into());
+            }
+        }
+        self.term_from_constant(target, false)?;
+        self.alias_monomorph(instance, &target.name, &target.instance_type)
     }
 
     pub fn has_constant_named(&self, name: &GlobalName) -> bool {

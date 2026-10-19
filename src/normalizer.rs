@@ -476,8 +476,22 @@ impl Normalizer {
 
     // Monomorphization uses the immutable authority captured by this normalizer.
     pub fn normalize_fact(&mut self, fact: Fact, steps: &mut Vec<ProofStep>) -> Result<()> {
+        self.register_definition_alias(&fact);
         let propositions = self.monomorphize_fact(fact);
         self.append_propositions(propositions.into_iter().map(Ok), steps)
+    }
+
+    // Refused optimizations still lower their original equality with its provenance.
+    fn register_definition_alias(&mut self, fact: &Fact) {
+        if let Fact::Definition(definition) = fact {
+            if let Some((generic, implementation)) =
+                definition.instance_alias_in_scope(self.monomorphizer.proof_scope())
+            {
+                let _ = self
+                    .map
+                    .alias_monomorph_to_constant(generic.clone(), implementation);
+            }
+        }
     }
 
     fn append_propositions(
@@ -525,6 +539,7 @@ impl Normalizer {
         fact: Fact,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
+        self.register_definition_alias(&fact);
         // Membership statements have no Boolean clause and cannot grant authority.
         let Some((proposition, _)) = fact.into_proposition() else {
             return Ok(());
@@ -1267,5 +1282,277 @@ mod append_fact_tests {
             "normalization requires a Boolean value, got Bool -> Bool"
         );
         assert_eq!(source_lines(&steps), vec![3, 8]);
+    }
+}
+
+#[cfg(test)]
+mod checked_instance_alias_tests {
+    use super::*;
+    use crate::acorn_type::{Class, Typeclass};
+    use crate::fact::DefinitionFact;
+    use crate::project::Project;
+    use crate::proof_step::Rule;
+
+    fn fixture() -> (DefinitionFact, ProofScope, Class, Typeclass) {
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", "typeclass M: Marked {\n flag: Bool\n}\ninductive Item {\n only\n}\nlet selected: Bool = axiom\ninstance Item: Marked {\n let flag: Bool = selected\n}\ntheorem goal { true }\n");
+        let module = project.expect_ok("main");
+        let env = project.get_env_by_id(module).unwrap();
+        let scope = env.get_node_by_name("goal").goal_scope().clone();
+        let definition = env
+            .nodes
+            .iter()
+            .find_map(|node| match node.get_fact() {
+                Some(Fact::Definition(definition))
+                    if definition.instance_alias_in_scope(&scope).is_some() =>
+                {
+                    Some(definition)
+                }
+                _ => None,
+            })
+            .expect("checked bridge carries the private eligibility");
+        (
+            definition,
+            scope,
+            Class::new(module, "Item".into()),
+            env.bindings
+                .get_typeclass_for_name("Marked")
+                .unwrap()
+                .clone(),
+        )
+    }
+
+    fn explicit(fact: Fact, scope: ProofScope, definition: &DefinitionFact, role: Truthiness) {
+        let source = fact.source().clone();
+        let mut normalizer = Normalizer::with_scope(scope);
+        let mut steps = vec![];
+        normalizer.normalize_fact(fact, &mut steps).unwrap();
+        assert!(!steps.is_empty());
+        for step in &steps {
+            assert_eq!(step.truthiness, role);
+            let Rule::Assumption(info) = &step.rule else {
+                panic!("defining equality must retain its source");
+            };
+            assert_eq!(info.source, source);
+        }
+        let local = role != Truthiness::Factual;
+        assert_ne!(
+            normalizer
+                .term_from_value(&definition.potential().clone().to_generic_value(), local)
+                .unwrap(),
+            normalizer
+                .term_from_value(definition.definition(), local)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn checked_alias_requires_the_current_canonical_membership() {
+        let (definition, scope, data, class) = fixture();
+        let mut normalizer = Normalizer::with_scope(scope.clone());
+        let mut steps = vec![];
+        normalizer
+            .normalize_fact(Fact::Definition(definition.clone()), &mut steps)
+            .unwrap();
+        assert_eq!(
+            normalizer
+                .term_from_value(&definition.potential().clone().to_generic_value(), false)
+                .unwrap(),
+            normalizer
+                .term_from_value(definition.definition(), false)
+                .unwrap()
+        );
+        explicit(
+            Fact::Definition(definition.clone()),
+            ProofScope::default(),
+            &definition,
+            Truthiness::Factual,
+        );
+        let mut denied = scope;
+        denied.deny_instance(data.module_id, &data.name, &class);
+        explicit(
+            Fact::Definition(definition.clone()),
+            denied,
+            &definition,
+            Truthiness::Factual,
+        );
+        let foreign = Typeclass {
+            module_id: class.module_id + 1,
+            name: class.name.clone(),
+        };
+        let mut foreign_scope = ProofScope::default();
+        foreign_scope.record_instance(data.module_id, &data.name, &foreign);
+        explicit(
+            Fact::Definition(definition.clone()),
+            foreign_scope.clone(),
+            &definition,
+            Truthiness::Factual,
+        );
+        assert!(DefinitionFact::checked_instance_alias(
+            definition.potential().clone(),
+            definition.definition().clone(),
+            definition.proposition().source.clone(),
+            data,
+            foreign,
+            "flag",
+            &foreign_scope
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn reconstruction_source_role_and_instantiation_cannot_recover_alias_eligibility() {
+        let (definition, scope, _, _) = fixture();
+        let public = DefinitionFact::new(
+            definition.potential().clone(),
+            definition.definition().clone(),
+            definition.proposition().source.clone(),
+        )
+        .unwrap();
+        explicit(
+            Fact::Definition(public),
+            scope.clone(),
+            &definition,
+            Truthiness::Factual,
+        );
+        for role in [Truthiness::Hypothetical, Truthiness::Counterfactual] {
+            let changed = definition.clone().with_truthiness(role);
+            explicit(
+                Fact::Definition(changed.clone()),
+                scope.clone(),
+                &definition,
+                role,
+            );
+            explicit(
+                Fact::Definition(changed.with_truthiness(Truthiness::Factual)),
+                scope.clone(),
+                &definition,
+                Truthiness::Factual,
+            );
+        }
+        let changed_source = definition.clone().prepare(|mut proposition| {
+            proposition.source.range.start.line += 1;
+            proposition
+        });
+        assert!(matches!(changed_source, Fact::Definition(_)));
+        explicit(
+            changed_source,
+            scope.clone(),
+            &definition,
+            Truthiness::Factual,
+        );
+        let substituted =
+            Fact::Definition(definition.clone()).instantiate(&[("Unused".into(), AcornType::Bool)]);
+        assert!(matches!(substituted, Fact::Proposition(_)));
+        explicit(substituted, scope, &definition, Truthiness::Factual);
+    }
+
+    #[test]
+    fn emitted_atom_conflict_preserves_the_existing_atom_and_explicit_equality() {
+        let (definition, scope, _, _) = fixture();
+        let (generic, implementation) = definition.instance_alias_in_scope(&scope).unwrap();
+        let mut normalizer = Normalizer::with_scope(scope);
+        let value = definition.potential().clone().to_generic_value();
+        let before = normalizer.term_from_value(&value, false).unwrap();
+        assert!(!normalizer.map.has_constant_named(&implementation.name));
+        assert!(normalizer
+            .map
+            .alias_monomorph_to_constant(generic.clone(), implementation)
+            .is_err());
+        assert!(!normalizer.map.has_constant_named(&implementation.name));
+        assert_eq!(normalizer.term_from_value(&value, false).unwrap(), before);
+        let mut steps = vec![];
+        normalizer
+            .normalize_fact(Fact::Definition(definition.clone()), &mut steps)
+            .unwrap();
+        assert!(!steps.is_empty());
+        assert_eq!(normalizer.term_from_value(&value, false).unwrap(), before);
+        assert_ne!(
+            before,
+            normalizer
+                .term_from_value(definition.definition(), false)
+                .unwrap()
+        );
+        for step in steps {
+            assert_eq!(step.truthiness, Truthiness::Factual);
+            let Rule::Assumption(info) = step.rule else {
+                panic!("definition source must survive conflict fallback");
+            };
+            assert_eq!(info.source, definition.proposition().source);
+        }
+    }
+}
+
+#[cfg(test)]
+mod prepared_instance_normalization_tests {
+    use super::*;
+    use crate::project::Project;
+
+    #[test]
+    fn scoped_instance_definition_preparation_preserves_the_canonical_literal_and_tautology_result()
+    {
+        let text = r#"
+            typeclass M: Magma {
+                mul: (M, M) -> M
+            }
+
+            inductive Foo {
+                foo
+            }
+
+            class Foo {
+                define mul(self, other: Foo) -> Foo {
+                    Foo.foo
+                }
+            }
+
+            instance Foo: Magma {
+                let mul: (Foo, Foo) -> Foo = Foo.mul
+            }
+
+            theorem goal(a: Foo) {
+                Magma.mul(a, a) = a * a
+            }
+            "#;
+        let mut project = Project::new_mock();
+        project.mock("/mock/main.ac", text);
+        let module = project.expect_ok("main");
+        let env = project.get_env_by_id(module).unwrap();
+        let node = env.get_node_by_name("goal");
+        let mut normalizer = Normalizer::with_scope(node.goal_scope().clone());
+        let mut steps = vec![];
+        for fact in node.usable_facts(&project) {
+            normalizer.normalize_fact(fact, &mut steps).unwrap();
+        }
+        let (_, value) = node.node().as_theorem().unwrap();
+        // Inspect canonical identity before the normalizer eliminates tautologies.
+        let mut quantifiers = vec![];
+        let body = value.clone().remove_forall(&mut quantifiers);
+        let literal = normalizer.literal_from_value(&body, true).unwrap();
+        assert!(literal.is_tautology());
+        let clause = Clause::new(vec![literal]);
+        assert_eq!(
+            format!(
+                "{}",
+                DisplayClause {
+                    clause: &clause,
+                    normalizer: &normalizer
+                }
+            ),
+            "Foo.mul(x0, x0) = Foo.mul(x0, x0)"
+        );
+        let denormalized = normalizer.denormalize(&clause);
+        denormalized.validate().unwrap();
+        let mut roundtrip_quantifiers = vec![];
+        let roundtrip_body = denormalized.remove_forall(&mut roundtrip_quantifiers);
+        assert_eq!(roundtrip_quantifiers, quantifiers);
+        let roundtrip = normalizer
+            .literal_from_value(&roundtrip_body, true)
+            .unwrap();
+        assert_eq!(Clause::new(vec![roundtrip]), clause);
+        assert!(normalizer
+            .normalize(value, true)
+            .expect_clauses()
+            .is_empty());
     }
 }

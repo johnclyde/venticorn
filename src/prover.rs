@@ -151,6 +151,10 @@ impl Prover {
         self.error = Some(message.to_owned());
     }
 
+    pub fn get_final_step(&self) -> Option<&ProofStep> {
+        self.final_step.as_ref()
+    }
+
     pub fn proof_scope(&self) -> &crate::proof_scope::ProofScope {
         &self.scope
     }

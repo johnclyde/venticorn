@@ -2158,24 +2158,23 @@ impl Environment {
             } else {
                 None
             };
-            let claim = AcornValue::equals(generic, implementation);
-            claim
-                .validate()
-                .map_err(|error| instance.typeclass.error(&error))?;
-            self.push_node(Node::structural(
-                project,
-                self,
-                Proposition::new(
-                    claim,
-                    Source::type_definition(
-                        self.module_id,
-                        statement.range(),
-                        self.depth,
-                        name.to_string(),
-                        format!("instance.{}.{}", class.name, member),
-                    ),
+            let definition = DefinitionFact::checked_instance_alias(
+                PotentialValue::Resolved(generic),
+                implementation,
+                Source::type_definition(
+                    self.module_id,
+                    statement.range(),
+                    self.depth,
+                    name.to_string(),
+                    format!("instance.{}.{}", class.name, member),
                 ),
-            ));
+                target_class.clone(),
+                class.clone(),
+                &member,
+                self.bindings.proof_scope(),
+            )
+            .map_err(|error| instance.typeclass.error(&error))?;
+            self.push_node(Node::definition(project, self, definition));
             if let Some(claim) = generic_definition {
                 self.push_node(Node::structural(
                     project,
