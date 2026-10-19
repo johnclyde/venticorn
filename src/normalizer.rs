@@ -15,7 +15,7 @@ use crate::monomorphizer::Monomorphizer;
 use crate::names::{GlobalName, LocalName};
 use crate::proof_scope::ProofScope;
 use crate::proof_step::{ProofStep, Truthiness};
-use crate::proposition::Proposition;
+use crate::proposition::MonomorphicProposition;
 use crate::source::SourceType;
 use crate::term::{Term, TypeId};
 use crate::type_map::TypeMap;
@@ -145,9 +145,9 @@ impl Normalizer {
     }
 
     // Return newly usable monomorphic facts without exposing mutable scope authority.
-    pub(crate) fn monomorphize_fact(&mut self, fact: Fact) -> Vec<Proposition> {
+    pub(crate) fn monomorphize_fact(&mut self, fact: Fact) -> Vec<MonomorphicProposition> {
         self.monomorphizer.add_fact(fact);
-        self.monomorphizer.take_propositions()
+        self.monomorphizer.take_monomorphic()
     }
 
     pub(crate) fn monomorphize_for_value(&mut self, value: &AcornValue) -> Vec<Fact> {
@@ -486,16 +486,16 @@ impl Normalizer {
     // Monomorphization uses the immutable authority captured by this normalizer.
     pub fn normalize_fact(&mut self, fact: Fact, steps: &mut Vec<ProofStep>) -> Result<()> {
         let propositions = self.monomorphize_fact(fact);
-        self.append_propositions(propositions, steps)
+        self.append_propositions(propositions.into_iter().map(Ok), steps)
     }
 
     fn append_propositions(
         &mut self,
-        propositions: impl IntoIterator<Item = Proposition>,
+        propositions: impl IntoIterator<Item = Result<MonomorphicProposition>>,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
         for proposition in propositions {
-            self.normalize_monomorphic_steps(proposition, steps)?;
+            self.normalize_monomorphic_steps(proposition?, steps)?;
         }
         Ok(())
     }
@@ -510,7 +510,11 @@ impl Normalizer {
     ) -> Result<()> {
         self.append_propositions(
             facts.into_iter().filter_map(|fact| match fact {
-                Fact::Proposition(proposition) => Some(proposition),
+                Fact::Proposition(proposition) => {
+                    Some(proposition.into_monomorphic().map_err(|_| {
+                        "cannot normalize unresolved proposition metadata".to_string()
+                    }))
+                }
                 Fact::Instance(..) => None,
             }),
             steps,
@@ -532,7 +536,12 @@ impl Normalizer {
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
         match fact {
-            Fact::Proposition(proposition) => self.normalize_monomorphic_steps(proposition, steps),
+            Fact::Proposition(proposition) => {
+                let proposition = proposition
+                    .into_monomorphic()
+                    .map_err(|_| "cannot normalize unresolved proposition metadata".to_string())?;
+                self.normalize_monomorphic_steps(proposition, steps)
+            }
             // Membership statements have no Boolean clause and cannot grant authority.
             Fact::Instance(..) => Ok(()),
         }
@@ -540,21 +549,18 @@ impl Normalizer {
 
     fn normalize_monomorphic_steps(
         &mut self,
-        proposition: Proposition,
+        proposition: MonomorphicProposition,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        if proposition.has_generic() {
-            return Err("cannot normalize unresolved proposition metadata".into());
-        }
         let truthiness = proposition.truthiness();
         let local = truthiness != Truthiness::Factual;
-        let defined = match &proposition.source.source_type {
+        let defined = match &proposition.source().source_type {
             SourceType::ConstantDefinition(value, _) => {
                 Some(self.term_from_value(value, local)?.get_head().clone())
             }
             _ => None,
         };
-        let clauses = self.normalize_value(&proposition.value, local)?;
+        let clauses = self.normalize_value(proposition.value(), local)?;
         steps.extend(clauses.into_iter().map(|clause| {
             // A false definition supplies no defined-atom shortcut, as before.
             let defined = if clause.is_impossible() {
@@ -562,7 +568,7 @@ impl Normalizer {
             } else {
                 defined
             };
-            ProofStep::assumption_from_proposition(&proposition, clause, defined)
+            ProofStep::assumption_from_monomorphic(&proposition, clause, defined)
         }));
         Ok(())
     }
