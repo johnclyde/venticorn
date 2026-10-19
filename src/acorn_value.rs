@@ -314,6 +314,27 @@ impl fmt::Display for AcornValue {
 }
 
 impl AcornValue {
+    /// Expand a function definition into equality for every argument.
+    /// The caller must provide a validated definition of the same type as this value.
+    pub fn inflate_function_definition(&self, definition: AcornValue) -> AcornValue {
+        if let AcornValue::Lambda(acorn_types, return_value) = definition {
+            let args = acorn_types
+                .iter()
+                .enumerate()
+                .map(|(i, acorn_type)| AcornValue::Variable(i as AtomId, acorn_type.clone()))
+                .collect();
+            AcornValue::ForAll(
+                acorn_types,
+                Box::new(AcornValue::equals(
+                    AcornValue::apply(self.clone(), args),
+                    *return_value,
+                )),
+            )
+        } else {
+            AcornValue::equals(self.clone(), definition)
+        }
+    }
+
     pub fn check_type(
         &self,
         source: &dyn ErrorSource,

@@ -11,7 +11,7 @@ use crate::acorn_value::{AcornValue, BinaryOp};
 use crate::atom::AtomId;
 use crate::compilation::{self, ErrorSource};
 use crate::environment::{Environment, LineType};
-use crate::fact::Fact;
+use crate::fact::{DefinitionFact, Fact};
 use crate::goal::{Goal, GoalContext};
 use crate::names::LocalName;
 use crate::project::{ImportFilter, Project};
@@ -184,7 +184,7 @@ impl Block {
                     // Within the theorem block, the theorem is treated like a function,
                     // with propositions to define its identity.
                     // This makes it less annoying to define inductive hypotheses.
-                    subenv.add_identity_named(project, &LocalName::unqualified(name));
+                    subenv.add_definition_named(project, &LocalName::unqualified(name));
                 }
 
                 if let Some((unbound_premise, premise_range)) = premise {
@@ -459,6 +459,9 @@ impl Node {
     pub(crate) fn get_fact_with_truthiness(&self, truthiness: Truthiness) -> Option<Fact> {
         self.get_fact().map(|fact| match fact {
             Fact::Proposition(proposition) => Fact::new(proposition, truthiness),
+            Fact::Definition(definition) => {
+                Fact::Definition(definition.with_truthiness(truthiness))
+            }
             relation @ Fact::Instance(..) => relation,
         })
     }
@@ -542,6 +545,11 @@ impl Node {
         )
     }
 
+    /// A checked defining equation uses the same lexical capture as other structural facts.
+    pub fn definition(project: &Project, env: &Environment, definition: DefinitionFact) -> Self {
+        Self::from_parts(project, env, true, Some(Fact::Definition(definition)), None)
+    }
+
     pub fn claim(project: &Project, env: &Environment, proposition: Proposition) -> Self {
         Self::from_parts(
             project,
@@ -612,6 +620,12 @@ impl Node {
                 proposition.source.depth = env.depth;
                 Fact::Proposition(proposition)
             }
+            Fact::Definition(definition) => definition.prepare(|proposition| {
+                let mut proposition = env.bindings.expand_theorems(project, proposition);
+                proposition.source.importable &= env.top_level;
+                proposition.source.depth = env.depth;
+                proposition
+            }),
             Fact::Instance(data, class, mut source) => {
                 source.importable &= env.top_level;
                 source.depth = env.depth;
