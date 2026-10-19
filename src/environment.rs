@@ -738,7 +738,7 @@ impl Environment {
             Some(Block::new(
                 project,
                 &staged,
-                type_params,
+                type_params.clone(),
                 block_args,
                 BlockParams::Theorem(ts.name.as_deref(), range, premise, goal),
                 statement.first_line(),
@@ -748,8 +748,9 @@ impl Environment {
         };
 
         let node = {
-            let proposition = Proposition::new(
+            let proposition = Proposition::generic(
                 external_claim,
+                type_params,
                 Source::theorem(
                     ts.axiomatic,
                     self.module_id,
