@@ -1725,8 +1725,9 @@ impl Environment {
             let node = Node::structural(
                 project,
                 &staged,
-                Proposition::new(
+                Proposition::generic(
                     claim,
+                    params.clone(),
                     Source::theorem(
                         true,
                         self.module_id,
@@ -1737,8 +1738,8 @@ impl Environment {
                 ),
             );
             // Inspect the actual exported proposition after theorem-name expansion,
-            // exactly as for ordinary bounded theorems. Fact does not retain erased
-            // declaration formals, so a closed condition cannot safely be published.
+            // exactly as for ordinary bounded theorems. Keep the supported declaration
+            // boundary even though the proposition now retains explicit formals.
             if !node
                 .proposition()
                 .expect("newly constructed theorem or condition has a proposition")
