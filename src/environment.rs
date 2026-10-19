@@ -239,26 +239,21 @@ impl Environment {
             .bindings
             .get_constant_value(&name.to_string())
             .expect("a stored definition must have a declaration value");
+        let range = self.definition_ranges.get(name).unwrap().clone();
+        let source = Source::constant_definition(
+            self.module_id,
+            range,
+            self.depth,
+            potential.clone().to_generic_value(),
+            name.to_string(),
+        );
         let params = potential.unresolved_params().to_vec();
         let constant = potential.to_generic_value();
-
         let claim = constant.inflate_function_definition(definition);
-        let range = self.definition_ranges.get(name).unwrap().clone();
-
         self.push_node(Node::structural(
             project,
             self,
-            Proposition::generic(
-                claim,
-                params,
-                Source::constant_definition(
-                    self.module_id,
-                    range,
-                    self.depth,
-                    constant,
-                    name.to_string(),
-                ),
-            ),
+            Proposition::generic(claim, params, source),
         ));
     }
 
