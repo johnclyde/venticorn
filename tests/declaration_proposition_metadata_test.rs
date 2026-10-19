@@ -80,3 +80,45 @@ fn definition_propositions_keep_ordered_phantom_formals_from_the_declaration() {
     }
     assert_eq!(found, ["chosen", "fixed"]);
 }
+
+#[test]
+fn theorem_propositions_keep_formals_while_their_block_goals_are_fixed() {
+    let mut env = Environment::new_test();
+    env.add("typeclass M: Marked {\n flag: Bool\n}\naxiom known<T: Marked, U>(x: T) { x = x }\ntheorem goal<T: Marked, U>(x: T) { x = x }");
+    let mut found = Vec::new();
+    for node in &env.nodes {
+        let Some(prop) = node.proposition() else {
+            continue;
+        };
+        let Some(name) = prop.theorem_name() else {
+            continue;
+        };
+        assert_eq!(prop.params, env.bindings.get_params(name));
+        assert_eq!(prop.params.len(), 2);
+        assert_eq!(prop.params[0].name, "T");
+        assert_eq!(prop.params[1].name, "U");
+        assert_eq!(
+            prop.params[0].typeclass.as_ref(),
+            env.bindings.get_typeclass_for_name("Marked")
+        );
+        assert!(prop.params[1].typeclass.is_none());
+        assert!(prop.has_generic());
+        assert_eq!(prop.truthiness(), Truthiness::Factual);
+        assert!(prop.source.importable);
+        found.push(name);
+    }
+    assert_eq!(found, ["known", "goal"]);
+    let goals = env.iter_goals().collect::<Vec<_>>();
+    assert_eq!(goals.len(), 1);
+    let context = goals[0].goal_context().unwrap();
+    assert!(!context.goal.has_generic());
+    let venticorn::goal::Goal::Prove(prop) = context.goal else {
+        panic!("theorem goal")
+    };
+    assert!(prop.params.is_empty());
+    assert!(prop.value.has_arbitrary());
+    // Explicit metadata does not silently change the erased-bound admission policy.
+    env.bad("axiom erased<T: Marked> { false }");
+    assert!(!env.bindings.name_in_use("erased"));
+    assert_eq!(env.iter_goals().count(), 1);
+}
