@@ -434,12 +434,7 @@ impl Environment {
                 .name_token
                 .error("numeric literals may not be defined outside of a class"));
         }
-        if ls.name == "self"
-            || ls.name == "new"
-            || ls.name == "read"
-            || (constant_name.is_qualified()
-                && TokenType::from_magic_method_name(&ls.name).is_some())
-        {
+        if ls.name == "self" || ls.name == "new" || ls.name == "read" {
             return Err(ls.name_token.error(&format!(
                 "'{}' is a reserved word. use a different name",
                 ls.name
@@ -453,6 +448,14 @@ impl Environment {
             )));
         }
         let acorn_type = self.bindings.evaluate_type(project, &ls.type_expr)?;
+        if constant_name.is_qualified()
+            && TokenType::from_magic_method_name(&ls.name).is_some()
+            && !matches!(&acorn_type, AcornType::Function(_))
+        {
+            return Err(ls
+                .type_expr
+                .error("operator members must have a function type"));
+        }
         if ls.name_token.token_type == TokenType::Numeral {
             let (class_name, _) = constant_name.as_attribute().ok_or_else(|| {
                 ls.name_token
