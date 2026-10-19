@@ -41,6 +41,16 @@ impl Proposition {
         Self::generic(value, vec![], source)
     }
 
+    /// Construct a fixed proposition, rejecting unresolved value or source metadata.
+    pub fn monomorphic(value: AcornValue, source: Source) -> Result<Self, String> {
+        let proposition = Self::new(value, source);
+        if proposition.has_generic() {
+            Err("monomorphic proposition contains unresolved generic metadata".into())
+        } else {
+            Ok(proposition)
+        }
+    }
+
     /// Construct a proposition retaining every declared formal, including phantom bounds.
     pub fn generic(value: AcornValue, params: Vec<TypeParam>, source: Source) -> Self {
         Self {
