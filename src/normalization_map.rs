@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use crate::acorn_type::AcornType;
-use crate::acorn_value::ConstantInstance;
+use crate::acorn_value::{AcornValue, ConstantInstance};
 use crate::atom::{Atom, AtomId};
 use crate::clause::Clause;
 use crate::constant_map::ConstantMap;
 use crate::literal::Literal;
+use crate::module::SKOLEM;
 use crate::names::GlobalName;
 use crate::term::{Term, TypeId};
 use crate::type_map::TypeMap;
@@ -13,11 +16,12 @@ use crate::type_map::TypeMap;
 /// The component maps retain their checked interning and reverse lookups. Their
 /// public compatibility APIs remain available, while production normalization
 /// uses this single owner. Equality assumptions remain explicit proof clauses;
-/// this map does not introduce aliases or change proof-scope authority.
+/// production normalization does not activate the explicit low-level alias API.
 #[derive(Clone)]
 pub struct NormalizationMap {
     constants: ConstantMap,
     types: TypeMap,
+    constant_types: HashMap<GlobalName, TypeId>,
 }
 
 impl NormalizationMap {
@@ -25,6 +29,7 @@ impl NormalizationMap {
         Self {
             constants: ConstantMap::new(),
             types: TypeMap::new(),
+            constant_types: HashMap::new(),
         }
     }
 
@@ -36,6 +41,62 @@ impl NormalizationMap {
     /// Compatibility spelling for callers already using typed constant names.
     pub fn add_constant_named(&mut self, name: GlobalName, local: bool) -> Atom {
         self.add_constant(name, local)
+    }
+
+    /// Intern a fixed non-generic constant while recording its effective type.
+    pub fn term_from_constant(
+        &mut self,
+        constant: &ConstantInstance,
+        local: bool,
+    ) -> Result<Term, String> {
+        if !constant.params.is_empty() || constant.name.module_id == SKOLEM {
+            return Err("expected a non-parameterized ordinary constant".into());
+        }
+        if !constant.instance_type.is_normalized() {
+            return Err("constant type is not normalized".into());
+        }
+        if let Some(id) = self.constant_types.get(&constant.name) {
+            if self.get_type(*id) != &constant.instance_type {
+                return Err("constant identity already has a different type".into());
+            }
+        }
+        let type_id = self.add_type(&constant.instance_type);
+        let atom = self.add_constant_named(constant.name.clone(), local);
+        self.constant_types.insert(constant.name.clone(), type_id);
+        Ok(Term::atom(type_id, atom))
+    }
+
+    /// Explicit low-level alias registration; this operation grants no proof authority.
+    /// The caller must separately establish the defining equality. The target must
+    /// have a recorded matching type, and an emitted conflicting atom is never replaced.
+    pub fn alias_monomorph(
+        &mut self,
+        instance: ConstantInstance,
+        target: &GlobalName,
+        constant_type: &AcornType,
+    ) -> Result<(), String> {
+        if instance.params.is_empty()
+            || instance.name.module_id == SKOLEM
+            || target.module_id == SKOLEM
+            || &instance.instance_type != constant_type
+            || !constant_type.is_normalized()
+            || instance.params.iter().any(|actual| !actual.is_normalized())
+        {
+            return Err("invalid instantiated alias type metadata".into());
+        }
+        AcornValue::Constant(instance.clone()).validate()?;
+        let atom = self
+            .constants
+            .atom_for_name(target)
+            .ok_or("alias target is not registered")?;
+        let type_id = *self
+            .constant_types
+            .get(target)
+            .ok_or("alias target has no recorded type")?;
+        if self.get_type(type_id) != constant_type {
+            return Err("alias target has a different type".into());
+        }
+        self.types.alias_monomorph(instance, atom, type_id)
     }
 
     pub fn has_constant_named(&self, name: &GlobalName) -> bool {
@@ -131,5 +192,87 @@ mod tests {
         let later = GlobalName::new(41, LocalName::Unqualified("later".into()));
         copied.add_constant(later.clone(), false);
         assert!(!map.has_constant_named(&later));
+    }
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::*;
+    use crate::acorn_type::TypeParam;
+    use crate::names::LocalName;
+
+    fn constant(name: &str, params: Vec<AcornType>, instance_type: AcornType) -> ConstantInstance {
+        ConstantInstance {
+            name: GlobalName::new(8, LocalName::unqualified(name)),
+            params,
+            instance_type,
+        }
+    }
+
+    #[test]
+    fn explicit_alias_registration_requires_a_typed_target_and_fixed_matching_metadata() {
+        let mut map = NormalizationMap::new();
+        let target = constant("target", vec![], AcornType::Bool);
+        let source = constant("source", vec![AcornType::Bool], AcornType::Bool);
+        assert!(map
+            .alias_monomorph(source.clone(), &target.name, &AcornType::Bool)
+            .is_err());
+        map.add_constant_named(target.name.clone(), false);
+        assert!(map
+            .alias_monomorph(source.clone(), &target.name, &AcornType::Bool)
+            .is_err());
+        let target_term = map.term_from_constant(&target, false).unwrap();
+        for invalid in [
+            constant("source", vec![], AcornType::Bool),
+            constant(
+                "source",
+                vec![AcornType::Variable(TypeParam::unconstrained("T"))],
+                AcornType::Bool,
+            ),
+            constant("source", vec![AcornType::Bool], AcornType::Empty),
+        ] {
+            assert!(map
+                .alias_monomorph(invalid, &target.name, &AcornType::Bool)
+                .is_err());
+        }
+        map.alias_monomorph(source.clone(), &target.name, &AcornType::Bool)
+            .unwrap();
+        map.alias_monomorph(source.clone(), &target.name, &AcornType::Bool)
+            .unwrap();
+        assert_eq!(map.term_from_monomorph(&source), target_term);
+        assert_eq!(map.name_for_global_id(0), &target.name);
+        let unaliased = constant("other", vec![AcornType::Bool], AcornType::Bool);
+        assert_eq!(map.term_from_monomorph(&unaliased).head, Atom::Monomorph(0));
+        assert_eq!(map.get_monomorph(0), &unaliased);
+    }
+
+    #[test]
+    fn existing_atom_and_type_conflicts_leave_registered_identity_unchanged() {
+        let mut map = NormalizationMap::new();
+        let target = constant("target", vec![], AcornType::Bool);
+        let target_term = map.term_from_constant(&target, false).unwrap();
+        let wrong_type = ConstantInstance {
+            instance_type: AcornType::functional(vec![AcornType::Bool], AcornType::Bool),
+            ..target.clone()
+        };
+        assert!(map.term_from_constant(&wrong_type, false).is_err());
+        assert_eq!(map.term_from_constant(&target, true).unwrap(), target_term);
+        let source = constant("source", vec![AcornType::Bool], AcornType::Bool);
+        let original = map.term_from_monomorph(&source);
+        assert!(map
+            .alias_monomorph(source.clone(), &target.name, &AcornType::Bool)
+            .is_err());
+        assert_eq!(map.term_from_monomorph(&source), original);
+        assert_eq!(map.get_monomorph(0), &source);
+        let other = constant("other", vec![], AcornType::Bool);
+        let other_term = map.term_from_constant(&other, true).unwrap();
+        let alias = constant("alias", vec![AcornType::Bool], AcornType::Bool);
+        map.alias_monomorph(alias.clone(), &other.name, &AcornType::Bool)
+            .unwrap();
+        assert!(map
+            .alias_monomorph(alias.clone(), &target.name, &AcornType::Bool)
+            .is_err());
+        assert_eq!(map.term_from_monomorph(&alias), other_term);
+        assert_eq!(map.name_for_local_id(0), &other.name);
     }
 }

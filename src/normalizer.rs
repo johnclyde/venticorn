@@ -290,17 +290,13 @@ impl Normalizer {
                     check_normalized_type(argument)?;
                 }
                 if c.params.is_empty() {
+                    if c.name.module_id != SKOLEM {
+                        return self.map.term_from_constant(c, local);
+                    }
                     let type_id = self.map.add_type(&c.instance_type);
-                    let constant_atom = if c.name.module_id == SKOLEM {
-                        // Hacky. Turn the s-name back to an int
-                        match &c.name.local_name {
-                            LocalName::Unqualified(name) => {
-                                Atom::Skolem(name[1..].parse().unwrap())
-                            }
-                            _ => return Err("invalid structured skolem name".into()),
-                        }
-                    } else {
-                        self.map.add_constant_named(c.name.clone(), local)
+                    let constant_atom = match &c.name.local_name {
+                        LocalName::Unqualified(name) => Atom::Skolem(name[1..].parse().unwrap()),
+                        _ => return Err("invalid structured skolem name".into()),
                     };
                     Ok(Term::new(type_id, type_id, constant_atom, vec![]))
                 } else {
