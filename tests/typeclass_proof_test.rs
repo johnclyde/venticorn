@@ -504,3 +504,57 @@ fn typeclass_theorems_combine_through_a_checked_instance() {
         (1, 1, 0)
     );
 }
+
+#[test]
+fn typeclass_theorems_combine_with_an_explicit_instance_call() {
+    let text = r#"
+            typeclass F: Foo {
+                foo: F -> Bool
+            }
+
+            axiom always_foo<F: Foo>(x: F) {
+                x.foo
+            }
+
+            inductive Bar {
+                bar
+            }
+
+            let qux: Bool = axiom
+
+            instance Bar: Foo {
+                define foo(self) -> Bool {
+                    qux
+                }
+            }
+
+            theorem goal {
+                qux
+            } by {
+                Foo.foo(Bar.bar)
+            }
+        "#;
+    let mut project = Project::new_mock();
+    project.mock("/mock/main.ac", text);
+    let module = project.expect_ok("main");
+    let env = project.get_env_by_id(module).unwrap();
+    assert_eq!(env.iter_goals().count(), 2);
+    for node in env.iter_goals() {
+        let goal = node.goal_context().unwrap();
+        let class = env.bindings.get_typeclass_for_name("Foo").unwrap();
+        assert!(goal.proof_scope.has_membership(module, "Bar", class));
+        let mut ordinary = project.prover_for_node(&node, false);
+        ordinary.set_goal(&goal);
+        let mut shallow = ordinary.clone();
+        assert_eq!(shallow.quick_shallow_search(), Outcome::Success);
+        assert_eq!(ordinary.quick_search(), Outcome::Success);
+        assert!(ordinary.get_proof().is_some());
+    }
+    project.set_cache_policy(CachePolicy::Disabled);
+    let report = project.sync_build_report();
+    assert_eq!(report.status, BuildStatus::Good);
+    assert_eq!(
+        (report.goals_done, report.num_success, report.num_cached),
+        (2, 2, 0)
+    );
+}
