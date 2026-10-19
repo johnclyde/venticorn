@@ -192,7 +192,7 @@ impl Environment {
 
     /// Adds a proposition, or multiple propositions, to represent the definition of the provided
     /// constant.
-    pub fn add_identity(&mut self, project: &Project, name: &str) {
+    pub fn add_definition(&mut self, project: &Project, name: &str) {
         let Some(definition) = self.bindings.get_definition(name).cloned() else {
             return;
         };
@@ -204,7 +204,7 @@ impl Environment {
         self.add_definition_identity_props(project, &stored_name, definition);
     }
 
-    pub fn add_identity_named(&mut self, project: &Project, name: &LocalName) {
+    pub fn add_definition_named(&mut self, project: &Project, name: &LocalName) {
         let Some(definition) = self.bindings.get_definition_named(name).cloned() else {
             return;
         };
@@ -212,6 +212,14 @@ impl Environment {
     }
 
     // Compatibility entry points retain the existing public signatures.
+    pub fn add_identity(&mut self, project: &Project, name: &str) {
+        self.add_definition(project, name);
+    }
+
+    pub fn add_identity_named(&mut self, project: &Project, name: &LocalName) {
+        self.add_definition_named(project, name);
+    }
+
     pub fn add_identity_props(&mut self, project: &Project, name: &str) {
         self.add_identity(project, name);
     }
@@ -234,25 +242,7 @@ impl Environment {
         let params = potential.unresolved_params().to_vec();
         let constant = potential.to_generic_value();
 
-        // Expand function definitions into equality for every argument.
-        let claim = if let AcornValue::Lambda(acorn_types, return_value) = definition {
-            let args: Vec<_> = acorn_types
-                .iter()
-                .enumerate()
-                .map(|(i, acorn_type)| AcornValue::Variable(i as AtomId, acorn_type.clone()))
-                .collect();
-            let app = AcornValue::apply(constant.clone(), args);
-            AcornValue::ForAll(
-                acorn_types,
-                Box::new(AcornValue::Binary(
-                    BinaryOp::Equals,
-                    Box::new(app),
-                    return_value,
-                )),
-            )
-        } else {
-            AcornValue::equals(constant.clone(), definition)
-        };
+        let claim = constant.inflate_function_definition(definition);
         let range = self.definition_ranges.get(name).unwrap().clone();
 
         self.push_node(Node::structural(
@@ -285,7 +275,7 @@ impl Environment {
         self.bindings
             .add_constant_named(&name, params, constant_type, definition, None);
         self.definition_ranges.insert(name.clone(), range);
-        self.add_identity_named(project, &name);
+        self.add_definition_named(project, &name);
     }
 
     pub fn get_definition(&self, name: &str) -> Option<&AcornValue> {

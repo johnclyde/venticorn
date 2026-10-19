@@ -105,6 +105,7 @@ impl Monomorphizer {
             Fact::Proposition(proposition) => {
                 self.add_proposition(proposition);
             }
+            Fact::Definition(definition) => self.add_proposition(definition.into_proposition()),
             Fact::Instance(data, class, _) => {
                 // Reflections must already belong to the captured lexical scope.
                 // They cannot revive denied or not-yet-visible memberships.

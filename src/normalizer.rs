@@ -500,13 +500,12 @@ impl Normalizer {
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
         self.append_propositions(
-            facts.into_iter().filter_map(|fact| match fact {
-                Fact::Proposition(proposition) => {
-                    Some(proposition.into_monomorphic().map_err(|_| {
-                        "cannot normalize unresolved proposition metadata".to_string()
-                    }))
-                }
-                Fact::Instance(..) => None,
+            facts.into_iter().filter_map(|fact| {
+                fact.into_proposition().map(|(proposition, _)| {
+                    proposition
+                        .into_monomorphic()
+                        .map_err(|_| "cannot normalize unresolved proposition metadata".to_string())
+                })
             }),
             steps,
         )
@@ -526,16 +525,14 @@ impl Normalizer {
         fact: Fact,
         steps: &mut Vec<ProofStep>,
     ) -> Result<()> {
-        match fact {
-            Fact::Proposition(proposition) => {
-                let proposition = proposition
-                    .into_monomorphic()
-                    .map_err(|_| "cannot normalize unresolved proposition metadata".to_string())?;
-                self.normalize_monomorphic_steps(proposition, steps)
-            }
-            // Membership statements have no Boolean clause and cannot grant authority.
-            Fact::Instance(..) => Ok(()),
-        }
+        // Membership statements have no Boolean clause and cannot grant authority.
+        let Some((proposition, _)) = fact.into_proposition() else {
+            return Ok(());
+        };
+        let proposition = proposition
+            .into_monomorphic()
+            .map_err(|_| "cannot normalize unresolved proposition metadata".to_string())?;
+        self.normalize_monomorphic_steps(proposition, steps)
     }
 
     fn normalize_monomorphic_steps(
