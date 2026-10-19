@@ -158,7 +158,30 @@ pub struct TypeParam {
     pub typeclass: Option<Typeclass>,
 }
 
+impl fmt::Display for TypeParam {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.typeclass {
+            Some(class) => write!(f, "{}: {}", self.name, class.name),
+            None => write!(f, "{}", self.name),
+        }
+    }
+}
+
 impl TypeParam {
+    /// Display complete formals in declaration order; this is not a canonical identity key.
+    pub fn params_to_str(params: &[TypeParam]) -> String {
+        use std::fmt::Write;
+        let mut result = String::from("<");
+        for (index, param) in params.iter().enumerate() {
+            if index > 0 {
+                result.push_str(", ");
+            }
+            write!(result, "{}", param).expect("writing to a String cannot fail");
+        }
+        result.push('>');
+        result
+    }
+
     pub fn unconstrained(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -660,11 +683,7 @@ impl fmt::Display for AcornType {
             AcornType::Function(function_type) => write!(f, "{}", function_type),
             AcornType::Empty => write!(f, "empty"),
             AcornType::Variable(param) | AcornType::Arbitrary(param) => {
-                write!(f, "{}", param.name)?;
-                if let Some(tc) = &param.typeclass {
-                    write!(f, ": {}", tc.name)?;
-                }
-                Ok(())
+                write!(f, "{}", param.name)
             }
         }
     }

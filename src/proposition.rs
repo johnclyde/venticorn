@@ -63,6 +63,9 @@ impl fmt::Display for MonomorphicProposition {
 
 impl fmt::Display for Proposition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.params.is_empty() {
+            write!(f, "{} ", TypeParam::params_to_str(&self.params))?;
+        }
         self.value.fmt(f)
     }
 }
